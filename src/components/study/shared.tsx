@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { BookOpen, ChevronRight, FileText, ImageIcon, LoaderCircle } from '@/components/icons';
-import type { AppData, ScreenProps, Material } from '@/lib/contracts';
+import type { AppData, ScreenProps, Material, MaterialImage } from '@/lib/contracts';
 import { Button, ErrorNote, Sheet } from '@/components/ui';
 import { api } from '@/lib/api';
 import {
@@ -475,7 +475,17 @@ export async function uploadFile(file: File) {
     .json()
     .catch(() => ({ error: '파일 업로드 응답을 읽지 못했어요. 다시 시도해 주세요.' }));
   if (!response.ok) throw new Error(result.error || '파일을 올리지 못했어요.');
-  return result.data as { url: string; content: string; type: string; title: string };
+  return result.data as {
+    uploadId: string;
+    url: string;
+    content: string;
+    type: string;
+    title: string;
+    pages: number | null;
+    extraction: string;
+    images: MaterialImage[];
+    warning?: string;
+  };
 }
 
 export function validateUploadSize(file: Pick<File, 'size'>) {

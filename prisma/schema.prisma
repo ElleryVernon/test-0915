@@ -121,6 +121,13 @@ model Material {
   content   String @db.Text
   type      String @default("TXT")
   url       String?
+  /// The uploaded file this material was read from; its bytes and images live with the upload.
+  uploadId  String? @unique
+  upload    Upload? @relation(fields: [uploadId], references: [id], onDelete: SetNull)
+  /// Offsets in content where each page starts; empty when the text no longer matches the file.
+  pageBreaks Int[] @default([])
+  /// How content was produced: pdf-text, pdf-ocr, pdf-mixed, text, image-ocr or manual.
+  extraction String?
   createdAt DateTime @default(now())
   questions Question[]
   essays    Essay[]
@@ -368,7 +375,46 @@ model Upload {
   mime String
   name String
   size Int
+  sha256 String?
+  pages Int?
+  pageBreaks Int[] @default([])
+  extraction String?
+  /// sha256 of the extracted text, to tell whether a material still holds it unedited.
+  textHash String?
   createdAt DateTime @default(now())
+  blob UploadBlob?
+  images UploadImage[]
+  material Material?
+  @@index([userId, createdAt])
+}
+/// The file bytes, kept in the database so every server sharing it can serve the file.
+model UploadBlob {
+  uploadId String @id
+  upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+  data Bytes
+}
+/// An image embedded in an uploaded PDF, with where it appeared.
+model UploadImage {
+  id String @id @default(cuid())
+  uploadId String
+  upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+  page Int
+  order Int
+  /// Global index of the paragraph it follows in the extracted text; -1 before any text.
+  paragraph Int
+  /// Offset in the extracted text where it belongs.
+  anchor Int
+  x Float
+  y Float
+  w Float
+  h Float
+  width Int
+  height Int
+  mime String
+  /// Start of the paragraph it follows, to find its place again after the text is edited.
+  context String @default("")
+  data Bytes
+  @@index([uploadId, page, order])
 }
 
 model OAuthAccount {

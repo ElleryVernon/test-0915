@@ -25,7 +25,7 @@ export async function bootstrap(user: User): Promise<AppData> {
   const filter = {userId,subject:{deleted:false}};
   const [subjects,materials,questions,essays,cards,attempts,schedules,posts,cheers,notifications,reviews] = await Promise.all([
     db.subject.findMany({where:{userId,deleted:false},include:{_count:{select:{materials:true,questions:true,cards:{where:{deleted:false}}}}},orderBy:{createdAt:'asc'}}),
-    db.material.findMany({where:filter,orderBy:{createdAt:'desc'}}),db.question.findMany({where:filter}),db.essay.findMany({where:filter}),
+    db.material.findMany({where:filter,orderBy:{createdAt:'desc'},include:{upload:{select:{pages:true,_count:{select:{images:true}}}}}}),db.question.findMany({where:filter}),db.essay.findMany({where:filter}),
     db.card.findMany({where:filter,orderBy:{createdAt:'asc'},include:{_count:{select:{reviews:true}}}}),db.attempt.findMany({where:{userId},orderBy:{createdAt:'desc'},take:1000}),db.schedule.findMany({where:{userId},orderBy:[{date:'asc'},{start:'asc'}]}),
     postsFor(user),db.cheer.findMany({where:user.role==='PARENT'?{senderId:user.id}:{recipientId:user.id},include:{sender:{select:{nickname:true}}},orderBy:{createdAt:'desc'},take:100}),
     db.notification.findMany({where:{userId:user.id},orderBy:{createdAt:'desc'},take:100}),db.cardReview.findMany({where:{userId,createdAt:{gte:new Date(Date.now()-7*86400_000)}},orderBy:{createdAt:'desc'}}),
@@ -51,7 +51,7 @@ export async function bootstrap(user: User): Promise<AppData> {
   return {
     profile:{...profile(user),...(user.role==='STUDENT'?{streak}:{})}, child:child?{...profile(child),streak:mayTime?streak:0}:undefined,
     subjects:subjects.map(subject=>({id:subject.id,name:subject.name,icon:subject.icon,semester:subject.semester,color:subject.color,materialCount:subject._count.materials,questionCount:subject._count.questions,cardCount:subject._count.cards,...(subject.examDate?{examDate:subject.examDate,examName:subject.examName??'시험'}:{})})),
-    materials:parent?[]:materials.map(material=>({...material,url:material.url??undefined,createdAt:material.createdAt.toISOString()})),
+    materials:parent?[]:materials.map(({upload,...material})=>({...material,url:material.url??undefined,uploadId:material.uploadId??undefined,extraction:material.extraction??undefined,pages:upload?.pages??undefined,imageCount:upload?._count.images??0,createdAt:material.createdAt.toISOString()})),
     questions:mayNotes?(parent?questions.filter(question=>wrongIds.has(question.id)):questions):[],essays:parent?[]:essays,cards:parent?[]:cards.map(asCard),
     attempts:mayNotes?attempts.map(attempt=>({...attempt,questionId:attempt.questionId??undefined,essayId:attempt.essayId??undefined,createdAt:attempt.createdAt.toISOString()})):[],
     schedules:mayTime?schedules.map(schedule=>({...schedule,subjectId:schedule.subjectId??undefined})):[],posts,

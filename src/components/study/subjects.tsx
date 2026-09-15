@@ -864,6 +864,8 @@ function UploadSheet({
   const [generated, setGenerated] = useState<string[]>([]);
   const [uncertainStage, setUncertainStage] = useState(false);
   const [task, setTask] = useState<AiTaskRecord | null>(null);
+  // A retry after a failed save reuses the upload instead of sending the file again.
+  const uploaded = useRef<{ file: File; result: Awaited<ReturnType<typeof uploadFile>> } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const action = useAction();
@@ -871,16 +873,19 @@ function UploadSheet({
     let material = saved;
     if (!material) {
       setProgress(file ? '자료를 올리고 있어요' : '자료를 저장하고 있어요');
-      const uploaded = file ? await uploadFile(file) : undefined;
+      if (file && uploaded.current?.file !== file) uploaded.current = { file, result: await uploadFile(file) };
+      const upload = file ? uploaded.current?.result : undefined;
+      // The server decides the type and keeps page offsets only while the text is the extracted one.
       material = await api<Material>('/materials', {
         subjectId: subject.id,
-        title: title.trim() || file?.name,
-        content: content.trim() || uploaded?.content || '',
-        type: uploaded?.type || 'TXT',
-        url: uploaded?.url,
+        title: title.trim() || upload?.title || '제목 없는 자료',
+        content: content.trim() || upload?.content || '',
+        type: upload?.type || 'TXT',
+        uploadId: upload?.uploadId,
       });
       setSaved(material);
       await props.refresh();
+      if (upload?.warning) props.toast(upload.warning);
     }
     if (generate) {
       const stages = [
@@ -949,7 +954,7 @@ function UploadSheet({
             const f = e.target.files?.[0];
             if (f) {
               setFile(f);
-              if (!title) setTitle(f.name);
+              if (!title) setTitle(f.name.replace(/\.[^.]+$/, ''));
               setSaved(null);
             }
           }}

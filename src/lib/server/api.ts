@@ -8,7 +8,7 @@ import { conflict,gradeEssay,proposePlans,validDate } from './algorithms';
 import { generateItems,gradeWithAi,planWithAi,RULE_METHOD } from './ai';
 import { seedDemo,DEMO_STUDENT,DEMO_PARENT,DEMO_ADMIN } from '../../../prisma/seed';
 import { Prisma, type User } from './generated/client';
-import { handleUpload, readUpload } from './uploads';
+import { handleUpload, readUpload, readUploadImage, textHash, uploadImages, uploadUrl } from './uploads';
 import { configuredProviders } from '../oauth';
 import { isDue, scheduleCard } from '../srs';
 import { aiAvailable } from './provider';
@@ -88,7 +88,8 @@ export async function handleApi(request:Request) {
     if(resource==='ai-runs'&&resourceId&&method==='GET')return ok(await readAiRun(user.id,resourceId));
     if(resource==='bootstrap'&&method==='GET')return ok(await bootstrap(user));
     if(resource==='upload'&&method==='POST') { requireRole(user,'STUDENT');return ok(await handleUpload(request,user)); }
-    if(resource==='uploads'&&resourceId&&method==='GET')return await readUpload(resourceId,user);
+    if(resource==='uploads'&&resourceId&&action==='images'&&parts[3]&&method==='GET')return await readUploadImage(resourceId,parts[3],user,request);
+    if(resource==='uploads'&&resourceId&&!action&&method==='GET')return await readUpload(resourceId,user,request);
     if(resource==='subjects') {
       requireRole(user,'STUDENT');
       if(method==='POST') {
@@ -109,16 +110,33 @@ export async function handleApi(request:Request) {
     if(resource==='materials') {
       requireRole(user,'STUDENT');
       if(method==='POST') {
-        const input=await body(request,z.object({subjectId:id,title:text(200),content:z.string().max(200_000),type:z.enum(['TXT','PDF','IMAGE','txt','pdf','image']),url:z.string().max(2000).optional()}));
+        const input=await body(request,z.object({subjectId:id,title:text(200),content:z.string().max(200_000),type:z.enum(['TXT','PDF','IMAGE','txt','pdf','image']),url:z.string().max(2000).optional(),uploadId:z.string().max(64).optional()}));
         await ownedSubject(user,input.subjectId);
         if(input.url&&!input.url.startsWith('/api/uploads/'))throw new ApiError(400,'이 앱에 업로드한 자료만 연결할 수 있어요.');
-        if(input.url&&!await db.upload.findFirst({where:{id:input.url.split('/').pop(),userId:user.id}}))throw new ApiError(404,'업로드한 자료를 찾을 수 없어요.');
-        return ok(await db.material.create({data:{...input,type:input.type.toUpperCase(),userId:user.id}}),201);
+        const uploadId=input.uploadId??input.url?.split('/').pop();
+        const upload=uploadId?await db.upload.findFirst({where:{id:uploadId,userId:user.id},include:{material:{select:{id:true}}}}):null;
+        if(uploadId&&!upload)throw new ApiError(404,'업로드한 자료를 찾을 수 없어요.');
+        if(upload?.material)throw new ApiError(409,'이미 다른 자료에 쓰인 파일이에요. 파일을 다시 올려 주세요.');
+        // The file decides the type; page offsets hold only while the text is the one read from it.
+        const unedited=!!upload&&textHash(input.content)===upload.textHash;
+        const type=upload?(upload.mime==='application/pdf'?'PDF':upload.mime.startsWith('image/')?'IMAGE':'TXT'):input.type.toUpperCase();
+        return ok(await db.material.create({data:{subjectId:input.subjectId,title:input.title,content:input.content,type,userId:user.id,...(upload?{uploadId:upload.id,url:uploadUrl(upload.id),pageBreaks:unedited?upload.pageBreaks:[],extraction:unedited?upload.extraction:'manual'}:{extraction:'manual'})}}),201);
       }
-      const material=resourceId?await db.material.findFirst({where:{id:resourceId,userId:user.id,subject:{deleted:false}}}):null;
+      const material=resourceId?await db.material.findFirst({where:{id:resourceId,userId:user.id,subject:{deleted:false}},include:{upload:{select:{pages:true,pageBreaks:true,extraction:true,textHash:true}}}}):null;
       if(!material)throw new ApiError(404,'자료를 찾을 수 없어요.');
-      if(method==='PATCH')return ok(await db.material.update({where:{id:material.id},data:await body(request,z.object({title:text(200).optional(),content:z.string().max(200_000).optional()}))}));
-      if(method==='DELETE'){await db.material.delete({where:{id:material.id}});return ok({deleted:true});}
+      const {upload,...stored}=material;
+      if(method==='GET')return ok({...stored,url:stored.url??undefined,createdAt:stored.createdAt.toISOString(),pages:upload?.pages??null,images:stored.uploadId?await uploadImages(stored.uploadId):[]});
+      if(method==='PATCH'){
+        const input=await body(request,z.object({title:text(200).optional(),content:z.string().max(200_000).optional()}));
+        const unedited=input.content===undefined||(!!upload&&textHash(input.content)===upload.textHash);
+        const pages=input.content===undefined?{}:{pageBreaks:unedited&&upload?upload.pageBreaks:[],extraction:unedited&&upload?upload.extraction:'manual'};
+        return ok(await db.material.update({where:{id:material.id},data:{...input,...pages}}));
+      }
+      if(method==='DELETE'){
+        // The file, its bytes and its images go with the material that owned them.
+        await db.$transaction(async tx=>{await tx.material.delete({where:{id:material.id}});if(material.uploadId)await tx.upload.deleteMany({where:{id:material.uploadId,userId:user.id}});});
+        return ok({deleted:true});
+      }
     }
     if(resource==='generate'&&method==='POST') {
       requireRole(user,'STUDENT');
@@ -378,7 +396,7 @@ export async function handleApi(request:Request) {
     }
     throw new ApiError(404,'요청한 기능을 찾을 수 없어요.');
   } catch(error) {
-    if(error instanceof ApiError)return Response.json({error:error.message},{status:error.status,headers:jsonHeaders});
+    if(error instanceof ApiError)return Response.json({error:error.message,...(error.code?{code:error.code}:{})},{status:error.status,headers:jsonHeaders});
     if(error instanceof Error&&'code' in error){const code=(error as {code:string}).code;if(code==='P2002')return Response.json({error:'이미 사용 중인 값이에요.'},{status:409,headers:jsonHeaders});if(code==='P2025')return Response.json({error:'대상을 찾을 수 없어요.'},{status:404,headers:jsonHeaders});}
     console.error('[memoryz-api]',error instanceof Error?error.name:'UnknownError');
     return Response.json({error:'요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.'},{status:500,headers:jsonHeaders});

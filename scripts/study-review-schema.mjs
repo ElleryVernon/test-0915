@@ -10,21 +10,25 @@ import { resolve } from 'node:path';
 import pg from 'pg';
 
 const BASE = '0f14f1e';
+// The commit that made the study review's schema change; later branches change the schema on their own.
+const STUDY = '6b22d7b';
 const MIGRATION = '20260915030000_subject_exam';
 const database = new URL(process.env.DATABASE_URL);
 if (!['127.0.0.1', 'localhost'].includes(database.hostname) || database.port !== '15444' || database.pathname !== '/memoryz')
   throw new Error('dedicated local database only');
 const problems = [];
 
-const diff = execFileSync('git', ['diff', '--unified=0', BASE, '--', 'prisma/schema.prisma'], { encoding: 'utf8' });
+const diff = execFileSync('git', ['diff', '--unified=0', BASE, STUDY, '--', 'prisma/schema.prisma'], { encoding: 'utf8' });
 const changed = diff
   .split('\n')
   .filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l))
   .map((l) => l.replace(/\s+/g, ' ').trim().replace(/^([+-]) /, '$1'));
 if (changed.length !== 2 || !changed.includes('+examName String?') || !changed.includes('+examDate String?'))
   problems.push(`schema changes: ${changed.join(' | ')}`);
-if (!/model Subject/.test(execFileSync('git', ['diff', BASE, '--', 'prisma/schema.prisma'], { encoding: 'utf8' })))
+if (!/model Subject/.test(execFileSync('git', ['diff', BASE, STUDY, '--', 'prisma/schema.prisma'], { encoding: 'utf8' })))
   problems.push('changes are outside model Subject');
+const subject = /model Subject \{[\s\S]*?\n\}/.exec(readFileSync('prisma/schema.prisma', 'utf8'))?.[0] ?? '';
+if (!/\bexamName\s+String\?/.test(subject) || !/\bexamDate\s+String\?/.test(subject)) problems.push('the current schema lost Subject.examName/examDate');
 
 const before = new Set(
   execFileSync('git', ['ls-tree', '--name-only', `${BASE}:prisma/migrations`], { encoding: 'utf8' }).split('\n').filter(Boolean),
@@ -33,7 +37,8 @@ const added = readdirSync('prisma/migrations').filter((name) => !before.has(name
 const sql = existsSync(`prisma/migrations/${MIGRATION}/migration.sql`)
   ? readFileSync(`prisma/migrations/${MIGRATION}/migration.sql`, 'utf8').replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim()
   : '';
-if (added.join() !== MIGRATION) problems.push(`new migrations: ${added.join(', ') || '(none)'}`);
+// Later branches add their own migrations (checked by their own scripts); this one must stay as written.
+if (!added.includes(MIGRATION)) problems.push(`new migrations: ${added.join(', ') || '(none)'}`);
 if (sql !== 'ALTER TABLE "Subject" ADD COLUMN "examDate" TEXT, ADD COLUMN "examName" TEXT;')
   problems.push(`migration SQL: ${sql || '(missing)'}`);
 
@@ -86,7 +91,7 @@ const status = spawnSync('npx', ['prisma', 'migrate', 'status'], { encoding: 'ut
 if (local.status !== 0) problems.push(`local database differs from the schema (diff exit ${local.status})`);
 if (status.status !== 0 || !/up to date/i.test(status.stdout)) problems.push('local migration history is not up to date');
 
-console.log(`schema changes vs ${BASE}: ${changed.join(' | ')} · new migration: ${added.join(', ') || '-'}`);
+console.log(`study schema change ${BASE}..${STUDY}: ${changed.join(' | ')} · migrations since ${BASE}: ${added.join(', ') || '-'}`);
 console.log(`migrations rebuild the schema: diff exit ${rebuilt} (control without it: ${control}) · local diff exit ${local.status} · history up to date: ${status.status === 0}`);
 if (problems.length) {
   for (const p of problems) console.log(`  ${p}`);

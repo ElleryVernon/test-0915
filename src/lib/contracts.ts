@@ -35,7 +35,34 @@ export interface Material {
   content: string;
   type: string;
   url?: string;
+  /** The uploaded file; its bytes and images are served under /api/uploads/:uploadId. */
+  uploadId?: string;
+  /** Offsets in content where each page starts; empty once the text was edited. */
+  pageBreaks?: number[];
+  /** pdf-text, pdf-ocr, pdf-mixed, text, image-ocr or manual. */
+  extraction?: string;
+  pages?: number;
+  imageCount?: number;
   createdAt: string;
+}
+/** An image found in an uploaded PDF, with the page and paragraph it appeared after. */
+export interface MaterialImage {
+  id: string;
+  url: string;
+  page: number;
+  order: number;
+  /** Global paragraph index in the extracted text; -1 before any text. */
+  paragraph: number;
+  /** Offset in the extracted text where it belongs. */
+  anchor: number;
+  box: { x: number; y: number; w: number; h: number };
+  width: number;
+  height: number;
+  /** Start of the paragraph it follows. */
+  context: string;
+}
+export interface MaterialDetail extends Material {
+  images: MaterialImage[];
 }
 export interface Question {
   id: string;
