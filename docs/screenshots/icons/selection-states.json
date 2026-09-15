@@ -1,0 +1,14 @@
+[
+  {
+    "background": "rgb(33, 33, 36)",
+    "iconFill": "rgb(255, 255, 255)",
+    "label": "공감 1",
+    "pressed": "true"
+  },
+  {
+    "background": "rgb(243, 243, 243)",
+    "iconFill": "rgb(82, 82, 87)",
+    "label": "저장하기",
+    "pressed": "false"
+  }
+]

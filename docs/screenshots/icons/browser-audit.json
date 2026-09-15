@@ -1,0 +1,154 @@
+[
+  {
+    "documentWidth": 390,
+    "icons": 30,
+    "invalid": [],
+    "primaryIcons": [
+      {
+        "color": "rgb(255, 255, 255)",
+        "name": "Layers"
+      },
+      {
+        "color": "rgb(201, 77, 9)",
+        "name": "ArrowRight"
+      },
+      {
+        "color": "rgb(255, 255, 255)",
+        "name": "Sparkles"
+      }
+    ],
+    "route": "/",
+    "tabs": [
+      {
+        "active": "page",
+        "color": "rgb(33, 33, 36)",
+        "icon": "Home",
+        "label": "홈"
+      },
+      {
+        "active": null,
+        "color": "rgb(165, 165, 168)",
+        "icon": "BookOpen",
+        "label": "학습"
+      },
+      {
+        "active": null,
+        "color": "rgb(165, 165, 168)",
+        "icon": "CalendarDays",
+        "label": "시간표"
+      },
+      {
+        "active": null,
+        "color": "rgb(165, 165, 168)",
+        "icon": "MessagesSquare",
+        "label": "커뮤니티"
+      },
+      {
+        "active": null,
+        "color": "rgb(165, 165, 168)",
+        "icon": "UserRound",
+        "label": "마이"
+      }
+    ],
+    "unknownIcons": 0,
+    "width": 390
+  },
+  {
+    "activeTab": "학습",
+    "documentWidth": 390,
+    "icons": 22,
+    "invalid": [],
+    "route": "/study",
+    "unknownIcons": 0,
+    "width": 390
+  },
+  {
+    "activeTab": "학습",
+    "documentWidth": 390,
+    "icons": 15,
+    "invalid": [],
+    "route": "/subjects/demo-biology",
+    "unknownIcons": 0,
+    "width": 390
+  },
+  {
+    "activeTab": "학습",
+    "documentWidth": 390,
+    "icons": 18,
+    "invalid": [],
+    "route": "/subjects/demo-biology",
+    "unknownIcons": 0,
+    "width": 390
+  },
+  {
+    "activeTab": "시간표",
+    "documentWidth": 390,
+    "icons": 17,
+    "invalid": [],
+    "route": "/planner",
+    "unknownIcons": 0,
+    "width": 390
+  },
+  {
+    "activeTab": "시간표",
+    "documentWidth": 390,
+    "icons": 18,
+    "invalid": [],
+    "route": "/planner",
+    "unknownIcons": 0,
+    "width": 390
+  },
+  {
+    "activeTab": "커뮤니티",
+    "documentWidth": 390,
+    "icons": 16,
+    "invalid": [],
+    "route": "/community",
+    "unknownIcons": 0,
+    "width": 390
+  },
+  {
+    "activeTab": "커뮤니티",
+    "documentWidth": 390,
+    "icons": 12,
+    "invalid": [],
+    "route": "/community",
+    "unknownIcons": 0,
+    "width": 390
+  },
+  {
+    "activeTab": "마이",
+    "documentWidth": 390,
+    "icons": 21,
+    "invalid": [],
+    "route": "/profile",
+    "unknownIcons": 0,
+    "width": 390
+  },
+  {
+    "documentWidth": 390,
+    "icons": 16,
+    "invalid": [],
+    "route": "/settings",
+    "unknownIcons": 0,
+    "width": 390
+  },
+  {
+    "activeTab": "시간표",
+    "documentWidth": 390,
+    "icons": 21,
+    "invalid": [],
+    "route": "/planner",
+    "unknownIcons": 0,
+    "width": 390
+  },
+  {
+    "activeTab": "시간표",
+    "documentWidth": 360,
+    "icons": 21,
+    "invalid": [],
+    "route": "/planner",
+    "unknownIcons": 0,
+    "width": 360
+  }
+]

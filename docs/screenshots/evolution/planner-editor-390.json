@@ -1,0 +1,53 @@
+{
+  "name": "planner-editor-390",
+  "url": "http://127.0.0.1:3000/planner",
+  "dialogs": [
+    {
+      "height": 645.5546875,
+      "title": "어떤 일정을 담을까요?일정 이름고정 일정자율 학습날짜시작종료연결",
+      "top": 198.4453125,
+      "width": 390
+    }
+  ],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "시간표",
+    "오늘의 일정",
+    "어떤 일정을 담을까요?"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": " 빈 시간 추천받기"
+    },
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": "저장하기"
+    }
+  ],
+  "selected": [
+    {
+      "background": "rgb(33, 33, 36)",
+      "label": "9월 15일 화요일",
+      "text": "화15"
+    },
+    {
+      "background": "rgba(0, 0, 0, 0)",
+      "label": null,
+      "text": "시간표"
+    },
+    {
+      "background": "rgb(255, 255, 255)",
+      "label": null,
+      "text": "자율 학습"
+    }
+  ],
+  "width": 390
+}

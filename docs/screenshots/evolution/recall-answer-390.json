@@ -1,0 +1,33 @@
+{
+  "name": "recall-answer-390",
+  "url": "http://127.0.0.1:3000/flashcards",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [
+    {
+      "color": "rgb(255, 255, 255)",
+      "text": "보통 상자"
+    },
+    {
+      "color": "rgb(255, 255, 255)",
+      "text": "식사 후 혈당량이 높아졌을 때 일어나는 반응은?"
+    },
+    {
+      "color": "rgb(255, 255, 255)",
+      "text": "혈당량이 증가하면 인슐린이 분비되어 포도당의 세포 내 흡수와 글리코젠 합성을 촉진합니다."
+    },
+    {
+      "color": "rgb(255, 255, 255)",
+      "text": "얼마나 쉽게 떠올렸나요?"
+    }
+  ],
+  "headings": [
+    "1 / 10",
+    "세포의 포도당 흡수 촉진"
+  ],
+  "height": 844,
+  "primary": [],
+  "selected": [],
+  "width": 390
+}

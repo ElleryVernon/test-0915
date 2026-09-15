@@ -1,0 +1,39 @@
+{
+  "name": "essay-keywords-390",
+  "url": "http://127.0.0.1:3000/essay",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "서술형 코칭",
+    "설명에 필요한 키워드를\n모두 골라 주세요"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": "키워드 확인하기"
+    }
+  ],
+  "selected": [
+    {
+      "background": "rgba(0, 0, 0, 0)",
+      "label": null,
+      "text": "1. 키워드 고르기"
+    },
+    {
+      "background": "rgb(33, 33, 36)",
+      "label": null,
+      "text": "자극"
+    },
+    {
+      "background": "rgb(33, 33, 36)",
+      "label": null,
+      "text": "유입"
+    }
+  ],
+  "width": 390
+}

@@ -1,0 +1,11 @@
+{
+  "screens": 24,
+  "widths": [
+    360,
+    390,
+    430
+  ],
+  "overflow": 0,
+  "console": [],
+  "scope": "Local production build, real browser, existing sample data. UI selection/reveal/navigation/form editing and cancellation only. No schedule/post/grading submission or external AI generation in this visual verification."
+}

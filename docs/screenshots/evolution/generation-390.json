@@ -1,0 +1,37 @@
+{
+  "name": "generation-390",
+  "url": "http://127.0.0.1:3000/essay",
+  "dialogs": [
+    {
+      "height": 407.375,
+      "title": "서술형 문제 만들기내 자료에서 근거를 찾아 만들어요. 사용할 자",
+      "top": 436.6277465820313,
+      "width": 390
+    }
+  ],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "서술형 코칭",
+    "아는 것을내 문장으로 꺼내는 연습",
+    "서술형 문제 만들기"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(238, 101, 0)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": "5개 만들기"
+    }
+  ],
+  "selected": [
+    {
+      "background": "rgb(33, 33, 36)",
+      "label": null,
+      "text": "5개"
+    }
+  ],
+  "width": 390
+}

@@ -1,0 +1,33 @@
+{
+  "name": "subject-390",
+  "url": "http://127.0.0.1:3000/subjects/demo-biology",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "생명과학Ⅰ"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": "자료 올리기"
+    }
+  ],
+  "selected": [
+    {
+      "background": "rgb(33, 33, 36)",
+      "label": null,
+      "text": "자료 3"
+    },
+    {
+      "background": "rgba(0, 0, 0, 0)",
+      "label": null,
+      "text": "학습"
+    }
+  ],
+  "width": 390
+}

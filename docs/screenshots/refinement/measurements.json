@@ -1,0 +1,211 @@
+{
+  "capturedAt": "2026-09-14T22:42:06.515Z",
+  "screens": [
+    {
+      "name": "home-390",
+      "contentWidth": 390,
+      "surfaces": [
+        {
+          "background": "url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": " 오늘의 복습 카드약 5분10장복습 시작오늘 4장, 기억에 한 걸음 더 가까워졌어요."
+        },
+        {
+          "background": "url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": ""
+        }
+      ],
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "whiteOnGradient": []
+    },
+    {
+      "name": "home-360",
+      "contentWidth": 360,
+      "surfaces": [
+        {
+          "background": "url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": " 오늘의 복습 카드약 5분10장복습 시작오늘 4장, 기억에 한 걸음 더 가까워졌어요."
+        },
+        {
+          "background": "url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": ""
+        }
+      ],
+      "viewport": {
+        "height": 800,
+        "width": 360
+      },
+      "whiteOnGradient": []
+    },
+    {
+      "name": "home-430",
+      "contentWidth": 430,
+      "surfaces": [
+        {
+          "background": "url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": " 오늘의 복습 카드약 5분10장복습 시작오늘 4장, 기억에 한 걸음 더 가까워졌어요."
+        },
+        {
+          "background": "url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": ""
+        }
+      ],
+      "viewport": {
+        "height": 932,
+        "width": 430
+      },
+      "whiteOnGradient": []
+    },
+    {
+      "name": "card-answer",
+      "contentWidth": 390,
+      "surfaces": [
+        {
+          "background": "url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": "비교 카드보통 상자탈분극과 재분극의 차이는?탈분극: Na⁺가 안으로 유입되어 막전위 상승. 재분극: K⁺가 밖으로 유출되어 막전위 하강.얼마나 쉽게 떠올렸나요?"
+        }
+      ],
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "whiteOnGradient": []
+    },
+    {
+      "name": "profile",
+      "contentWidth": 390,
+      "surfaces": [
+        {
+          "background": "url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": "하나씩 쌓이는 나의 기록1일째, 기억을 쌓고 있어요"
+        }
+      ],
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "whiteOnGradient": []
+    },
+    {
+      "name": "achievements",
+      "contentWidth": 390,
+      "surfaces": [
+        {
+          "background": "url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": "하나씩 쌓이는 나의 기록1일째, 기억을 쌓고 있어요"
+        }
+      ],
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "whiteOnGradient": []
+    },
+    {
+      "name": "study",
+      "contentWidth": 390,
+      "surfaces": [],
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "whiteOnGradient": []
+    },
+    {
+      "name": "cards",
+      "contentWidth": 390,
+      "surfaces": [],
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "whiteOnGradient": []
+    },
+    {
+      "name": "planner",
+      "contentWidth": 390,
+      "surfaces": [],
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "whiteOnGradient": []
+    },
+    {
+      "name": "parent",
+      "contentWidth": 390,
+      "surfaces": [
+        {
+          "background": "url(\"http://localhost:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": ""
+        },
+        {
+          "background": "url(\"http://localhost:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": ""
+        },
+        {
+          "background": "url(\"http://localhost:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": ""
+        },
+        {
+          "background": "url(\"http://localhost:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": ""
+        },
+        {
+          "background": "url(\"http://localhost:3000/aurora.svg\")",
+          "color": "rgb(48, 37, 31)",
+          "text": "작은 응원이 큰 힘이 돼요결과보다 꾸준한 마음을칭찬해 주면 어떨까요?응원 보내기"
+        }
+      ],
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "whiteOnGradient": []
+    },
+    {
+      "name": "parent-community",
+      "contentWidth": 390,
+      "surfaces": [],
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "whiteOnGradient": []
+    }
+  ],
+  "progress": {
+    "buttonHeight": 44,
+    "fill": 87.421875,
+    "max": 14,
+    "now": 4,
+    "track": 306
+  },
+  "parentNavigation": {
+    "community": [
+      "커뮤니티"
+    ],
+    "home": [
+      "자녀 현황"
+    ],
+    "rootAlias": [
+      "자녀 현황"
+    ]
+  },
+  "consoleErrors": []
+}

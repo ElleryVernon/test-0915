@@ -1,0 +1,33 @@
+[
+  {
+    "background": "rgb(255, 111, 15)",
+    "color": "rgb(255, 255, 255)",
+    "content": [
+      {
+        "color": "rgb(255, 255, 255)",
+        "tag": "SPAN"
+      },
+      {
+        "color": "rgb(255, 255, 255)",
+        "tag": "SPAN"
+      },
+      {
+        "color": "rgb(255, 255, 255)",
+        "tag": "P"
+      },
+      {
+        "color": "rgb(255, 255, 255)",
+        "tag": "H2"
+      },
+      {
+        "color": "rgb(255, 255, 255)",
+        "tag": "P"
+      },
+      {
+        "color": "rgb(255, 255, 255)",
+        "tag": "P"
+      }
+    ],
+    "image": "none"
+  }
+]

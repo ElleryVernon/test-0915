@@ -1,0 +1,10 @@
+Date picker opened via the filled calendar icon and exposed a calendar table. Time was editable from 09:10 to 09:20 in the unsaved draft.
+
+Time picker click:
+Browser tab: 19, Title: "memoryz · 기억이 남는 공부", URL: "http://127.0.0.1:3000/planner".
+The following is a diff from the previous accessibility tree with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
++				40 container
++					41 list
++					42 list
++					43 list
+The focused UI element is 41 list

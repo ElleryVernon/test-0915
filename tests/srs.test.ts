@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {isDue, scheduleCard} from '../src/lib/srs';
+import type {Card} from '../src/lib/contracts';
+const now=Date.parse('2026-09-15T10:00:00Z');
+const card:Card={id:'retention-test',subjectId:'biology',type:'CONCEPT',front:'Recall',back:'Answer',bucket:'AGAIN',consecutiveEasy:0,nextReviewAt:new Date(now).toISOString(),deleted:false};
+test('FSRS retention controls workload, survives JSON roundtrip, and keeps strong memories scheduled',()=>{
+ let current=scheduleCard(card,'EASY','FSRS',.9,now);
+ for(let n=0;n<8;n++)current=scheduleCard(JSON.parse(JSON.stringify(current)),'GOOD','FSRS',.9,Date.parse(current.nextReviewAt));
+ const time=Date.parse(current.nextReviewAt);
+ const relaxed=scheduleCard(current,'GOOD','FSRS',.8,time);
+ const demanding=scheduleCard(current,'GOOD','FSRS',.97,time);
+ assert.ok(Date.parse(relaxed.nextReviewAt)>Date.parse(demanding.nextReviewAt));
+ assert.deepEqual(scheduleCard(JSON.parse(JSON.stringify(current)),'GOOD','FSRS',.97,time),demanding);
+ const once=scheduleCard(current,'EASY','FSRS',.9,time);
+ const twice=scheduleCard(once,'EASY','FSRS',.9,Date.parse(once.nextReviewAt));
+ assert.equal(twice.bucket,'MASTERED');
+ assert.equal(isDue(twice,Date.parse(twice.nextReviewAt)),true);
+ assert.throws(()=>scheduleCard(twice,'GOOD','FSRS',.9,time),/precedes/);
+ assert.throws(()=>scheduleCard(card,'GOOD','FSRS',.99,now),/Retention/);
+});

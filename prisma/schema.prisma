@@ -1,0 +1,400 @@
+generator client {
+  provider = "prisma-client"
+  output = "../src/lib/server/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  STUDENT
+  PARENT
+  ADMIN
+}
+
+enum Bucket {
+  AGAIN
+  HARD
+  GOOD
+  EASY
+  MASTERED
+}
+
+enum CardType {
+  CONCEPT
+  RELATION
+  COMPARISON
+  BLIND
+}
+
+enum ScheduleKind {
+  FIXED
+  FLEXIBLE
+}
+
+model User {
+  id                String @id @default(cuid())
+  name              String
+  nickname          String @unique
+  role              Role
+  school            String @default("")
+  grade             String @default("")
+  streak            Int @default(0)
+  points            Int @default(0)
+  suspended         Boolean @default(false)
+  selectedChildId   String?
+  srsMode           String @default("FIXED")
+  desiredRetention  Float @default(0.9)
+  privacy           Json @default("{\"accuracy\":true,\"time\":true,\"wrongNotes\":false}")
+  completedSubjects String[] @default([])
+  linkFailures      Int @default(0)
+  linkLockedUntil   DateTime?
+  createdAt         DateTime @default(now())
+  sessions          Session[]
+  subjects          Subject[]
+  materials         Material[]
+  questions         Question[]
+  essays            Essay[]
+  attempts          Attempt[]
+  cards             Card[]
+  cardReviews       CardReview[]
+  schedules         Schedule[]
+  posts             Post[]
+  comments          Comment[]
+  likes             PostLike[]
+  saves             PostSave[]
+  reports           Report[]
+  blocks            Block[] @relation("blocker")
+  blockedBy         Block[] @relation("blocked")
+  invites           Invite[]
+  children          ParentLink[] @relation("parent")
+  parents           ParentLink[] @relation("student")
+  sentCheers        Cheer[] @relation("cheerSender")
+  cheers            Cheer[] @relation("cheerRecipient")
+  notifications     Notification[]
+  followers         Follow[] @relation("following")
+  following         Follow[] @relation("follower")
+  sentMessages      Message[] @relation("messageSender")
+  receivedMessages  Message[] @relation("messageRecipient")
+  uploads           Upload[]
+  oauthAccounts     OAuthAccount[]
+  aiRuns            AiRun[]
+}
+
+model Session {
+  id        String @id
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Subject {
+  id        String @id @default(cuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  icon      String @default("book")
+  semester  String @default("2026년 2학기")
+  color     String @default("orange")
+  deleted   Boolean @default(false)
+  createdAt DateTime @default(now())
+  materials Material[]
+  questions Question[]
+  essays    Essay[]
+  cards     Card[]
+  @@index([userId, deleted])
+}
+
+model Material {
+  id        String @id @default(cuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  title     String
+  content   String @db.Text
+  type      String @default("TXT")
+  url       String?
+  createdAt DateTime @default(now())
+  questions Question[]
+  essays    Essay[]
+  @@index([userId, subjectId])
+}
+
+model Question {
+  id          String @id @default(cuid())
+  userId      String
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId   String
+  subject     Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  materialId  String
+  material    Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  prompt      String @db.Text
+  options     String[]
+  answer      Int
+  explanation String @db.Text
+  citation    String @db.Text
+  past        String
+  future      String
+  attempts    Attempt[]
+  @@index([userId, subjectId])
+}
+
+model Essay {
+  id          String @id @default(cuid())
+  userId      String
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId   String
+  subject     Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  materialId  String
+  material    Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  prompt      String @db.Text
+  keywords    String[]
+  distractors String[]
+  modelAnswer String @db.Text
+  citation    String @db.Text
+  attempts    Attempt[]
+  @@index([userId, subjectId])
+}
+
+model Attempt {
+  id         String @id @default(cuid())
+  userId     String
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId String?
+  question   Question? @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  essayId    String?
+  essay      Essay? @relation(fields: [essayId], references: [id], onDelete: Cascade)
+  answer     String @db.Text
+  correct    Boolean
+  score      Int
+  createdAt  DateTime @default(now())
+  @@index([userId, createdAt])
+}
+
+model Card {
+  id              String @id @default(cuid())
+  userId          String
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId       String
+  subject         Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  front           String @db.Text
+  back            String @db.Text
+  type            CardType @default(CONCEPT)
+  bucket          Bucket @default(AGAIN)
+  consecutiveEasy Int @default(0)
+  nextReviewAt    DateTime @default(now())
+  deleted         Boolean @default(false)
+  image           String?
+  masks           Json @default("[]")
+  sourceQuestionId String?
+  fsrs            Json?
+  createdAt       DateTime @default(now())
+  reviews         CardReview[]
+  @@unique([userId, sourceQuestionId])
+  @@index([userId, deleted, nextReviewAt])
+}
+
+model CardReview {
+  id        String @id
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId    String
+  card      Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  rating    String
+  result    Json
+  createdAt DateTime @default(now())
+  @@index([userId, createdAt])
+}
+
+model Schedule {
+  id        String @id @default(cuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  date      String
+  start     String
+  end       String
+  kind      ScheduleKind
+  subjectId String?
+  done      Boolean @default(false)
+  createdAt DateTime @default(now())
+  @@index([userId, date])
+}
+
+model Post {
+  id        String @id @default(cuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role
+  category  String
+  title     String
+  body      String @db.Text
+  anonymous Boolean @default(false)
+  createdAt DateTime @default(now())
+  comments  Comment[]
+  likes     PostLike[]
+  saves     PostSave[]
+  reports   Report[]
+  @@index([role, createdAt])
+}
+
+model Comment {
+  id        String @id @default(cuid())
+  postId    String
+  post      Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String
+  parentId  String?
+  parent    Comment? @relation("replies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("replies")
+  createdAt DateTime @default(now())
+  @@index([postId, createdAt])
+}
+
+model PostLike {
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId String
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  @@id([userId, postId])
+}
+
+model PostSave {
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId String
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  @@id([userId, postId])
+}
+
+model Report {
+  id        String @id @default(cuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId    String
+  post      Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reason    String
+  status    String @default("OPEN")
+  createdAt DateTime @default(now())
+  @@unique([userId, postId])
+}
+
+model Block {
+  userId    String
+  user      User @relation("blocker", fields: [userId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  @@id([userId, blockedId])
+}
+
+model Invite {
+  code      String @id
+  studentId String
+  student   User @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  @@index([studentId])
+}
+
+model ParentLink {
+  parentId  String
+  parent    User @relation("parent", fields: [parentId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User @relation("student", fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@id([parentId, studentId])
+}
+
+model Cheer {
+  id          String @id @default(cuid())
+  senderId    String
+  sender      User @relation("cheerSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User @relation("cheerRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  message     String
+  points      Int @default(0)
+  thanked     Boolean @default(false)
+  createdAt   DateTime @default(now())
+  @@index([recipientId, createdAt])
+}
+
+model Notification {
+  id        String @id @default(cuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  read      Boolean @default(false)
+  href      String
+  createdAt DateTime @default(now())
+  @@index([userId, createdAt])
+}
+
+model Follow {
+  followerId String
+  follower User @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following User @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+  @@id([followerId, followingId])
+}
+
+model Message {
+  id String @id @default(cuid())
+  senderId String
+  sender User @relation("messageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient User @relation("messageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  body String
+  createdAt DateTime @default(now())
+  @@index([senderId, recipientId, createdAt])
+}
+
+model School {
+  id String @id @default(cuid())
+  name String @unique
+}
+
+model Upload {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mime String
+  name String
+  size Int
+  createdAt DateTime @default(now())
+}
+
+model OAuthAccount {
+  id String @id @default(cuid())
+  provider String
+  providerId String
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerId])
+}
+
+model AiRun {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestId String
+  kind String
+  inputHash String
+  skillVersion String
+  model String
+  status String @default("RUNNING")
+  result Json?
+  steps Json @default("[]")
+  error String?
+  errorStatus Int?
+  startedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  finishedAt DateTime?
+  @@unique([userId, requestId])
+  @@index([userId, status, updatedAt])
+}

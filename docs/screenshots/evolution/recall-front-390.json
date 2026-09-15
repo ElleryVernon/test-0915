@@ -1,0 +1,23 @@
+{
+  "name": "recall-front-390",
+  "url": "http://127.0.0.1:3000/flashcards",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "1 / 10",
+    "식사 후 혈당량이 높아졌을 때 일어나는 반응은?"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": "정답 보기"
+    }
+  ],
+  "selected": [],
+  "width": 390
+}

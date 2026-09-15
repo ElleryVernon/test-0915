@@ -1,0 +1,30 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Memoryz 팔레트와 정렬</title><style>:root{
+  --text-primary: #212124;
+  --text-secondary: #525257;
+  --text-muted: #69696e;
+  --text-subtle: #767678;
+  --text-disabled: #a5a5a8;
+  --surface-muted: #f3f3f3;
+  --surface-canvas: #fafafa;
+  --border-subtle: #ededed;
+  --border-strong: #d6d6d8;
+  --brand: #ff6f0f;
+  --brand-strong: #c94d09;
+  --brand-pressed: #ee6500;
+  --danger: #c73d32;
+  --danger-surface: #fff4f2;
+  --notice-text: #885114;
+  --notice-surface: #fff8eb;
+  --ink: var(--text-primary);
+  --muted: var(--text-muted);
+  --surface: var(--surface-muted);
+  --accent: var(--brand);
+  --primary: var(--brand);
+  --line: var(--border-subtle);
+  --page-gutter: 20px;
+  --row-icon-size: 24px;
+  --row-gap: 12px;
+  --control-size: 44px;
+  --radius: 20px;
+  --app-width: 480px;
+}*{box-sizing:border-box}body{margin:0;background:#fff;color:var(--text-primary);font:15px/1.6 system-ui,sans-serif;padding:40px 24px}main{max-width:980px;margin:auto}h1{font-size:30px;letter-spacing:-1px;margin:0}h2{font-size:20px;margin-top:40px}p{color:var(--text-muted)}a{color:var(--brand-strong)}.swatches{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:24px 16px;margin-top:28px}.swatch{height:92px;border-radius:12px;border:1px solid var(--border-subtle);margin-bottom:12px}.hex{font:12px/1.6 ui-monospace,monospace;color:var(--text-muted)}.role{font-weight:650}.use{font-size:13px;color:var(--text-muted)}.examples{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:32px}button{font:inherit;cursor:pointer;border:0}.primary{background:var(--brand);color:white;padding:14px 24px;border-radius:12px;font-weight:600}.primary:hover{background:var(--brand-pressed)}.badge{background:var(--surface-muted);color:var(--text-secondary);padding:4px 8px;border-radius:8px;font-size:12px;font-weight:600}.row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:12px;align-items:center;min-height:80px;padding:16px 0;position:relative}.row+.row:before{content:'';position:absolute;top:0;left:36px;right:0;border-top:1px solid var(--border-subtle)}.copy{display:grid;gap:4px}.copy small{font-size:13px;color:var(--text-muted)}.trail{display:flex;gap:8px;align-items:center}.chevron{color:var(--text-disabled)}.sample{border:1px solid var(--border-subtle);border-radius:16px;padding:0 20px}.diagram{font:13px ui-monospace,monospace;padding:18px 20px;border-radius:12px;background:var(--surface-canvas)}.note{font-size:13px}.actions{display:flex;align-items:center;gap:16px;margin:24px 0}footer{margin-top:48px;border-top:1px solid var(--border-subtle);padding-top:20px;font-size:13px}</style><main><h1>기준이 있는 정렬, 역할이 있는 색</h1><p>당근의 Mobbin 화면에서 색의 사용 방식을 참고한 Memoryz 팔레트입니다.<br>모든 주황 면은 단색 #FF6F0F, 그 위 텍스트·아이콘은 흰색입니다. 중립색 뱃지와 OS 불꽃 이모지는 유지합니다.</p><div class="swatches"><div><div class="swatch" style="background:#FF6F0F"></div><div class="role">브랜드 · 주요 행동</div><div class="hex">#FF6F0F</div><div class="use">시작·저장·복습 카드·완료 표시</div></div><div><div class="swatch" style="background:#C94D09"></div><div class="role">주황 텍스트</div><div class="hex">#C94D09</div><div class="use">흰 배경 위 작은 주황 글자</div></div><div><div class="swatch" style="background:#212124"></div><div class="role">본문·선택</div><div class="hex">#212124</div><div class="use">제목·활성 탐색</div></div><div><div class="swatch" style="background:#525257"></div><div class="role">보조 정보</div><div class="hex">#525257</div><div class="use">뱃지·보조 설명</div></div><div><div class="swatch" style="background:#69696E"></div><div class="role">설명</div><div class="hex">#69696E</div><div class="use">날짜·안내</div></div><div><div class="swatch" style="background:#767678"></div><div class="role">메타데이터</div><div class="hex">#767678</div><div class="use">작은 부가 정보</div></div><div><div class="swatch" style="background:#F3F3F3"></div><div class="role">중립 면</div><div class="hex">#F3F3F3</div><div class="use">뱃지·입력·보조 버튼</div></div><div><div class="swatch" style="background:#FAFAFA"></div><div class="role">옅은 면</div><div class="hex">#FAFAFA</div><div class="use">보조 영역</div></div><div><div class="swatch" style="background:#EDEDED"></div><div class="role">구분선</div><div class="hex">#EDEDED</div><div class="use">행·영역 경계</div></div><div><div class="swatch" style="background:#C73D32"></div><div class="role">오류</div><div class="hex">#C73D32</div><div class="use">실패·검증 안내</div></div></div><h2>어디에 어떻게 쓰나요</h2><div class="examples"><section><p>주황은 주요 행동에, 뱃지는 중립색에</p><div class="actions"><button class="primary">질문하기</button><span class="badge">🔥 1일째</span><span class="badge">4단계</span></div><p class="note">주요 행동은 당근 레퍼런스의 밝은 주황 #FF6F0F를 사용합니다.<br>일반 탐색과 필터 선택에는 짙은 중립색을 사용합니다.</p></section><section><div class="sample"><div class="row"><span>▤</span><span class="copy"><strong>서술형 코칭</strong><small>생각을 문장으로 정리해요</small></span><span class="trail"><span class="badge">4단계</span><span class="chevron">›</span></span></div><div class="row"><span>✓</span><span class="copy"><strong>오답노트</strong><small>다시 보고 내 것으로 만들어요</small></span><span class="trail"><span class="chevron">›</span></span></div></div></section></div><h2>공통 정렬</h2><div class="diagram">20px 여백 → 24px 아이콘 → 12px 간격 → 유동 본문 → 뱃지·화살표 → 20px 여백</div><p class="note">기본 간격 4·8·12·16·20·24·32px · 행 높이 최소 64/80px · 아이콘 터치 영역 44px<br>구분선은 본문의 시작점부터 행의 끝까지 이어집니다.</p><footer>참고: <a href="https://mobbin.com/screens/48dce847-ee5f-4b83-8aff-ffa62f5ecb83">당근 피드</a> · <a href="https://mobbin.com/screens/d3957433-b3c2-4609-855a-98b8d5adf91e">당근 주요 행동</a> · <a href="https://mobbin.com/screens/88d51219-1be1-4b5f-90fe-868e5ffc46fa">나의 당근</a><p>주요 색은 Mobbin 당근 버튼의 압축 이미지 픽셀을 확인해 #FF6F0F로 맞췄습니다. 공식 토큰 API에서 추출한 값은 아닙니다.</p><a href="screenshots/curriculum/index.html">실제 화면 캡처 보기</a></footer></main></html>

@@ -1,0 +1,159 @@
+{
+  "capturedAt": "2026-09-14T22:52:36.191Z",
+  "screens": [
+    {
+      "name": "home-390",
+      "badges": [
+        {
+          "background": "rgb(242, 244, 246)",
+          "borderRadius": "999px",
+          "color": "rgb(78, 89, 104)",
+          "text": "🔥1일째"
+        },
+        {
+          "background": "rgb(242, 244, 246)",
+          "borderRadius": "7px",
+          "color": "rgb(78, 89, 104)",
+          "text": "4단계"
+        }
+      ],
+      "documentWidth": 390,
+      "emoji": [
+        {
+          "font": "\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Noto Color Emoji\", sans-serif",
+          "text": "🔥"
+        }
+      ],
+      "flameSVG": 0,
+      "surfaces": [
+        {
+          "background": "linear-gradient(rgba(191, 51, 0, 0.5), rgba(0, 0, 0, 0) 38%, rgba(0, 0, 0, 0) 57%, rgba(185, 55, 0, 0.5)), linear-gradient(105deg, rgba(232, 70, 0, 0.5), rgba(238, 86, 0, 0.18)), url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(255, 255, 255)",
+          "text": " 오늘의 복습 카드약 5분10장복습 시작오늘 4장, 기억에 한 걸음 더 가까워졌어요."
+        },
+        {
+          "background": "linear-gradient(rgba(191, 51, 0, 0.5), rgba(0, 0, 0, 0) 38%, rgba(0, 0, 0, 0) 57%, rgba(185, 55, 0, 0.5)), linear-gradient(105deg, rgba(232, 70, 0, 0.5), rgba(238, 86, 0, 0.18)), url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(255, 255, 255)",
+          "text": ""
+        }
+      ],
+      "width": 390
+    },
+    {
+      "name": "home-360",
+      "badges": [
+        {
+          "background": "rgb(242, 244, 246)",
+          "borderRadius": "999px",
+          "color": "rgb(78, 89, 104)",
+          "text": "🔥1일째"
+        },
+        {
+          "background": "rgb(242, 244, 246)",
+          "borderRadius": "7px",
+          "color": "rgb(78, 89, 104)",
+          "text": "4단계"
+        }
+      ],
+      "documentWidth": 360,
+      "emoji": [
+        {
+          "font": "\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Noto Color Emoji\", sans-serif",
+          "text": "🔥"
+        }
+      ],
+      "flameSVG": 0,
+      "surfaces": [
+        {
+          "background": "linear-gradient(rgba(191, 51, 0, 0.5), rgba(0, 0, 0, 0) 38%, rgba(0, 0, 0, 0) 57%, rgba(185, 55, 0, 0.5)), linear-gradient(105deg, rgba(232, 70, 0, 0.5), rgba(238, 86, 0, 0.18)), url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(255, 255, 255)",
+          "text": " 오늘의 복습 카드약 5분10장복습 시작오늘 4장, 기억에 한 걸음 더 가까워졌어요."
+        },
+        {
+          "background": "linear-gradient(rgba(191, 51, 0, 0.5), rgba(0, 0, 0, 0) 38%, rgba(0, 0, 0, 0) 57%, rgba(185, 55, 0, 0.5)), linear-gradient(105deg, rgba(232, 70, 0, 0.5), rgba(238, 86, 0, 0.18)), url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(255, 255, 255)",
+          "text": ""
+        }
+      ],
+      "width": 360
+    },
+    {
+      "name": "card-answer",
+      "badges": [],
+      "documentWidth": 390,
+      "emoji": [],
+      "flameSVG": 0,
+      "surfaces": [
+        {
+          "background": "linear-gradient(rgba(191, 51, 0, 0.5), rgba(0, 0, 0, 0) 38%, rgba(0, 0, 0, 0) 57%, rgba(185, 55, 0, 0.5)), linear-gradient(105deg, rgba(232, 70, 0, 0.5), rgba(238, 86, 0, 0.18)), url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(255, 255, 255)",
+          "text": "비교 카드보통 상자탈분극과 재분극의 차이는?탈분극: Na⁺가 안으로 유입되어 막전위 상승. 재분극: K⁺가 밖으로 유출되어 막전위 하강.얼마나 쉽게 떠올렸나요?"
+        }
+      ],
+      "width": 390
+    },
+    {
+      "name": "profile",
+      "badges": [],
+      "documentWidth": 390,
+      "emoji": [],
+      "flameSVG": 0,
+      "surfaces": [
+        {
+          "background": "linear-gradient(rgba(191, 51, 0, 0.5), rgba(0, 0, 0, 0) 38%, rgba(0, 0, 0, 0) 57%, rgba(185, 55, 0, 0.5)), linear-gradient(105deg, rgba(232, 70, 0, 0.5), rgba(238, 86, 0, 0.18)), url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(255, 255, 255)",
+          "text": "하나씩 쌓이는 나의 기록1일째, 기억을 쌓고 있어요"
+        }
+      ],
+      "width": 390
+    },
+    {
+      "name": "achievements",
+      "badges": [],
+      "documentWidth": 390,
+      "emoji": [
+        {
+          "font": "\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Noto Color Emoji\", sans-serif",
+          "text": "🔥"
+        }
+      ],
+      "flameSVG": 0,
+      "surfaces": [
+        {
+          "background": "linear-gradient(rgba(191, 51, 0, 0.5), rgba(0, 0, 0, 0) 38%, rgba(0, 0, 0, 0) 57%, rgba(185, 55, 0, 0.5)), linear-gradient(105deg, rgba(232, 70, 0, 0.5), rgba(238, 86, 0, 0.18)), url(\"http://127.0.0.1:3000/aurora.svg\")",
+          "color": "rgb(255, 255, 255)",
+          "text": "하나씩 쌓이는 나의 기록1일째, 기억을 쌓고 있어요"
+        }
+      ],
+      "width": 390
+    },
+    {
+      "name": "study",
+      "badges": [],
+      "documentWidth": 390,
+      "emoji": [],
+      "flameSVG": 0,
+      "surfaces": [],
+      "width": 390
+    },
+    {
+      "name": "cards",
+      "badges": [],
+      "documentWidth": 390,
+      "emoji": [],
+      "flameSVG": 0,
+      "surfaces": [],
+      "width": 390
+    },
+    {
+      "name": "parent-community",
+      "badges": [],
+      "documentWidth": 390,
+      "emoji": [],
+      "flameSVG": 0,
+      "surfaces": [],
+      "width": 390
+    }
+  ],
+  "console": []
+}

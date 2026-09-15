@@ -1,0 +1,29 @@
+{
+  "name": "settings-390",
+  "url": "http://127.0.0.1:3000/settings",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "설정",
+    "내 계정",
+    "부모님께 보여드릴 정보",
+    "안전한 이용"
+  ],
+  "height": 844,
+  "primary": [],
+  "selected": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "label": "정답률 공개",
+      "text": ""
+    },
+    {
+      "background": "rgb(255, 111, 15)",
+      "label": "학습 시간 공개",
+      "text": ""
+    }
+  ],
+  "width": 390
+}

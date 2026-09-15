@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const read=p=>fs.readFileSync(p,'utf8');
+for(const p of ['README.md','docs/LEARNING_METHODS.md','docs/THIRD_PARTY_NOTICES.md','docs/VERIFICATION.md','.env.example','compose.yml','public/sw.js','public/manifest.webmanifest','public/fonts/OFL-Pretendard.txt','public/fonts/OFL-Outfit.txt'])assert.ok(read(p).length>30,`Missing delivery artifact ${p}`);
+assert.equal(JSON.parse(read('package-lock.json')).packages[''].name,'memoryz');
+for(const phrase of ['DEMO_MODE=false','외부 배포는 수행하지 않았습니다','npx prisma migrate deploy','실제 외부 OAuth 로그인'])assert.ok(read('README.md').includes(phrase),phrase);
+assert.ok(read('.env.example').includes('DEMO_MODE="false"'));
+assert.ok(read('docs/VERIFICATION.md').includes('브라우저'));
+assert.ok(read('public/fonts/OFL-Pretendard.txt').includes('SIL OPEN FONT LICENSE'));
+assert.ok(read('public/fonts/OFL-Outfit.txt').includes('SIL OPEN FONT LICENSE'));
+assert.ok(fs.readdirSync('prisma/migrations').filter(p=>fs.statSync('prisma/migrations/'+p).isDirectory()).length>=2);
+console.log('MEMORYZ_DELIVERY_OK');

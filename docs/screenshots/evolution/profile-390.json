@@ -1,0 +1,28 @@
+{
+  "name": "profile-390",
+  "url": "http://127.0.0.1:3000/profile",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [
+    {
+      "color": "rgb(255, 255, 255)",
+      "text": "하나씩 쌓이는 나의 기록"
+    }
+  ],
+  "headings": [
+    "마이",
+    "지우",
+    "나의 학습과 소식"
+  ],
+  "height": 844,
+  "primary": [],
+  "selected": [
+    {
+      "background": "rgba(0, 0, 0, 0)",
+      "label": null,
+      "text": "마이"
+    }
+  ],
+  "width": 390
+}

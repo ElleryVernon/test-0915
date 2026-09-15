@@ -1,0 +1,26 @@
+{
+  "checks": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "icon": "rgb(255, 255, 255)"
+    }
+  ],
+  "documentWidth": 390,
+  "route": "/",
+  "surfaces": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "class": "home-review primary-surface",
+      "color": "rgb(255, 255, 255)",
+      "image": "none"
+    },
+    {
+      "background": "rgb(255, 111, 15)",
+      "class": "w-10 h-10 rounded-2xl primary-surface flex items-center justify-center",
+      "color": "rgb(255, 255, 255)",
+      "image": "none"
+    }
+  ],
+  "width": 390
+}

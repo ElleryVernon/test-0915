@@ -1,0 +1,34 @@
+{
+  "name": "quiz-setup-390",
+  "url": "http://127.0.0.1:3000/quiz",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "문제 풀기",
+    "오늘은 어떤 문제를풀어 볼까요?"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": "5문제 풀기"
+    }
+  ],
+  "selected": [
+    {
+      "background": "rgb(255, 255, 255)",
+      "label": null,
+      "text": "안 푼 것부터새로운 개념을 먼저 확인해요"
+    },
+    {
+      "background": "rgb(33, 33, 36)",
+      "label": null,
+      "text": "5"
+    }
+  ],
+  "width": 390
+}

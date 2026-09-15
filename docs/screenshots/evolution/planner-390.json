@@ -1,0 +1,34 @@
+{
+  "name": "planner-390",
+  "url": "http://127.0.0.1:3000/planner",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "시간표",
+    "오늘의 일정"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": " 빈 시간 추천받기"
+    }
+  ],
+  "selected": [
+    {
+      "background": "rgb(33, 33, 36)",
+      "label": "9월 15일 화요일",
+      "text": "화15"
+    },
+    {
+      "background": "rgba(0, 0, 0, 0)",
+      "label": null,
+      "text": "시간표"
+    }
+  ],
+  "width": 390
+}

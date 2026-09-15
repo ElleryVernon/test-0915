@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.env*
+!.env.example
+.unlazy/
+*.tsbuildinfo
+.data/
+uploads/
+src/lib/server/generated/
+tmp/
+*.log
+.DS_Store

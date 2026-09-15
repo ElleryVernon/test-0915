@@ -1,0 +1,198 @@
+{
+  "components": {
+    "src/components/app.tsx": [
+      "Home",
+      "BookOpen",
+      "CalendarDays",
+      "MessagesSquare",
+      "UserRound",
+      "Search",
+      "Bell",
+      "ChevronRight",
+      "ArrowRight",
+      "Layers",
+      "FileText",
+      "NotebookPen",
+      "ListChecks",
+      "Clock",
+      "Heart",
+      "Check",
+      "Sparkles",
+      "LogOut",
+      "Shield",
+      "WifiOff"
+    ],
+    "src/components/learning-settings.tsx": [
+      "Brain",
+      "Check",
+      "ChevronRight",
+      "Repeat2",
+      "Info"
+    ],
+    "src/components/onboarding.tsx": [
+      "ArrowRight",
+      "GraduationCap",
+      "Search",
+      "ShieldCheck"
+    ],
+    "src/components/social/account.tsx": [
+      "Award",
+      "Bell",
+      "BookOpen",
+      "Check",
+      "ChevronRight",
+      "Copy",
+      "Flame",
+      "Heart",
+      "Link2",
+      "LockKeyhole",
+      "Settings",
+      "ShieldCheck",
+      "Sparkles",
+      "Users",
+      "Wallet"
+    ],
+    "src/components/social/admin.tsx": [
+      "School",
+      "Search",
+      "UserRound"
+    ],
+    "src/components/social/community.tsx": [
+      "Bookmark",
+      "Check",
+      "ChevronRight",
+      "Heart",
+      "MessageCircle",
+      "MoreHorizontal",
+      "PencilLine",
+      "Search",
+      "Send",
+      "UserRound",
+      "X"
+    ],
+    "src/components/social/parent.tsx": [
+      "Check",
+      "ChevronDown",
+      "ChevronRight",
+      "Heart",
+      "Link2",
+      "LockKeyhole",
+      "Plus",
+      "ShieldCheck",
+      "Sparkles",
+      "Unlink"
+    ],
+    "src/components/social/planner.tsx": [
+      "Check",
+      "ChevronLeft",
+      "ChevronRight",
+      "Clock3",
+      "LockKeyhole",
+      "Plus",
+      "Sparkles",
+      "Trash2",
+      "TriangleAlert"
+    ],
+    "src/components/social/social-hub.tsx": [
+      "ArrowLeft",
+      "MessageCircle",
+      "Search",
+      "Send"
+    ],
+    "src/components/study/cards.tsx": [
+      "ArrowRight",
+      "Check",
+      "ChevronRight",
+      "CloudCheck",
+      "CloudOff",
+      "Layers",
+      "MoreHorizontal",
+      "Plus",
+      "RotateCcw",
+      "Trash2",
+      "WifiOff"
+    ],
+    "src/components/study/completed-subjects.tsx": [
+      "Check",
+      "ChevronRight",
+      "Plus",
+      "Search",
+      "X"
+    ],
+    "src/components/study/create-card.tsx": [
+      "Check",
+      "ImagePlus",
+      "Move",
+      "PenLine",
+      "Plus",
+      "ScanLine",
+      "Square",
+      "Trash2",
+      "Undo2"
+    ],
+    "src/components/study/essay.tsx": [
+      "ArrowDown",
+      "ArrowUp",
+      "Check",
+      "ChevronRight",
+      "Eye",
+      "GripVertical",
+      "LockKeyhole",
+      "PencilLine",
+      "RotateCcw"
+    ],
+    "src/components/study/pdf-viewer.tsx": [
+      "AlertCircle",
+      "ChevronLeft",
+      "ChevronRight",
+      "LoaderCircle",
+      "RotateCw"
+    ],
+    "src/components/study/quiz.tsx": [
+      "ArrowRight",
+      "Check",
+      "ChevronRight",
+      "BookOpen",
+      "RotateCcw",
+      "Sparkles"
+    ],
+    "src/components/study/shared.tsx": [
+      "BookOpen",
+      "ChevronRight",
+      "FileText",
+      "ImageIcon",
+      "LoaderCircle",
+      "AlertCircle"
+    ],
+    "src/components/study/subjects.tsx": [
+      "Plus",
+      "ChevronRight",
+      "BookOpen",
+      "Layers",
+      "PencilLine",
+      "Check",
+      "MoreHorizontal",
+      "FileText",
+      "Upload",
+      "Camera",
+      "Trash2",
+      "FolderOpen",
+      "GraduationCap",
+      "Sigma",
+      "Atom",
+      "Languages",
+      "Globe"
+    ],
+    "src/components/ui.tsx": [
+      "ArrowLeft",
+      "X",
+      "ChevronRight",
+      "Inbox",
+      "CalendarDays",
+      "Clock"
+    ]
+  },
+  "namedIcons": 73,
+  "unmappedIcons": [],
+  "outlineImports": 0
+}

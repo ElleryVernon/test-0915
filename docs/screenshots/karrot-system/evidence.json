@@ -1,0 +1,136 @@
+{
+  "environment": "Local Next.js production build, in-app Chromium, sample account; no ratings or posts submitted",
+  "capturedAt": "2026-09-14T23:18:03.328Z",
+  "screens": [
+    {
+      "name": "home-390",
+      "viewport": 390,
+      "documentWidth": 390,
+      "rowCount": 7,
+      "rowLeft": 20,
+      "textX": 56,
+      "trailingRight": 370,
+      "rowHeight": 80,
+      "whiteGradientTextCount": 3
+    },
+    {
+      "name": "home-360",
+      "viewport": 360,
+      "documentWidth": 360,
+      "rowCount": 7,
+      "rowLeft": 20,
+      "textX": 56,
+      "trailingRight": 340,
+      "rowHeight": 80,
+      "whiteGradientTextCount": 3
+    },
+    {
+      "name": "home-430",
+      "viewport": 430,
+      "documentWidth": 430,
+      "rowCount": 7,
+      "rowLeft": 20,
+      "textX": 56,
+      "trailingRight": 410,
+      "rowHeight": 80,
+      "whiteGradientTextCount": 3
+    },
+    {
+      "name": "profile-390",
+      "viewport": 390,
+      "documentWidth": 390,
+      "rowCount": 5,
+      "rowLeft": 20,
+      "textX": 56,
+      "trailingRight": 370,
+      "rowHeight": 64,
+      "whiteGradientTextCount": 1
+    },
+    {
+      "name": "study-390",
+      "viewport": 390,
+      "documentWidth": 390,
+      "rowCount": 0,
+      "rowLeft": null,
+      "textX": null,
+      "trailingRight": null,
+      "rowHeight": null,
+      "whiteGradientTextCount": 0
+    },
+    {
+      "name": "cards-390",
+      "viewport": 390,
+      "documentWidth": 390,
+      "rowCount": 0,
+      "rowLeft": null,
+      "textX": null,
+      "trailingRight": null,
+      "rowHeight": null,
+      "whiteGradientTextCount": 0
+    },
+    {
+      "name": "review-390",
+      "viewport": 390,
+      "documentWidth": 390,
+      "rowCount": 0,
+      "rowLeft": null,
+      "textX": null,
+      "trailingRight": null,
+      "rowHeight": null,
+      "whiteGradientTextCount": 0
+    },
+    {
+      "name": "review-answer-390",
+      "viewport": 390,
+      "documentWidth": 390,
+      "rowCount": 0,
+      "rowLeft": null,
+      "textX": null,
+      "trailingRight": null,
+      "rowHeight": null,
+      "whiteGradientTextCount": 4
+    },
+    {
+      "name": "community-390",
+      "viewport": 390,
+      "documentWidth": 390,
+      "rowCount": 0,
+      "rowLeft": null,
+      "textX": null,
+      "trailingRight": null,
+      "rowHeight": null,
+      "whiteGradientTextCount": 0
+    },
+    {
+      "name": "compose-390",
+      "viewport": 390,
+      "documentWidth": 390,
+      "rowCount": 0,
+      "rowLeft": null,
+      "textX": null,
+      "trailingRight": null,
+      "rowHeight": null,
+      "whiteGradientTextCount": 0
+    }
+  ],
+  "console": [],
+  "measurementSource": "Compact transcription of read-only DOM measurements returned by captureSystem in the browser tool. Screenshot files are direct browser captures.",
+  "communityFilter": {
+    "selectedLabel": "자유",
+    "selectedCount": 1,
+    "color": "rgb(255, 255, 255)",
+    "background": "rgb(33, 33, 36)",
+    "visibleFilteredPost": true
+  },
+  "observedColors": {
+    "body": "rgb(33, 33, 36)",
+    "gradientText": "rgb(255, 255, 255)",
+    "homeBadgesBackground": "rgb(243, 243, 243)",
+    "homeBadgesText": "rgb(82, 82, 87)",
+    "activeNavigation": "rgb(33, 33, 36)",
+    "primaryButtonBackground": "rgb(201, 77, 9)",
+    "primaryButtonText": "rgb(255, 255, 255)",
+    "homeEmoji": "🔥",
+    "homeEmojiFont": "\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Noto Color Emoji\", sans-serif"
+  }
+}

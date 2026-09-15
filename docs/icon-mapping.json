@@ -1,0 +1,299 @@
+{
+  "source": "@phosphor-icons/core",
+  "version": "2.1.1",
+  "license": "MIT",
+  "icons": {
+    "AlertCircle": {
+      "glyph": "warning-circle",
+      "weight": "fill"
+    },
+    "ArrowDown": {
+      "glyph": "arrow-down",
+      "weight": "bold"
+    },
+    "ArrowLeft": {
+      "glyph": "arrow-left",
+      "weight": "bold"
+    },
+    "ArrowRight": {
+      "glyph": "arrow-right",
+      "weight": "bold"
+    },
+    "ArrowUp": {
+      "glyph": "arrow-up",
+      "weight": "bold"
+    },
+    "Atom": {
+      "glyph": "atom",
+      "weight": "fill"
+    },
+    "Award": {
+      "glyph": "medal",
+      "weight": "fill"
+    },
+    "Bell": {
+      "glyph": "bell",
+      "weight": "fill"
+    },
+    "BookOpen": {
+      "glyph": "book-open",
+      "weight": "fill"
+    },
+    "Bookmark": {
+      "glyph": "bookmark-simple",
+      "weight": "fill"
+    },
+    "Brain": {
+      "glyph": "brain",
+      "weight": "fill"
+    },
+    "CalendarDays": {
+      "glyph": "calendar-dots",
+      "weight": "fill"
+    },
+    "Camera": {
+      "glyph": "camera",
+      "weight": "fill"
+    },
+    "Check": {
+      "glyph": "check",
+      "weight": "bold"
+    },
+    "ChevronDown": {
+      "glyph": "caret-down",
+      "weight": "bold"
+    },
+    "ChevronLeft": {
+      "glyph": "caret-left",
+      "weight": "bold"
+    },
+    "ChevronRight": {
+      "glyph": "caret-right",
+      "weight": "bold"
+    },
+    "Clock": {
+      "glyph": "clock",
+      "weight": "fill"
+    },
+    "Clock3": {
+      "glyph": "clock",
+      "weight": "fill"
+    },
+    "CloudCheck": {
+      "glyph": "cloud-check",
+      "weight": "fill"
+    },
+    "CloudOff": {
+      "glyph": "cloud-slash",
+      "weight": "fill"
+    },
+    "Copy": {
+      "glyph": "copy",
+      "weight": "fill"
+    },
+    "Eye": {
+      "glyph": "eye",
+      "weight": "fill"
+    },
+    "FileText": {
+      "glyph": "file-text",
+      "weight": "fill"
+    },
+    "Flame": {
+      "glyph": "fire",
+      "weight": "fill"
+    },
+    "FolderOpen": {
+      "glyph": "folder-open",
+      "weight": "fill"
+    },
+    "Globe": {
+      "glyph": "globe-hemisphere-east",
+      "weight": "fill"
+    },
+    "GraduationCap": {
+      "glyph": "graduation-cap",
+      "weight": "fill"
+    },
+    "GripVertical": {
+      "glyph": "dots-six-vertical",
+      "weight": "bold"
+    },
+    "Heart": {
+      "glyph": "heart",
+      "weight": "fill"
+    },
+    "Home": {
+      "glyph": "house",
+      "weight": "fill"
+    },
+    "ImageIcon": {
+      "glyph": "image",
+      "weight": "fill"
+    },
+    "ImagePlus": {
+      "glyph": "image-square",
+      "weight": "fill"
+    },
+    "Inbox": {
+      "glyph": "tray",
+      "weight": "fill"
+    },
+    "Info": {
+      "glyph": "info",
+      "weight": "fill"
+    },
+    "Languages": {
+      "glyph": "translate",
+      "weight": "bold"
+    },
+    "Layers": {
+      "glyph": "stack",
+      "weight": "fill"
+    },
+    "Link2": {
+      "glyph": "link",
+      "weight": "bold"
+    },
+    "ListChecks": {
+      "glyph": "list-checks",
+      "weight": "fill"
+    },
+    "LoaderCircle": {
+      "glyph": "spinner-gap",
+      "weight": "bold"
+    },
+    "LockKeyhole": {
+      "glyph": "lock-key",
+      "weight": "fill"
+    },
+    "LogOut": {
+      "glyph": "sign-out",
+      "weight": "bold"
+    },
+    "MessageCircle": {
+      "glyph": "chat-circle-dots",
+      "weight": "fill"
+    },
+    "MessagesSquare": {
+      "glyph": "chats-circle",
+      "weight": "fill"
+    },
+    "MoreHorizontal": {
+      "glyph": "dots-three",
+      "weight": "bold"
+    },
+    "Move": {
+      "glyph": "arrows-out-cardinal",
+      "weight": "bold"
+    },
+    "NotebookPen": {
+      "glyph": "notepad",
+      "weight": "fill"
+    },
+    "PenLine": {
+      "glyph": "pen",
+      "weight": "fill"
+    },
+    "PencilLine": {
+      "glyph": "pencil-simple",
+      "weight": "fill"
+    },
+    "Plus": {
+      "glyph": "plus",
+      "weight": "bold"
+    },
+    "Repeat2": {
+      "glyph": "repeat",
+      "weight": "bold"
+    },
+    "RotateCcw": {
+      "glyph": "arrow-counter-clockwise",
+      "weight": "bold"
+    },
+    "RotateCw": {
+      "glyph": "arrow-clockwise",
+      "weight": "bold"
+    },
+    "ScanLine": {
+      "glyph": "scan",
+      "weight": "bold"
+    },
+    "School": {
+      "glyph": "buildings",
+      "weight": "fill"
+    },
+    "Search": {
+      "glyph": "magnifying-glass",
+      "weight": "bold"
+    },
+    "Send": {
+      "glyph": "paper-plane-right",
+      "weight": "fill"
+    },
+    "Settings": {
+      "glyph": "gear-six",
+      "weight": "fill"
+    },
+    "Shield": {
+      "glyph": "shield",
+      "weight": "fill"
+    },
+    "ShieldCheck": {
+      "glyph": "shield-check",
+      "weight": "fill"
+    },
+    "Sigma": {
+      "glyph": "sigma",
+      "weight": "bold"
+    },
+    "Sparkles": {
+      "glyph": "sparkle",
+      "weight": "fill"
+    },
+    "Square": {
+      "glyph": "square",
+      "weight": "fill"
+    },
+    "Trash2": {
+      "glyph": "trash",
+      "weight": "fill"
+    },
+    "TriangleAlert": {
+      "glyph": "warning",
+      "weight": "fill"
+    },
+    "Undo2": {
+      "glyph": "arrow-u-up-left",
+      "weight": "bold"
+    },
+    "Unlink": {
+      "glyph": "link-break",
+      "weight": "bold"
+    },
+    "Upload": {
+      "glyph": "upload-simple",
+      "weight": "bold"
+    },
+    "UserRound": {
+      "glyph": "user",
+      "weight": "fill"
+    },
+    "Users": {
+      "glyph": "users",
+      "weight": "fill"
+    },
+    "Wallet": {
+      "glyph": "wallet",
+      "weight": "fill"
+    },
+    "WifiOff": {
+      "glyph": "wifi-slash",
+      "weight": "bold"
+    },
+    "X": {
+      "glyph": "x",
+      "weight": "bold"
+    }
+  }
+}

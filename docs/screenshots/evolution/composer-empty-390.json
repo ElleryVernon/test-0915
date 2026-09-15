@@ -1,0 +1,47 @@
+{
+  "name": "composer-empty-390",
+  "url": "http://127.0.0.1:3000/community",
+  "dialogs": [
+    {
+      "height": 844,
+      "title": "질문하기질문자유수시정시공부 팁익명으로서로를 존중하는 말로 이야기",
+      "top": 0,
+      "width": 390
+    }
+  ],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "커뮤니티",
+    "질문하기"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": "질문하기"
+    },
+    {
+      "background": "rgb(243, 243, 243)",
+      "color": "rgb(165, 165, 168)",
+      "disabled": true,
+      "text": "올리기"
+    }
+  ],
+  "selected": [
+    {
+      "background": "rgb(33, 33, 36)",
+      "label": null,
+      "text": "공부 팁"
+    },
+    {
+      "background": "rgba(0, 0, 0, 0)",
+      "label": null,
+      "text": "커뮤니티"
+    }
+  ],
+  "width": 390
+}

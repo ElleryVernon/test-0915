@@ -1,0 +1,23 @@
+{
+  "name": "cards-390",
+  "url": "http://127.0.0.1:3000/flashcards",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "복습 카드",
+    "모든 카드 14"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": "오늘 복습 10장 복습하기"
+    }
+  ],
+  "selected": [],
+  "width": 390
+}

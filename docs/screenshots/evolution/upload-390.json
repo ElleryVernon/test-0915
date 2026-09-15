@@ -1,0 +1,47 @@
+{
+  "name": "upload-390",
+  "url": "http://127.0.0.1:3000/subjects/demo-biology",
+  "dialogs": [
+    {
+      "height": 645.0546875,
+      "title": "생명과학Ⅰ 자료 올리기수업 노트를 올리거나 글을 붙여 넣어 주세",
+      "top": 198.9453125,
+      "width": 390
+    }
+  ],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "생명과학Ⅰ",
+    "생명과학Ⅰ 자료 올리기"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": "자료 올리기"
+    },
+    {
+      "background": "rgb(243, 243, 243)",
+      "color": "rgb(165, 165, 168)",
+      "disabled": true,
+      "text": "자료 저장하기"
+    }
+  ],
+  "selected": [
+    {
+      "background": "rgb(33, 33, 36)",
+      "label": null,
+      "text": "자료 3"
+    },
+    {
+      "background": "rgba(0, 0, 0, 0)",
+      "label": null,
+      "text": "학습"
+    }
+  ],
+  "width": 390
+}

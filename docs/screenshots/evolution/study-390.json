@@ -1,0 +1,30 @@
+{
+  "name": "study-390",
+  "url": "http://127.0.0.1:3000/study",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "학습",
+    "10장의 카드가 기다려요",
+    "내 과목"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": "복습 시작"
+    }
+  ],
+  "selected": [
+    {
+      "background": "rgba(0, 0, 0, 0)",
+      "label": null,
+      "text": "학습"
+    }
+  ],
+  "width": 390
+}

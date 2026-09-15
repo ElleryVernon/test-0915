@@ -1,0 +1,28 @@
+{
+  "name": "community-detail-390",
+  "url": "http://127.0.0.1:3000/community",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "공부 팁",
+    "아는 것 같은데 설명은 안 되는 사람 🙋",
+    "댓글 2"
+  ],
+  "height": 844,
+  "primary": [],
+  "selected": [
+    {
+      "background": "rgb(33, 33, 36)",
+      "label": null,
+      "text": "공감 1"
+    },
+    {
+      "background": "rgba(0, 0, 0, 0)",
+      "label": null,
+      "text": "커뮤니티"
+    }
+  ],
+  "width": 390
+}

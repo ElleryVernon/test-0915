@@ -1,0 +1,29 @@
+{
+  "name": "quiz-choice-390",
+  "url": "http://127.0.0.1:3000/quiz",
+  "dialogs": [],
+  "documentWidth": 390,
+  "emoji": [],
+  "gradient": [],
+  "headings": [
+    "1 / 5",
+    "[개념] 항상성의 의미로 가장 적절한 것은 무엇인가?"
+  ],
+  "height": 844,
+  "primary": [
+    {
+      "background": "rgb(255, 111, 15)",
+      "color": "rgb(255, 255, 255)",
+      "disabled": false,
+      "text": "정답 확인"
+    }
+  ],
+  "selected": [
+    {
+      "background": "rgb(255, 255, 255)",
+      "label": null,
+      "text": "1외부 환경이 변해도 몸의 내부 환경을 일정하게 유지하는 성질"
+    }
+  ],
+  "width": 390
+}
