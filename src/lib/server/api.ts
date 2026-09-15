@@ -5,12 +5,12 @@ import { ApiError } from './errors';
 import { createSession,currentUser,protectMutation,readSessionToken,requireRole,SESSION_COOKIE,tokenHash } from './auth';
 import { asCard,bootstrap,postsFor,profile,selectedChild } from './bootstrap';
 import { conflict,gradeEssay,proposePlans,validDate } from './algorithms';
-import { generateItems,gradeWithAi,planWithAi } from './ai';
+import { generateItems,gradeWithAi,planWithAi,RULE_METHOD } from './ai';
 import { seedDemo,DEMO_STUDENT,DEMO_PARENT,DEMO_ADMIN } from '../../../prisma/seed';
 import { Prisma, type User } from './generated/client';
 import { handleUpload, readUpload } from './uploads';
 import { configuredProviders } from '../oauth';
-import { scheduleCard } from '../srs';
+import { isDue, scheduleCard } from '../srs';
 import { aiAvailable } from './provider';
 import { executeAiRun,readAiRun } from './ai-runs';
 import { runTypedSkill } from './skill-runtime';
@@ -225,7 +225,7 @@ export async function handleApi(request:Request) {
       requireRole(user,'STUDENT');
       if(method==='DELETE'&&resourceId){const result=await db.schedule.deleteMany({where:{id:resourceId,userId:user.id}});if(!result.count)throw new ApiError(404,'일정을 찾을 수 없어요.');return ok({deleted:true});}
       if(method==='POST'||method==='PATCH') {
-        const schema=z.object({title:text(100),date,start:time,end:time,kind:z.enum(['FIXED','FLEXIBLE']),subjectId:id.optional(),done:z.boolean().optional()});
+        const schema=z.object({title:text(100),date,start:time,end:time,kind:z.enum(['FIXED','FLEXIBLE']),subjectId:id.nullable().optional(),done:z.boolean().optional()});
         const input=await body(request,method==='PATCH'?schema.partial():schema);
         if(input.subjectId)await ownedSubject(user,input.subjectId);
         const result=await locked(user.id,async tx=>{
@@ -236,7 +236,7 @@ export async function handleApi(request:Request) {
           if(merged.start>=merged.end)throw new ApiError(400,'종료 시간은 시작 시간 이후여야 해요.');
           const others=await tx.schedule.findMany({where:{userId:user.id,date:merged.date,...(resourceId?{id:{not:resourceId}}:{})}});
           if(others.some(other=>conflict({date:merged.date!,start:merged.start!,end:merged.end!},other)))throw new ApiError(409,'기존 일정과 시간이 겹쳐요. 다른 시간을 골라 주세요.');
-          const data={title:merged.title,date:merged.date,start:merged.start,end:merged.end,kind:merged.kind,subjectId:merged.subjectId,done:merged.done??false};
+          const data={title:merged.title,date:merged.date,start:merged.start,end:merged.end,kind:merged.kind,subjectId:merged.subjectId??null,done:merged.done??false};
           return existing?tx.schedule.update({where:{id:existing.id},data}):tx.schedule.create({data:{...data,userId:user.id}});
         });
         return ok(result,method==='POST'?201:200);
@@ -244,11 +244,13 @@ export async function handleApi(request:Request) {
     }
     if(resource==='planner'&&resourceId==='suggest'&&method==='POST') {
       requireRole(user,'STUDENT');
-      const schema=z.object({date});
+      const schema=z.object({date,after:time.optional()});
       const {requestId,...input}=await body(request,schema.extend({requestId:z.string().uuid().optional()}));
       const run=await executeAiRun({userId:user.id,requestId,kind:'planner',input},async execution=>{
-        const [schedules,subjects]=await execution.runtime.tool('LOAD_CONTEXT',input,schema,()=>Promise.all([db.schedule.findMany({where:{userId:user.id,date:input.date}}),db.subject.findMany({where:{userId:user.id,deleted:false}})]));
-        const result=aiAvailable()?await planWithAi(input.date,schedules,subjects):await runTypedSkill('planner',input,schema,()=>({...proposePlans(input.date,schedules,subjects),method:'규칙 기반 일정 추천'}),value=>z.object({plans:z.array(z.object({name:z.string(),blocks:z.array(z.object({title:z.string(),date,start:time,end:time,kind:z.enum(['FIXED','FLEXIBLE']),subjectId:id.optional(),done:z.boolean()}))})),method:z.string()}).parse(value));
+        const [schedules,subjects,cards]=await execution.runtime.tool('LOAD_CONTEXT',input,schema,()=>Promise.all([db.schedule.findMany({where:{userId:user.id,date:input.date}}),db.subject.findMany({where:{userId:user.id,deleted:false}}),db.card.findMany({where:{userId:user.id,deleted:false},select:{subjectId:true,bucket:true,nextReviewAt:true,fsrs:true}})]));
+        const now=Date.now();
+        const planSubjects=subjects.map(subject=>({id:subject.id,name:subject.name,dueCards:cards.filter(card=>card.subjectId===subject.id&&isDue({deleted:false,bucket:card.bucket,fsrs:card.fsrs,nextReviewAt:card.nextReviewAt.toISOString()} as Parameters<typeof isDue>[0],now)).length}));
+        const result=aiAvailable()?await planWithAi(input.date,schedules,planSubjects,input.after):await runTypedSkill('planner',input,schema,()=>({...proposePlans(input.date,schedules,planSubjects,input.after),method:RULE_METHOD}),value=>z.object({plans:z.array(z.object({name:z.string(),reason:z.string().optional(),blocks:z.array(z.object({title:z.string(),date,start:time,end:time,kind:z.enum(['FIXED','FLEXIBLE']),subjectId:id.optional(),done:z.boolean()}))})),method:z.string()}).parse(value));
         return execution.commit(async()=>result);
       });
       return ok(run.result,200,{'X-AI-Request-Id':run.requestId});

@@ -172,7 +172,7 @@ async function verifyProvider() {
   const png=await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="180"><rect width="800" height="180" fill="white"/><text x="36" y="112" font-family="Arial" font-size="56" fill="black">MEMORYZ TEST 42</text></svg>')).png().toBuffer();
   const date='2026-09-15';
   const existing=[{date,start:'08:00',end:'16:00',title:'학교 수업'},{date,start:'18:00',end:'19:00',title:'학원'}];
-  const subjects=[{id:'synthetic-biology',name:'생명과학'},{id:'synthetic-math',name:'수학'}];
+  const subjects=[{id:'synthetic-biology',name:'생명과학',dueCards:12},{id:'synthetic-math',name:'수학',dueCards:0}];
   const checks=await captureProviderUsage(async()=>{
     const results=await Promise.allSettled([
       generateItems(source,'quiz',1),generateItems(source,'essay',1),generateItems(source,'cards',1),
@@ -185,12 +185,14 @@ async function verifyProvider() {
     const values=results.map(result=>(result as PromiseFulfilledResult<unknown>).value);
     for(const value of values.slice(0,3)){const items=value as {citation:string}[];assert.equal(items.length,1);assert.equal(hasCitation(source,items[0].citation),true);}
     const grade=values[3] as {score:number;method:string;matched:string[]};assert.equal(grade.method,'AI');assert.ok(grade.score>=60);assert.ok(grade.matched.length>=3);
-    const plans=values[4] as {plans:{blocks:unknown[]}[];method:string};assert.equal(plans.method,'AI');assert.equal(plans.plans.length,2);assert.ok(plans.plans.every(plan=>plan.blocks.length>0));
+    const plans=values[4] as {plans:{blocks:unknown[]}[];method:string;dropped:number};assert.ok(['AI','AI+규칙'].includes(plans.method),`planner used the AI result (${plans.method}, dropped ${plans.dropped})`);assert.equal(plans.plans.length,2);assert.ok(plans.plans.every(plan=>plan.blocks.length>0));
     assert.match(values[5] as string,/MEMORYZ\s+TEST\s+42/i);
-    return {quiz:1,essay:1,cards:1,gradeScore:grade.score,plans:2,ocr:'MEMORYZ TEST 42'};
+    return {quiz:1,essay:1,cards:1,gradeScore:grade.score,plans:2,planMethod:plans.method,planDropped:plans.dropped,ocr:'MEMORYZ TEST 42'};
   });
   assert.equal(checks.requests.length,6);
   assert.ok(checks.requests.every(request=>request.model.includes('gpt-5.6-luna')&&request.promptTokens>0&&request.completionTokens>0));
+  const servedBy=checks.requests.map(request=>request.provider);
+  assert.ok(servedBy.every(provider=>['Amazon Bedrock','OpenAI'].includes(provider)),`Only Bedrock us-east-1 or the openai/fast fallback may serve Luna: ${servedBy.join(', ')}`);
   const evidence={verifiedAt:new Date().toISOString(),model:process.env.OPENROUTER_MODEL,reasoning:'high',checks:checks.value,requests:checks.requests,totals:{promptTokens:checks.requests.reduce((sum,item)=>sum+item.promptTokens,0),completionTokens:checks.requests.reduce((sum,item)=>sum+item.completionTokens,0),cost:checks.requests.every(item=>item.cost!==null)?checks.requests.reduce((sum,item)=>sum+(item.cost??0),0):null}};
   await mkdir(path.join(process.cwd(),'.data'),{recursive:true});
   await writeFile(path.join(process.cwd(),'.data','openrouter-verification.json'),JSON.stringify(evidence,null,2));

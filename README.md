@@ -31,7 +31,7 @@ npm start
 - 키워드 선택 → 논리 순서 → 답안 작성 → 피드백의 서술형 학습
 - 개념·관계·문제·블라인드 카드, 이미지 가림 영역 편집, 휴지통 복구
 - 고정 간격 및 FSRS 맞춤 복습, IndexedDB 오프라인 카드와 UUID 중복 방지 동기화
-- 시간표, 충돌 방지, 두 가지 학습 일정 제안
+- 시간표: 지금 선과 진행률, 60분 이상 빈 시간 채우기, 겹침 한 탭 수정, 학교 시간 템플릿, 근거가 있는 두 가지 학습 일정 제안([시간표 리뷰](docs/SCHEDULE_REVIEW.md))
 - 역할별 커뮤니티, 댓글·저장·신고·차단·팔로우·쪽지
 - 학부모 연결 코드, 학생이 선택한 공개 범위의 통계, 응원과 포인트
 - 프로필, 공개 범위, 알림, 관리자 콘텐츠 관리
@@ -50,7 +50,7 @@ npm start
 
 OAuth: Google·Kakao·Naver·Apple의 CLIENT_ID/CLIENT_SECRET, AUTH_SECRET(무작위 32바이트 이상), APP_URL을 설정합니다. 콜백은 `APP_URL/api/auth/{provider}/callback`입니다. Apple secret은 유효한 ES256 JWT를 공급하고 만료 전에 교체합니다. 공급자에서 리다이렉트 주소를 등록해야 합니다. HTTP-only 세션, OAuth state·nonce 검증과 공급자별 불변 계정 ID 연결을 사용합니다.
 
-OpenRouter: `OPENROUTER_API_KEY`, `OPENROUTER_MODEL=openai/gpt-5.6-luna`, `OPENROUTER_REASONING_EFFORT=high`를 설정합니다. 생성 결과를 스키마와 원문 근거로 검증합니다. 이미지 OCR·문항 생성·의미 기반 서술형 채점·일정 제안에 사용됩니다. 키가 없으면 생성은 명시적으로 사용할 수 없다고 안내합니다. 기존 서술형은 키워드·순서·분량 기준의 연습 피드백으로 동작하고 일정 제안은 규칙 기반이라고 표시합니다. 실제 OpenRouter 생성·의미 채점·일정·OCR 호출을 검증했습니다. 문항 생성·채점·일정 제안은 사용자별 UUID와 PostgreSQL 실행 기록으로 중복 호출을 막고, 새로고침 후 저장된 결과를 복구합니다. [AI 실행 설계](docs/AI_ARCHITECTURE.md)에 스킬·도구·재시도 경계를 정리했습니다. 실제 외부 OAuth 로그인은 공급자 자격 증명이 없어 검증하지 않았습니다.
+OpenRouter: `OPENROUTER_API_KEY`, `OPENROUTER_MODEL=openai/gpt-5.6-luna`, `OPENROUTER_REASONING_EFFORT=high`를 설정합니다. 공급자는 Amazon Bedrock us-east-1을 먼저 쓰고 실패하면 OpenAI fast로만 넘깁니다(`OPENROUTER_PROVIDER_ORDER`로 변경 가능). 생성 결과를 스키마와 원문 근거로 검증합니다. 이미지 OCR·문항 생성·의미 기반 서술형 채점·일정 제안에 사용됩니다. 키가 없으면 생성은 명시적으로 사용할 수 없다고 안내합니다. 기존 서술형은 키워드·순서·분량 기준의 연습 피드백으로 동작하고 일정 제안은 규칙 기반이라고 표시합니다. 실제 OpenRouter 생성·의미 채점·일정·OCR 호출을 검증했습니다. 문항 생성·채점·일정 제안은 사용자별 UUID와 PostgreSQL 실행 기록으로 중복 호출을 막고, 새로고침 후 저장된 결과를 복구합니다. [AI 실행 설계](docs/AI_ARCHITECTURE.md)에 스킬·도구·재시도 경계를 정리했습니다. 실제 외부 OAuth 로그인은 공급자 자격 증명이 없어 검증하지 않았습니다.
 
 ## 배포 조건
 

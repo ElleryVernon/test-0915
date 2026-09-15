@@ -1,15 +1,8 @@
 'use client';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import {
-  BookOpen,
-  ChevronRight,
-  FileText,
-  ImageIcon,
-  LoaderCircle,
-  AlertCircle,
-} from '@/components/icons';
+import { BookOpen, ChevronRight, FileText, ImageIcon, LoaderCircle } from '@/components/icons';
 import type { AppData, ScreenProps, Material } from '@/lib/contracts';
-import { Button, Sheet } from '@/components/ui';
+import { Button, ErrorNote, Sheet } from '@/components/ui';
 import { api } from '@/lib/api';
 import {
   acknowledgeAiTask,
@@ -51,17 +44,7 @@ export function useAction() {
   }
   return { busy, error, setError, run };
 }
-export function ErrorNote({ error }: { error?: string }) {
-  return error ? (
-    <div
-      role="alert"
-      className="flex items-start gap-2 rounded-2xl bg-surface p-4 text-[14px] font-medium leading-relaxed"
-    >
-      <AlertCircle size={18} className="mt-0.5 shrink-0" />
-      <span>{error}</span>
-    </div>
-  ) : null;
-}
+export { ErrorNote };
 export function BusyText({ children }: { children: ReactNode }) {
   return (
     <span className="inline-flex items-center justify-center gap-2">

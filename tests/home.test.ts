@@ -171,6 +171,15 @@ test('agenda prioritizes ongoing/future study and distinguishes overdue work', (
   assert.equal(b.next, undefined);
   assert.equal(b.total - b.done, 3);
   assert.equal(homeAgenda({ schedules: [] }, new Date()).total, 0);
+  const withFixed = [
+    { ...schedule('school', '08:30', '16:00'), kind: 'FIXED' as const },
+    schedule('study', '17:00', '18:00', true),
+  ];
+  const school = homeAgenda({ schedules: withFixed }, new Date('2026-09-15T01:00:00Z'));
+  assert.equal(school.next?.id, 'school');
+  assert.equal(school.label, '오전 8:30 · 지금 일정', 'a fixed block is not called study');
+  const evening = homeAgenda({ schedules: withFixed }, new Date('2026-09-15T10:00:00Z'));
+  assert.deepEqual([evening.done, evening.total], [1, 1], 'fixed blocks are never unfinished work');
 });
 test('quiz resume counts distinct answered questions and opens only remaining questions', () => {
   const data = fixture();

@@ -37,7 +37,7 @@ import {
   materialMeta,
 } from '@/lib/home';
 import { readEssayDrafts, type EssayDraft } from '@/lib/study-drafts';
-import { relativeTime } from './social/helpers';
+import { formatMinutes, relativeTime } from './social/helpers';
 import { wrongQuestions, wrongEssays } from './study/logic';
 import { cachedCards, clearStudyCache, pendingReviews, syncReviews } from '@/lib/offline';
 import type { AppData, Role, ScreenProps } from '@/lib/contracts';
@@ -340,7 +340,7 @@ export function HomeScreen({ data, navigate, toast, refresh }: ScreenProps) {
               {agenda.next ? (
                 <>
                   <span className="home-agenda-title">{agenda.next.title}</span>
-                  <span className="home-agenda-duration">· {agenda.duration}분</span>
+                  <span className="home-agenda-duration">· {formatMinutes(agenda.duration)}</span>
                 </>
               ) : agenda.total ? (
                 agenda.done === agenda.total ? (

@@ -50,3 +50,9 @@ Codex 브라우저 모바일 뷰포트에서 실제 UI를 클릭·입력·업로
 실제 브라우저 서술형은 100점·핵심 키워드 4/4의 OpenRouter 피드백과 원문 근거를 표시했습니다. AI Plan B의 4개 블록을 저장해 오늘 일정은 총 5개가 됐습니다. quiz/planner/grade AiRun 각각 1개가 같은 요청을 유지한 채 COMPLETED로 확인됐습니다. 최종 홈 브라우저 콘솔에 error/warn은 없었습니다.
 
 관리자 권한의 신고 처리·계정 정지는 합성 관리자 계정을 사용한 API 검증이며, 실제 관리자 브라우저 로그인이나 외부 OAuth 성공으로 표현하지 않습니다.
+
+## 시간표 리뷰 적용 (2026-09-15)
+
+[시간표 리뷰 적용](SCHEDULE_REVIEW.md)에 항목별 반영 내용과 검증 범위를 기록했습니다. 단위 테스트 50개, DB handler 검사 102개, 새 빌드 대상 실제 HTTP 검사 48개가 통과했습니다. 실제 OpenRouter 일정 추천 1회도 확인했습니다. 브라우저 검증에서는 샘플 계정을 바꾸지 않았습니다. 대신 검증용 격리 학생 계정을 만들어 확인한 뒤 삭제했습니다. 캡처는 [시간표 리뷰 갤러리](screenshots/schedule-review/index.html)에 있습니다.
+
+공급자 경로 변경 후 실제 OpenRouter 검증(2026-09-15): `scripts/backend-check.ts --provider-only`로 문항·서술형·카드·의미 채점·일정·이미지 OCR을 한 번씩 호출했습니다. 여섯 요청 모두 Amazon Bedrock이 처리했고 모든 검증을 통과했습니다(총 $0.0049, `.data/openrouter-verification.json`). 대체 경로는 `openai/fast`만 지정한 작은 요청 1회로 확인했습니다. OpenAI가 처리했고 같은 함수 호출 형식이 통과했습니다.

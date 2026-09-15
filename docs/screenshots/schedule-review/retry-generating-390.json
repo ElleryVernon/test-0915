@@ -1,0 +1,62 @@
+{
+  "intercepted": 1,
+  "firstWorking": {
+    "sheet": null,
+    "sheetError": null,
+    "plans": [],
+    "button": "빈 시간과 복습 카드를 보는 중",
+    "loading": true,
+    "filling": 2,
+    "toast": "빈 시간에 맞는 공부를 찾고 있어요",
+    "oldInSheetLoader": false
+  },
+  "failed": {
+    "sheet": "추천을 만들지 못했어요",
+    "sheetError": "검증용으로 첫 추천을 실패시켰어요.",
+    "plans": [],
+    "button": "빈 2시간 30분 채우기",
+    "loading": false,
+    "filling": 0,
+    "toast": "빈 시간에 맞는 공부를 찾고 있어요",
+    "oldInSheetLoader": false
+  },
+  "errorSheet": {
+    "title": "추천을 만들지 못했어요",
+    "note": "검증용으로 첫 추천을 실패시켰어요.",
+    "noteIsErrorNote": true,
+    "nestedOldBox": false,
+    "buttons": [
+      [
+        "새로 추천받기",
+        "btn-primary"
+      ],
+      [
+        "직접 일정 추가하기",
+        "btn-ghost"
+      ]
+    ]
+  },
+  "retryWorking": {
+    "sheet": null,
+    "sheetError": null,
+    "plans": [],
+    "button": "빈 시간과 복습 카드를 보는 중",
+    "loading": true,
+    "filling": 2,
+    "toast": "추천을 다시 만들고 있어요",
+    "oldInSheetLoader": false
+  },
+  "result": {
+    "sheet": "빈 2시간 30분을 채워요",
+    "sheetError": null,
+    "plans": [
+      "복습 우선",
+      "골고루"
+    ],
+    "button": "빈 2시간 30분 채우기",
+    "loading": false,
+    "filling": 0,
+    "toast": null,
+    "oldInSheetLoader": false
+  }
+}

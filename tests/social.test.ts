@@ -2,10 +2,18 @@ import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import type { AppData, Post, Schedule } from '../src/lib/contracts';
 import { recoverPlannerResult } from '../src/components/social/planner';
+import { conflictFixes, findFreeSlot, formatMinutes } from '../src/lib/schedule';
 import {
+  ceilTime,
   dateKey,
   durationLabel,
+  josa,
+  monthGrid,
+  plannerRows,
+  defaultSlot,
+  recentSchedules,
   relativeTime,
+  studyProgress,
   scheduleConflicts,
   scheduleError,
   scheduleGaps,
@@ -225,4 +233,219 @@ test('planner recovery preserves original date and resumes only unsaved blocks',
     'recover the plan whose persisted blocks identify the previous selection',
   );
   console.log('planner recovery verification passed');
+});
+
+const item = (id: string, start: string, end: string, extra: Partial<Schedule> = {}): Schedule => ({
+  ...schedule(id, start, end),
+  ...extra,
+});
+
+test('timetable rows place now, >=60 minute gaps and inline conflicts before the block they precede', () => {
+  const day = [
+    item('math-1', '07:00', '07:25', { done: true }),
+    item('english-1', '08:45', '09:10'),
+    item('school', '09:10', '13:30', { kind: 'FIXED' }),
+    item('math-2', '13:30', '13:55'),
+    item('history-2', '14:05', '14:30'),
+    item('bio', '17:00', '18:00'),
+    item('academy', '17:30', '19:00', { kind: 'FIXED', title: '영어 학원' }),
+    item('math-3', '20:00', '20:25'),
+    item('history-3', '20:35', '21:00'),
+    item('english-3', '21:10', '21:35'),
+    item('bio-3', '21:45', '22:10'),
+  ];
+  const rows = plannerRows(day, { now: '08:52' });
+  const shape = rows.map((row) =>
+    row.type === 'item'
+      ? row.schedule.id
+      : row.type === 'gap'
+        ? `gap ${row.start}-${row.end}`
+        : row.type,
+  );
+  assert.deepEqual(shape, [
+    'math-1',
+    'now',
+    'english-1',
+    'school',
+    'math-2',
+    'history-2',
+    'gap 14:30-17:00',
+    'bio',
+    'conflict',
+    'academy',
+    'gap 19:00-20:00',
+    'math-3',
+    'history-3',
+    'english-3',
+    'bio-3',
+  ]);
+  assert.equal(
+    rows.some((row) => row.type === 'gap' && row.start === '07:25'),
+    false,
+    'a gap that has already passed is not offered for filling',
+  );
+  assert.equal(rows.find((row) => row.type === 'item' && row.current)?.type, 'item');
+  assert.equal(
+    (rows.find((row) => row.type === 'item' && row.current) as { schedule: Schedule }).schedule.id,
+    'english-1',
+  );
+  const conflict = rows.find((row) => row.type === 'conflict')!;
+  assert.ok(conflict.type === 'conflict');
+  assert.equal(conflict.movable?.id, 'bio', 'the self-study block moves, the fixed academy stays');
+  assert.equal(conflict.other.id, 'academy');
+  assert.equal(conflict.overlap, 30);
+  assert.deepEqual(conflict.fix, { start: '19:00', end: '20:00', kind: 'move' });
+  assert.equal(
+    rows
+      .filter((row) => row.type === 'gap')
+      .reduce((sum, row) => sum + (row.type === 'gap' ? row.minutes : 0), 0),
+    210,
+    'free time shown on the CTA is the sum of the listed gaps (3h30m)',
+  );
+
+  const afternoon = plannerRows(day, { now: '15:00' });
+  const gap = afternoon.find((row) => row.type === 'gap');
+  assert.deepEqual(
+    gap && gap.type === 'gap' ? [gap.start, gap.end, gap.minutes] : null,
+    ['15:00', '17:00', 120],
+    'only the unpassed part of a gap counts',
+  );
+  assert.equal(afternoon.findIndex((row) => row.type === 'now') + 1, afternoon.indexOf(gap!));
+  const night = plannerRows(day, { now: '23:00' });
+  assert.equal(night.at(-1)?.type, 'now', 'after the last block the line closes the list');
+  const otherDay = plannerRows(day);
+  assert.equal(
+    otherDay.some((row) => row.type === 'now'),
+    false,
+  );
+  assert.deepEqual(
+    otherDay.flatMap((row) => (row.type === 'gap' ? [row.minutes] : [])),
+    [80, 150, 60],
+    'without a clock every gap of at least an hour is listed',
+  );
+  const schoolOnly = [item('school', '08:30', '16:00', { kind: 'FIXED' })];
+  assert.deepEqual(
+    plannerRows(schoolOnly).map((row) =>
+      row.type === 'gap' ? [row.start, row.end, row.minutes] : row.type,
+    ),
+    ['item', ['16:00', '22:00', 360]],
+    'the evening after school is free time to fill',
+  );
+  assert.deepEqual(
+    plannerRows(schoolOnly, { now: '17:10' }).map((row) =>
+      row.type === 'gap' ? `gap ${row.start}` : row.type,
+    ),
+    ['item', 'now', 'gap 17:10'],
+  );
+  assert.equal(
+    plannerRows([item('late', '20:00', '21:30')]).some((row) => row.type === 'gap'),
+    false,
+    'less than an hour before 22:00 is not offered',
+  );
+  assert.equal(plannerRows(schoolOnly, { now: '22:30' }).at(-1)?.type, 'now');
+  console.log('schedule review rows verified');
+});
+
+test('conflict fixes shrink before the blocker or move to the next time that overlaps nothing', () => {
+  const academy = { start: '17:30', end: '19:00' };
+  const evening = { start: '19:00', end: '19:40' };
+  assert.deepEqual(conflictFixes({ start: '17:00', end: '18:00' }, [academy]), {
+    shrink: { start: '17:00', end: '17:30' },
+    move: { start: '19:00', end: '20:00' },
+  });
+  assert.deepEqual(
+    conflictFixes({ start: '17:00', end: '18:00' }, [academy, evening]).move,
+    { start: '19:40', end: '20:40' },
+    'the move skips every other schedule, not only the blocker',
+  );
+  assert.deepEqual(
+    conflictFixes({ start: '18:30', end: '19:30' }, [academy]).shrink,
+    { start: '19:00', end: '19:30' },
+    'when the start is covered, keep the end instead',
+  );
+  assert.equal(
+    conflictFixes({ start: '17:25', end: '18:00' }, [academy]).shrink,
+    undefined,
+    'a remainder shorter than 10 minutes is not offered',
+  );
+  assert.deepEqual(
+    conflictFixes({ start: '17:00', end: '17:30' }, [academy]),
+    {},
+    'touching is not overlapping',
+  );
+  assert.equal(
+    conflictFixes({ start: '22:30', end: '23:30' }, [{ start: '22:00', end: '23:50' }]).move,
+    undefined,
+    'no move past the end of the day',
+  );
+  assert.deepEqual(findFreeSlot([academy], 17 * 60, 60), { start: '19:00', end: '20:00' });
+  assert.deepEqual(findFreeSlot([academy], 16 * 60, 60), { start: '16:00', end: '17:00' });
+  assert.equal(findFreeSlot([{ start: '00:00', end: '23:59' }], 0, 25), null);
+  console.log('schedule review fixes verified');
+});
+
+test('study progress counts self-study only and particles follow the final consonant', () => {
+  const day = [
+    item('a', '07:00', '07:25', { done: true }),
+    item('b', '07:35', '08:00', { done: true }),
+    item('c', '08:10', '08:35', { done: true }),
+    item('d', '17:00', '18:00'),
+    item('school', '09:00', '13:30', { kind: 'FIXED', done: true }),
+  ];
+  assert.deepEqual(studyProgress(day), { count: 4, doneCount: 3, minutes: 135, doneMinutes: 75 });
+  assert.equal(formatMinutes(310), '5시간 10분');
+  assert.equal(formatMinutes(75), '1시간 15분');
+  assert.equal(formatMinutes(120), '2시간');
+  assert.equal(josa('영어 학원', '과'), '영어 학원과');
+  assert.equal(josa('학교', '과'), '학교와');
+  assert.equal(josa('복습 우선', '으로'), '복습 우선으로');
+  assert.equal(josa('골고루', '으로'), '골고루로');
+  assert.equal(josa('서울', '으로'), '서울로', 'ㄹ final takes 로');
+  assert.equal(josa('19:00', '으로'), '19:00으로');
+  assert.equal(josa('17:00–17:30', '으로'), '17:00–17:30으로');
+  assert.equal(josa('3시간 30분', '을'), '3시간 30분을');
+  assert.equal(josa('학교', '을'), '학교를');
+  assert.equal(josa('Plan B', '으로'), 'Plan B로');
+  assert.equal(ceilTime(new Date(2026, 8, 15, 8, 52)), '08:55');
+  assert.equal(ceilTime(new Date(2026, 8, 15, 8, 55)), '08:55');
+  assert.equal(ceilTime(new Date(2026, 8, 15, 23, 58)), '23:59');
+  console.log('schedule review copy verified');
+});
+
+test('month grid starts on Monday and recent titles are distinct, newest first', () => {
+  const grid = monthGrid('2026-09-15');
+  assert.equal(grid[0][0], null, '1 September 2026 is a Tuesday');
+  assert.equal(grid[0][1], '2026-09-01');
+  assert.equal(grid.flat().filter(Boolean).length, 30);
+  assert.ok(grid.every((week) => week.length === 7));
+  assert.equal(monthGrid('2026-02-01')[0][6], '2026-02-01', '1 February 2026 is a Sunday');
+  const recent = recentSchedules([
+    item('old', '09:00', '10:00', { title: '수학', date: '2026-09-01' }),
+    item('new', '09:00', '10:00', { title: '수학', date: '2026-09-14' }),
+    item('bio', '11:00', '12:00', { title: '생명과학', date: '2026-09-10' }),
+    item('blank', '11:00', '12:00', { title: '  ', date: '2026-09-15' }),
+  ]);
+  assert.deepEqual(
+    recent.map((s) => s.id),
+    ['new', 'bio'],
+  );
+  console.log('schedule review pickers verified');
+});
+
+test('a new schedule starts where the day frees up, not an hour later', () => {
+  const school = item('school', '08:30', '16:00', { kind: 'FIXED' });
+  assert.deepEqual(defaultSlot([school]), { start: '16:00', end: '17:00' });
+  assert.deepEqual(defaultSlot([school, item('academy', '16:00', '17:30', { kind: 'FIXED' })]), {
+    start: '17:30',
+    end: '18:30',
+  });
+  assert.deepEqual(defaultSlot([school], '18:10'), { start: '18:10', end: '19:10' });
+  assert.deepEqual(defaultSlot([]), { start: '16:00', end: '17:00' });
+  assert.deepEqual(defaultSlot([], '19:20'), { start: '19:20', end: '20:20' });
+  assert.deepEqual(
+    defaultSlot([item('a', '07:00', '08:00'), item('b', '10:00', '11:00')]),
+    { start: '08:00', end: '09:00' },
+    'the first free window between schedules comes first',
+  );
+  console.log('schedule review default slot verified');
 });

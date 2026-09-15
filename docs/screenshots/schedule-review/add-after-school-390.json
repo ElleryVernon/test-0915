@@ -1,0 +1,28 @@
+{
+  "width": 390,
+  "height": 844,
+  "documentWidth": 390,
+  "horizontalOverflow": false,
+  "cta": {
+    "top": 730,
+    "bottom": 782,
+    "height": 52
+  },
+  "ctaText": "빈 6시간 채우기",
+  "nav": {
+    "top": 794,
+    "bottom": 844,
+    "height": 50
+  },
+  "now": null,
+  "strip": {
+    "top": 64,
+    "bottom": 142,
+    "height": 78
+  },
+  "progress": null,
+  "sheet": {
+    "title": "일정 추가",
+    "overflow": false
+  }
+}

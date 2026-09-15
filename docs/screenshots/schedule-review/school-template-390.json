@@ -1,0 +1,24 @@
+{
+  "width": 390,
+  "height": 844,
+  "documentWidth": 390,
+  "horizontalOverflow": false,
+  "cta": null,
+  "ctaText": null,
+  "nav": {
+    "top": 794,
+    "bottom": 844,
+    "height": 50
+  },
+  "now": null,
+  "strip": {
+    "top": 64,
+    "bottom": 142,
+    "height": 78
+  },
+  "progress": null,
+  "sheet": {
+    "title": "학교 시간부터 담기",
+    "overflow": false
+  }
+}

@@ -4,7 +4,9 @@
 
 ## 공급자와 스킬
 
-OpenRouter의 `openai/gpt-5.6-luna`, reasoning `high`를 호출합니다. 비밀키는 서버 환경 변수에만 저장합니다. JSON Schema의 strict 출력, 응답 시간 제한, 길이 제한, 원문 직접 인용·선택지·채점·시간표 검증을 통과한 결과만 사용합니다. 숨겨진 추론은 요청에서 제외하고 저장하지 않습니다.
+OpenRouter의 `openai/gpt-5.6-luna`, reasoning `high`를 호출합니다. 공급자는 `amazon-bedrock/us-east-1`을 먼저 쓰고, 실패하면 `openai/fast`로만 넘깁니다(`provider.order`, `allow_fallbacks: false`). 다른 공급자로는 넘기지 않습니다. `OPENROUTER_PROVIDER_ORDER`로 순서를 바꿀 수 있습니다. Bedrock 엔드포인트는 `response_format`을 지원하지 않습니다. 그래서 JSON Schema를 강제 함수 호출(`tools` + `tool_choice`, `strict: true`)로 전달하고, `require_parameters: true`로 이를 지원하지 않는 경로를 막습니다. 비밀키는 서버 환경 변수에만 저장합니다. 함수 호출 스키마, 응답 시간 제한, 길이 제한, 원문 직접 인용·선택지·채점·시간표 검증을 통과한 결과만 사용합니다. 숨겨진 추론은 요청에서 제외하고 저장하지 않습니다.
+
+일정 제안은 규칙에 어긋나는 블록(25–60분 밖, 기존 일정과 겹침, 휴식 10분 미만, 지난 시간, 없는 과목, 하루 4시간·4개 초과)만 버리고 나머지를 사용합니다. 한 안이 비면 같은 의도의 규칙 기반 안으로 채우고, 응답의 `method`(`AI` / `AI+규칙` / `규칙 기반 일정 추천`)와 `dropped`로 출처를 밝힙니다.
 
 `src/lib/server/skills.ts`의 여섯 스킬은 quiz / essay / cards / grade / planner / ocr이며 각각 버전 1.0.0입니다. 저장되는 AI 작업은 LOAD_CONTEXT → GENERATE → VALIDATE → COMMIT의 허용된 순서를 따릅니다. 단독 OCR은 입력·생성·출력 검증을 거쳐 업로드 흐름으로 반환됩니다. Zod로 도구 입력을 검증하고, 자료와 기존 일정의 소유권을 확인한 뒤 생성합니다. 모델에는 셸이나 임의 SQL 실행 권한이 없습니다.
 

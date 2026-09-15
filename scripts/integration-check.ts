@@ -207,6 +207,30 @@ try {
       p.blocks.every((b) => b.end <= '16:00' || b.start >= '16:45'),
     ),
   );
+  type PlanResponse = { plans: { name: string; reason?: string; blocks: { start: string; end: string }[] }[] };
+  assert(
+    (plans as PlanResponse).plans.every((p) => typeof p.reason === 'string' && p.reason.length > 0),
+    'every proposal states why it was chosen',
+  );
+  const laterPlans: PlanResponse = await call(
+    '/planner/suggest',
+    { date: '2099-01-15', after: '18:20', requestId: randomUUID() },
+    undefined,
+    sc,
+  );
+  assert(
+    laterPlans.plans.some((p) => p.blocks.length) &&
+      laterPlans.plans.every((p) => p.blocks.every((b) => b.start >= '18:20')),
+    'proposals never start before the requested time',
+  );
+  await call('/planner/suggest', { date: '2099-01-15', after: '25:00' }, undefined, sc, 400);
+  const subjectless = await call(
+    '/schedules/' + schedule.id,
+    { subjectId: null },
+    'PATCH',
+    sc,
+  );
+  assert.equal(subjectless.subjectId, null, 'a linked subject can be cleared');
   const invite = await call('/invite', {}, undefined, sc);
   assert.match(invite.code, /^\d{6}$/);
   await call('/link', { code: invite.code }, undefined, pc);

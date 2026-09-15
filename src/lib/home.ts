@@ -31,7 +31,9 @@ export function homeAgenda(data: Pick<AppData, 'schedules'>, now: Date) {
     .filter((s) => s.date.slice(0, 10) === today)
     .sort((a, b) => a.start.localeCompare(b.start));
   const next = schedules.find((s) => !s.done && s.end > time);
-  const done = schedules.filter((s) => s.done).length;
+  // Only self-study is checked off; fixed school/academy blocks never count as unfinished work.
+  const study = schedules.filter((s) => s.kind !== 'FIXED');
+  const done = study.filter((s) => s.done).length;
   const start = next?.start.split(':').map(Number);
   const end = next?.end.split(':').map(Number);
   const duration = start && end ? end[0] * 60 + end[1] - (start[0] * 60 + start[1]) : 0;
@@ -41,10 +43,10 @@ export function homeAgenda(data: Pick<AppData, 'schedules'>, now: Date) {
   return {
     next,
     done,
-    total: schedules.length,
+    total: study.length,
     duration,
     label: next
-      ? `${startLabel} · ${next.start <= time ? '지금 할 공부' : '다음 시간표'}`
+      ? `${startLabel} · ${next.kind === 'FIXED' ? (next.start <= time ? '지금 일정' : '다음 일정') : next.start <= time ? '지금 할 공부' : '다음 시간표'}`
       : '오늘의 시간표',
   };
 }

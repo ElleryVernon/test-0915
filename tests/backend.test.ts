@@ -64,16 +64,27 @@ test('AI semantic grading validates the full keyword partition and rejects contr
   assert.throws(()=>validateAiGrade({...good,matched:['자극','자극']},keywords));
 });
 test('AI planner rejects invented subjects, occupied times, invalid dates and unsafe hour bounds',()=>{
-  const date='2026-09-15';const subjects=[{id:'bio',name:'생명과학'}];
+  const date='2026-09-15';const subjects=[{id:'bio',name:'생명과학',dueCards:4}];
   const existing=[{date,start:'18:00',end:'19:30'}];
   const block={date,title:'개념 복습',start:'20:00',end:'20:30',kind:'FLEXIBLE' as const,subjectId:'bio',done:false as const};
-  const payload=(candidate:typeof block)=>({plans:[{name:'A',blocks:[candidate]},{name:'B',blocks:[block]}]});
-  assert.equal(validateAiPlans(payload(block),date,existing,subjects).method,'AI');
-  assert.throws(()=>validateAiPlans(payload({...block,start:'18:30',end:'19:00'}),date,existing,subjects));
-  assert.throws(()=>validateAiPlans(payload({...block,subjectId:'unknown'}),date,existing,subjects));
-  assert.throws(()=>validateAiPlans(payload({...block,date:'2026-09-16'}),date,existing,subjects));
-  assert.throws(()=>validateAiPlans(payload({...block,start:'02:00',end:'03:00'}),date,existing,subjects));
-  assert.throws(()=>validateAiPlans({plans:[{name:'A',blocks:[block,block]},{name:'B',blocks:[]}]},date,existing,subjects));
+  const payload=(candidate:typeof block)=>({plans:[{name:'A',reason:'근거',blocks:[candidate]},{name:'B',reason:'근거',blocks:[block]}]});
+  const valid=validateAiPlans(payload(block),date,existing,subjects);
+  assert.equal(valid.method,'AI');assert.equal(valid.dropped,0);assert.deepEqual(valid.plans.map(plan=>plan.name),['A','B']);
+  for(const bad of [{...block,start:'18:30',end:'19:00'},{...block,subjectId:'unknown'},{...block,date:'2026-09-16'},{...block,start:'02:00',end:'03:00'},{...block,start:'20:00',end:'20:20'},{...block,start:'20:00',end:'21:10'}]){
+    const result=validateAiPlans(payload(bad),date,existing,subjects);
+    assert.equal(result.dropped,1,`dropped ${JSON.stringify(bad)}`);
+    assert.equal(result.method,'AI+규칙','the emptied plan is replaced by the rule-based one, the valid AI plan stays');
+    assert.equal(result.plans[1].name,'B');
+    assert.equal(result.plans[0].name,'복습 우선');
+    assert.ok(result.plans.flatMap(plan=>plan.blocks).every(item=>!existing.some(other=>conflict(item,other))&&item.date===date&&item.start>='06:00'));
+  }
+  const twice=validateAiPlans({plans:[{name:'A',reason:'근거',blocks:[block,block]},{name:'B',reason:'근거',blocks:[block]}]},date,existing,subjects);
+  assert.equal(twice.plans[0].blocks.length,1,'an overlapping duplicate is removed, the rest of the plan is kept');assert.equal(twice.method,'AI');
+  const none=validateAiPlans({plans:[{name:'A',reason:'근거',blocks:[{...block,start:'20:00',end:'20:15'}]},{name:'B',reason:'근거',blocks:[{...block,subjectId:'x'}]}]},date,existing,subjects);
+  assert.equal(none.method,'규칙 기반 일정 추천');assert.equal(none.dropped,2);assert.ok(none.plans.every(plan=>plan.blocks.length>0));
+  assert.throws(()=>validateAiPlans({plans:[{name:'A',blocks:[block]},{name:'B',blocks:[block]}]},date,existing,subjects),'a plan without a stated reason is rejected');
+  assert.equal(validateAiPlans(payload(block),date,existing,subjects,'19:55').plans[0].reason,'근거');
+  assert.equal(validateAiPlans(payload(block),date,existing,subjects,'20:05').plans[0].name,'복습 우선','a block starting before the current time is removed');
 });
 
 test('shared scheduler preserves fixed intervals and initializes FSRS without inventing previous repetitions',()=>{
@@ -101,17 +112,27 @@ test('OpenRouter strict schemas require every nested property and represent opti
 
 test('OpenRouter adapter sends exact high-reasoning structured request without temperature and rejects invalid responses',async()=>{
   const previousFetch=globalThis.fetch;
-  const keys=['OPENROUTER_API_KEY','OPENROUTER_MODEL','OPENROUTER_REASONING_EFFORT'] as const;
+  const keys=['OPENROUTER_API_KEY','OPENROUTER_MODEL','OPENROUTER_REASONING_EFFORT','OPENROUTER_PROVIDER_ORDER'] as const;
   const previous=Object.fromEntries(keys.map(key=>[key,process.env[key]]));
-  process.env.OPENROUTER_API_KEY='synthetic-test-key';process.env.OPENROUTER_MODEL='openai/gpt-5.6-luna';process.env.OPENROUTER_REASONING_EFFORT='high';
+  process.env.OPENROUTER_API_KEY='synthetic-test-key';process.env.OPENROUTER_MODEL='openai/gpt-5.6-luna';process.env.OPENROUTER_REASONING_EFFORT='high';delete process.env.OPENROUTER_PROVIDER_ORDER;
   try {
     globalThis.fetch=async(input,init)=>{
       assert.equal(input,'https://openrouter.ai/api/v1/chat/completions');
       const payload=JSON.parse(init?.body as string);
-      assert.equal(payload.model,'openai/gpt-5.6-luna');assert.deepEqual(payload.reasoning,{effort:'high',exclude:true});assert.equal('temperature' in payload,false);assert.equal(payload.provider.require_parameters,true);assert.equal(payload.response_format.json_schema.strict,true);assert.ok(payload.max_tokens>=8192);
-      return Response.json({model:payload.model,choices:[{finish_reason:'stop',message:{content:'{"text":"validated"}'}}]});
+      assert.equal(payload.model,'openai/gpt-5.6-luna');assert.deepEqual(payload.reasoning,{effort:'high',exclude:true});assert.equal('temperature' in payload,false);assert.equal(payload.provider.require_parameters,true);assert.ok(payload.max_tokens>=8192);
+      assert.deepEqual(payload.provider.order,['amazon-bedrock/us-east-1','openai/fast'],'Bedrock us-east-1 first, only openai/fast as fallback');assert.equal(payload.provider.allow_fallbacks,false);
+      assert.equal('response_format' in payload,false,'Bedrock rejects response_format');assert.equal(payload.tools[0].function.name,'test');assert.equal(payload.tools[0].function.strict,true);assert.deepEqual(payload.tool_choice,{type:'function',function:{name:'test'}});assert.equal(payload.tools[0].function.parameters.additionalProperties,false);
+      return Response.json({model:payload.model,provider:'Amazon Bedrock',choices:[{finish_reason:'tool_calls',message:{content:null,tool_calls:[{type:'function',function:{name:'test',arguments:'{"text":"validated"}'}}]}}]});
     };
     assert.deepEqual(await providerJson('Synthetic prompt',z.toJSONSchema(z.object({text:z.string()})),'test'),{text:'validated'});
+    globalThis.fetch=async()=>Response.json({choices:[{finish_reason:'stop',message:{content:'{"text":"content fallback"}'}}]});
+    assert.deepEqual(await providerJson('Synthetic',{},'test'),{text:'content fallback'},'a plain JSON message is still accepted');
+    process.env.OPENROUTER_PROVIDER_ORDER='openai/fast';
+    globalThis.fetch=async(_input,init)=>{assert.deepEqual(JSON.parse(init?.body as string).provider.order,['openai/fast']);return Response.json({choices:[{finish_reason:'tool_calls',message:{tool_calls:[{function:{name:'test',arguments:'{"text":"override"}'}}]}}]});};
+    assert.deepEqual(await providerJson('Synthetic',{},'test'),{text:'override'});
+    process.env.OPENROUTER_PROVIDER_ORDER='bad slug!';
+    await assert.rejects(()=>providerJson('Synthetic',{},'test'),/공급자 설정/);
+    delete process.env.OPENROUTER_PROVIDER_ORDER;
     globalThis.fetch=async()=>Response.json({error:{message:'rate limited'}},{status:429});
     await assert.rejects(()=>providerJson('Synthetic',{},'test'),(error:unknown)=>Boolean(error&&typeof error==='object'&&'status' in error&&error.status===429));
     globalThis.fetch=async()=>Response.json({choices:[{finish_reason:'length',message:{content:'{"text":"partial"}'}}]});
@@ -132,4 +153,36 @@ test('all six versioned skills enforce stage order and validate arguments before
   await runtime.tool('VALIDATE',{text:'valid'},z.object({text:z.string()}),value=>value);
   await runtime.tool('COMMIT',{},z.object({}),()=>true);
   assert.equal(executions,1);assert.equal(runtime.steps.length,4);assert.ok(runtime.steps.every(step=>step.status==='COMPLETED'));
+});
+
+test('rule-based planner fills the timetable gaps, skips passed time and names both intents with reasons',()=>{
+  const date='2026-09-15';
+  const occupied=[{date,start:'09:10',end:'13:30'},{date,start:'13:30',end:'14:30'},{date,start:'17:00',end:'19:00'},{date,start:'20:00',end:'22:10'}];
+  const subjects=[{id:'math',name:'수학II',dueCards:0},{id:'bio',name:'생명과학',dueCards:18},{id:'history',name:'한국사',dueCards:4}];
+  const result=proposePlans(date,occupied,subjects);
+  assert.deepEqual(result.plans.map(plan=>plan.name),['복습 우선','골고루']);
+  assert.equal(result.plans[0].reason,'생명과학 복습 카드 18장이 가장 많이 기다려요');
+  assert.match(result.plans[1].reason,/과목 3개를 25분씩/);
+  const inGaps=(block:{start:string;end:string})=>(block.start>='14:30'&&block.end<='17:00')||(block.start>='19:00'&&block.end<='20:00');
+  for(const plan of result.plans){
+    assert.ok(plan.blocks.length>0&&plan.blocks.length<=4);
+    assert.ok(plan.blocks.every(inGaps),'blocks stay inside the gaps the timetable shows');
+    assert.equal(plan.blocks.some(block=>occupied.some(other=>conflict(block,other))),false);
+    const sorted=[...plan.blocks].sort((a,b)=>a.start.localeCompare(b.start));
+    assert.ok(sorted.every((block,i)=>i===0||Number(block.start.slice(0,2))*60+Number(block.start.slice(3))-(Number(sorted[i-1].end.slice(0,2))*60+Number(sorted[i-1].end.slice(3)))>=10),'at least 10 minutes rest');
+  }
+  assert.deepEqual(result.plans[0].blocks.slice(0,2).map(block=>block.subjectId),['bio','history'],'most due cards first');
+  assert.equal(result.plans[0].blocks[0].title,'생명과학 복습 카드');
+  const later=proposePlans(date,occupied,subjects,'15:40');
+  for(const plan of later.plans)assert.ok(plan.blocks.every(block=>block.start>='15:40'),'no block starts before the given time');
+  const none=proposePlans(date,occupied,[{id:'bio',name:'생명과학',dueCards:0}]);
+  assert.equal(none.plans[0].reason,'복습할 카드가 없어서 개념 정리부터 담았어요');
+  assert.equal(proposePlans(date,occupied,[{id:'bio',name:'생명과학',dueCards:3}]).plans[0].reason,'생명과학 복습 카드 3장이 기다려요');
+  const bare=proposePlans(date,[],[]);
+  assert.ok(bare.plans[1].blocks.every(block=>block.title==='자율 학습'&&block.subjectId===undefined&&block.start>='16:00'&&block.end<='22:00'),'without gaps the evening is used');
+  const afterSchool=proposePlans(date,[{date,start:'08:30',end:'16:00'}],subjects);
+  for(const plan of afterSchool.plans)assert.ok(plan.blocks.length>0&&plan.blocks.every(block=>block.start>='16:00'&&block.end<='22:00'),'the evening after the last schedule is used');
+  const evening=proposePlans(date,[{date,start:'08:30',end:'16:00'},{date,start:'18:00',end:'20:00'}],subjects,'18:30');
+  for(const plan of evening.plans)assert.ok(plan.blocks.every(block=>block.start>='20:00'&&block.end<='22:00'),'passed windows are skipped and only the evening remains');
+  console.log('schedule review planner verified');
 });

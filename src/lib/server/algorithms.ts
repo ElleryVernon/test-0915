@@ -1,4 +1,5 @@
 import type { Bucket, Schedule } from '../contracts';
+import { findFreeSlot, freeWindows, minutes, STUDY_DAY } from '../schedule';
 
 export type Rating = Exclude<Bucket, 'MASTERED'>;
 export function nextReview(consecutiveEasy: number, rating: Rating, now = new Date()) {
@@ -28,25 +29,62 @@ export function gradeEssay(answer: string, keywords: string[], modelAnswer: stri
   return { score, matched, missing, feedback };
 }
 
-export function minutes(time: string) { const [h, m] = time.split(':').map(Number); return h * 60 + m; }
-export function timeString(value: number) { return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; }
+export { minutes, timeString } from '../schedule';
 export function conflict(a: Pick<Schedule, 'date'|'start'|'end'>, b: Pick<Schedule, 'date'|'start'|'end'>) {
   return a.date === b.date && minutes(a.start) < minutes(b.end) && minutes(b.start) < minutes(a.end);
 }
 export function validDate(value: string) { return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value; }
-export function proposePlans(date: string, existing: Pick<Schedule,'date'|'start'|'end'>[], subjects: {id:string;name:string}[]) {
-  const targets = subjects.length ? subjects : [{id:'',name:'자율 학습'}];
-  return { plans: [45, 25].map((duration, variant) => {
-    const occupied = existing.filter(block => block.date === date);
+export type PlanSubject = { id: string; name: string; dueCards?: number };
+const PLAN_LIMIT = { blocks: 4, minutes: 240, rest: 10 };
+/**
+ * Rule-based fallback for the two planner proposals. Blocks fill the free windows the timetable
+ * shows (gaps between schedules and the evening until 22:00); an empty day uses 16:00–22:00.
+ * `after` keeps today's proposals out of time that has already passed.
+ */
+export function proposePlans(date: string, existing: Pick<Schedule,'date'|'start'|'end'>[], subjects: PlanSubject[], after?: string) {
+  const occupied = existing.filter(block => block.date === date);
+  const free = freeWindows(occupied.map((block, index) => ({ ...block, id: String(index) })), { min: 60, after });
+  const floor = after ? minutes(after) : 0;
+  const windows = free.length
+    ? free.map(window => [minutes(window.start), minutes(window.end)])
+    : [[Math.max(minutes(STUDY_DAY.start), floor), minutes(STUDY_DAY.end)]];
+  const targets = subjects.length ? subjects : [{ id: '', name: '자율 학습', dueCards: 0 }];
+  const place = (specs: { title: string; subjectId: string; duration: number }[]) => {
     const blocks: Omit<Schedule,'id'>[] = [];
-    let cursor = 16 * 60;
-    while(cursor + duration <= 22 * 60 && blocks.length < 3) {
-      const candidate = { date, start:timeString(cursor),end:timeString(cursor+duration) };
-      if (occupied.some(block => conflict(candidate, block))) { cursor += 5; continue; }
-      const subject = targets[blocks.length % targets.length];
-      blocks.push({ ...candidate, title:`${subject.name} ${variant ? '집중 복습' : '개념 정리'}`, kind:'FLEXIBLE', subjectId:subject.id || undefined, done:false });
-      cursor += duration + 10;
+    let cursor = 0;
+    let total = 0;
+    for (const spec of specs) {
+      if (blocks.length >= PLAN_LIMIT.blocks) break;
+      const slot = [...new Set([spec.duration, 25])]
+        .filter(duration => total + duration <= PLAN_LIMIT.minutes)
+        .flatMap(duration => windows.map(([start, end]) => findFreeSlot(occupied, Math.max(start, cursor), duration, end)))
+        .find(Boolean);
+      if (!slot) continue;
+      blocks.push({ date, ...slot, title: spec.title, kind: 'FLEXIBLE', subjectId: spec.subjectId || undefined, done: false });
+      cursor = minutes(slot.end) + PLAN_LIMIT.rest;
+      total += minutes(slot.end) - minutes(slot.start);
     }
-    return { name: variant ? 'Plan B · 짧게 나눠서' : 'Plan A · 깊이 집중', blocks };
-  }) };
+    return blocks;
+  };
+  const title = (subject: PlanSubject, activity: string) => subject.id ? `${subject.name} ${activity}` : subject.name;
+  const byDue = [...targets].sort((a, b) => (b.dueCards ?? 0) - (a.dueCards ?? 0));
+  const top = byDue[0];
+  const reviewSpecs = Array.from({ length: PLAN_LIMIT.blocks }, (_, index) => {
+    const subject = byDue[index % byDue.length];
+    const cycle = Math.floor(index / byDue.length);
+    const due = cycle === 0 && (subject.dueCards ?? 0) > 0;
+    return { title: title(subject, due ? '복습 카드' : ['개념 정리', '문제 풀이', '개념 복습'][Math.min(cycle, 2)]), subjectId: subject.id, duration: due ? 25 : 50 };
+  });
+  const evenSpecs = Array.from({ length: PLAN_LIMIT.blocks }, (_, index) => {
+    const subject = targets[index % targets.length];
+    const cycle = Math.floor(index / targets.length);
+    return { title: title(subject, ['핵심 복습', '문제 풀이', '개념 정리'][Math.min(cycle, 2)]), subjectId: subject.id, duration: 25 };
+  });
+  const review = place(reviewSpecs);
+  const even = place(evenSpecs);
+  const evenSubjects = new Set(even.map(block => block.subjectId ?? '')).size;
+  return { plans: [
+    { name: '복습 우선', reason: (top.dueCards ?? 0) > 0 ? `${top.name} 복습 카드 ${top.dueCards}장이 ${targets.filter(subject => (subject.dueCards ?? 0) > 0).length > 1 ? '가장 많이 ' : ''}기다려요` : '복습할 카드가 없어서 개념 정리부터 담았어요', blocks: review },
+    { name: '골고루', reason: evenSubjects > 1 ? `과목 ${evenSubjects}개를 25분씩 · 사이 10분 이상 쉬어요` : '25분씩 나눠서 · 사이 10분 이상 쉬어요', blocks: even },
+  ] };
 }

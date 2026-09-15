@@ -1,0 +1,32 @@
+{
+  "width": 390,
+  "height": 844,
+  "documentWidth": 390,
+  "horizontalOverflow": false,
+  "cta": {
+    "top": 730,
+    "bottom": 782,
+    "height": 52
+  },
+  "ctaText": "빈 1시간 40분 채우기",
+  "nav": {
+    "top": 794,
+    "bottom": 844,
+    "height": 50
+  },
+  "now": {
+    "top": 178,
+    "bottom": 192,
+    "height": 14
+  },
+  "strip": {
+    "top": -304,
+    "bottom": -226,
+    "height": 78
+  },
+  "progress": "공부 5시간 15분 중 1시간 15분 했어요\n\n3/10",
+  "sheet": {
+    "title": "날짜 고르기",
+    "overflow": false
+  }
+}

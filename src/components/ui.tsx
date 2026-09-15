@@ -1,21 +1,7 @@
 'use client';
-import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
-import { ArrowLeft, X, ChevronRight, Inbox, CalendarDays, Clock } from '@/components/icons';
+import { type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { AlertCircle, ArrowLeft, X, ChevronRight, Inbox } from '@/components/icons';
 import * as Dialog from '@radix-ui/react-dialog';
-
-export function DateTimeField({
-  type,
-  className = '',
-  ...props
-}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { type: 'date' | 'time' }) {
-  const Icon = type === 'date' ? CalendarDays : Clock;
-  return (
-    <span className={`date-time-field ${className}`}>
-      <input {...props} type={type} className="field" />
-      <Icon size={20} className="date-time-field-icon" />
-    </span>
-  );
-}
 
 export function Button({
   variant = 'primary',
@@ -66,12 +52,14 @@ export function Sheet({
   open,
   onClose,
   title,
+  description,
   children,
   fullScreen = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  description?: ReactNode;
   children: ReactNode;
   fullScreen?: boolean;
 }) {
@@ -86,11 +74,20 @@ export function Sheet({
         <Dialog.Overlay className="sheet-overlay" />
         <Dialog.Content
           className={`sheet-content${fullScreen ? ' sheet-content-full' : ''}`}
-          aria-describedby={undefined}
+          {...(description ? {} : { 'aria-describedby': undefined })}
         >
           <div className="sheet-handle" />
           <div className="sheet-heading">
-            <Dialog.Title>{title}</Dialog.Title>
+            {description ? (
+              <div className="sheet-heading-copy">
+                <Dialog.Title>{title}</Dialog.Title>
+                <Dialog.Description asChild>
+                  <div>{description}</div>
+                </Dialog.Description>
+              </div>
+            ) : (
+              <Dialog.Title>{title}</Dialog.Title>
+            )}
             <Dialog.Close asChild>
               <IconButton label="닫기">
                 <X size={22} />
@@ -157,4 +154,15 @@ export function ListRow({
       </span>
     </button>
   );
+}
+export function ErrorNote({ error }: { error?: string }) {
+  return error ? (
+    <div
+      role="alert"
+      className="flex items-start gap-2 rounded-2xl bg-surface p-4 text-[14px] font-medium leading-relaxed"
+    >
+      <AlertCircle size={18} className="mt-0.5 shrink-0" />
+      <span>{error}</span>
+    </div>
+  ) : null;
 }

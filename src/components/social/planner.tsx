@@ -1,14 +1,22 @@
 'use client';
-import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from 'react';
 import {
   Check,
-  ChevronLeft,
+  ChevronDown,
   ChevronRight,
-  Clock3,
+  LoaderCircle,
   LockKeyhole,
   Plus,
+  School,
   Sparkles,
-  Trash2,
   TriangleAlert,
 } from '@/components/icons';
 import { api } from '@/lib/api';
@@ -20,27 +28,29 @@ import {
   type AiTaskRecord,
 } from '@/lib/ai-task';
 import type { AppData, Schedule, ScreenProps } from '@/lib/contracts';
+import { formatMinutes, minutes, scheduleGaps, timeString } from '@/lib/schedule';
+import { isDue } from '@/lib/srs';
+import { Button, EmptyState, ErrorNote, IconButton, ScreenHeader, Sheet } from '@/components/ui';
+import ScheduleEditor, { type ScheduleDraft } from './planner-editor';
+import { MonthSheet, SchoolSheet } from './planner-pickers';
 import {
-  Button,
-  DateTimeField,
-  EmptyState,
-  IconButton,
-  ScreenHeader,
-  Sheet,
-} from '@/components/ui';
-import {
+  ceilTime,
   dateKey,
+  dayLabel,
+  defaultSlot,
   durationLabel,
-  scheduleConflicts,
-  scheduleError,
-  scheduleGaps,
+  josa,
+  particle,
+  plannerRows,
   shiftDate,
+  studyProgress,
   weekDates,
 } from './helpers';
 
-type Plan = { name: string; blocks: Omit<Schedule, 'id'>[] };
-type PlannerResult = { plans: Plan[]; method?: string };
+type Plan = { name: string; reason?: string; blocks: Omit<Schedule, 'id'>[] };
+type PlannerResult = { plans: Plan[]; method?: string; dropped?: number };
 type PlannerTask = AiTaskRecord<PlannerResult>;
+type Gap = { start: string; end: string };
 
 export function recoverPlannerResult(
   result: PlannerResult,
@@ -78,120 +88,212 @@ export function recoverPlannerResult(
     savedCount: savedCounts[selectedIndex] ?? 0,
   };
 }
-const blank = (date: string) => ({
-  title: '',
-  date,
-  start: '17:00',
-  end: '18:00',
-  kind: 'FLEXIBLE' as Schedule['kind'],
-  subjectId: '',
-});
+
+const FAILURE_TITLE = {
+  failed: '추천을 만들지 못했어요',
+  unconfirmed: '요청이 전달됐는지 확인하지 못했어요',
+  waiting: '추천을 아직 만들고 있어요',
+  empty: '추천할 빈 시간이 없어요',
+  unknown: '추천을 불러오지 못했어요',
+};
+const STAGE_COPY = {
+  LOAD_CONTEXT: '빈 시간과 복습 카드를 보는 중',
+  GENERATE: '두 가지 안을 만드는 중',
+  VALIDATE: '겹치는 시간이 없는지 확인하는 중',
+  COMMIT: '추천을 정리하는 중',
+};
+const blockMinutes = (blocks: Pick<Schedule, 'start' | 'end'>[]) =>
+  blocks.reduce((sum, block) => sum + minutes(block.end) - minutes(block.start), 0);
 
 export default function Planner({ data, refresh, toast }: ScreenProps) {
-  const [day, setDay] = useState(dateKey());
   const [now, setNow] = useState(() => new Date());
-  const [editing, setEditing] = useState<Schedule | 'new' | null>(null);
-  const [form, setForm] = useState(blank(day));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const today = dateKey(now);
+  const [day, setDay] = useState(today);
+  const [editor, setEditor] = useState<{
+    key: number;
+    editing: Schedule | null;
+    initial: ScheduleDraft;
+  } | null>(null);
+  const [monthOpen, setMonthOpen] = useState(false);
+  const [schoolOpen, setSchoolOpen] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const [aiContext, setAiContext] = useState<{ free: number; gap?: Gap }>({ free: 0 });
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [planMethod, setPlanMethod] = useState('');
+  const [planDropped, setPlanDropped] = useState(0);
   const [selectedPlan, setSelectedPlan] = useState(0);
   const [aiError, setAiError] = useState('');
   const [aiTask, setAiTask] = useState<PlannerTask | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [aiUnconfirmed, setAiUnconfirmed] = useState(false);
   const [suggestionDate, setSuggestionDate] = useState(day);
   const [savedPlanCount, setSavedPlanCount] = useState(0);
   const aiController = useRef<AbortController | null>(null);
+  const nowLine = useRef<HTMLDivElement>(null);
+  const scrollToNow = useRef(true);
+  const strip = useRef<HTMLDivElement>(null);
+  const focusDay = useRef(false);
+  const swipe = useRef<{ x: number; y: number; swiped: boolean } | null>(null);
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
   }, []);
-  const schedules = useMemo(
+
+  const isToday = day === today;
+  const nowTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const daySchedules = useMemo(
     () =>
       data.schedules
         .filter((s) => s.date.slice(0, 10) === day)
         .sort((a, b) => a.start.localeCompare(b.start)),
     [data.schedules, day],
   );
-  const conflicts = scheduleConflicts(schedules);
-  const completed = schedules.filter((s) => s.done).length;
-  const gaps = new Map(scheduleGaps(schedules).map((gap) => [gap.beforeId, gap]));
-  const formValidation = scheduleError(form);
-  const overlapping = data.schedules.find(
-    (schedule) =>
-      (!editing || editing === 'new' || schedule.id !== editing.id) &&
-      schedule.date.slice(0, 10) === form.date &&
-      form.start < schedule.end &&
-      schedule.start < form.end,
+  const rows = plannerRows(daySchedules, { now: isToday ? nowTime : undefined }).filter(
+    (row) => row.type !== 'gap' || day >= today,
   );
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  const open = (schedule?: Schedule) => {
-    setEditing(schedule ?? 'new');
-    setForm(schedule ? { ...schedule, subjectId: schedule.subjectId ?? '' } : blank(day));
-    setError('');
-  };
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    const validation = scheduleError(form);
-    if (validation) {
-      setError(validation);
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      await api(
-        editing === 'new' ? '/schedules' : `/schedules/${(editing as Schedule).id}`,
-        editing === 'new'
-          ? { ...form, subjectId: form.subjectId || undefined }
-          : {
-              title: form.title,
-              date: form.date,
-              start: form.start,
-              end: form.end,
-              kind: form.kind,
-              subjectId: form.subjectId || undefined,
-            },
-        editing === 'new' ? 'POST' : 'PATCH',
-      );
-      await refresh();
-      setDay(form.date);
-      setEditing(null);
-      toast(editing === 'new' ? '일정을 추가했어요' : '일정을 바꿨어요');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
+  const freeMinutes = rows.reduce((sum, row) => sum + (row.type === 'gap' ? row.minutes : 0), 0);
+  const progress = studyProgress(daySchedules);
+  const dueBySubject = useMemo(() => {
+    const counts = new Map<string, number>();
+    const at = now.getTime();
+    for (const card of data.cards)
+      if (isDue(card, at)) counts.set(card.subjectId, (counts.get(card.subjectId) ?? 0) + 1);
+    return counts;
+  }, [data.cards, now]);
+  const subjectNames = new Map(data.subjects.map((s) => [s.id, s.name]));
+  const weekday = new Date(`${day}T12:00:00`).getDay() % 6 !== 0;
+  const hasFixed = daySchedules.some((s) => s.kind === 'FIXED');
+  const schoolHint =
+    weekday &&
+    !hasFixed &&
+    day >= today &&
+    daySchedules.length > 0 &&
+    scheduleGaps(daySchedules, { min: 180 }).length > 0;
+  const ctaVisible = day >= today && freeMinutes >= 60;
+  const generating = aiBusy && !aiOpen;
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!generating) return setTick(0);
+    const timer = setInterval(() => setTick((value) => value + 1), 1800);
+    return () => clearInterval(timer);
+  }, [generating]);
+  const stage = aiTask?.steps?.at(-1)?.stage as keyof typeof STAGE_COPY | undefined;
+  const generatingCopy =
+    aiTask?.status === 'READY'
+      ? '추천 요청을 준비하는 중'
+      : (stage && STAGE_COPY[stage]) || Object.values(STAGE_COPY)[Math.min(tick, 2)];
+  const working = (
+    <>
+      <LoaderCircle size={18} className="animate-spin" aria-hidden="true" />
+      {generatingCopy}
+    </>
+  );
+
+  useLayoutEffect(() => {
+    if (!scrollToNow.current || !isToday) return;
+    const line = nowLine.current;
+    scrollToNow.current = false;
+    if (line && line.getBoundingClientRect().bottom > window.innerHeight - 160)
+      line.scrollIntoView({ block: 'center' });
+  });
+  useEffect(() => {
+    if (!focusDay.current) return;
+    focusDay.current = false;
+    strip.current?.querySelector<HTMLButtonElement>(`[data-date="${day}"]`)?.focus();
+  }, [day]);
+
+  function draftFor(date: string, gap?: Gap): ScheduleDraft {
+    const blank = { title: '', date, kind: 'FLEXIBLE' as const, subjectId: '' };
+    if (gap)
+      return {
+        ...blank,
+        start: gap.start,
+        end: timeString(Math.min(minutes(gap.end), minutes(gap.start) + 60)),
+      };
+    return {
+      ...blank,
+      ...defaultSlot(
+        data.schedules.filter((s) => s.date.slice(0, 10) === date),
+        date === today ? ceilTime(now, 10) : undefined,
+      ),
+    };
+  }
+  const openNew = (gap?: Gap, date = day) =>
+    setEditor({ key: Date.now(), editing: null, initial: draftFor(date, gap) });
+  const openEdit = (schedule: Schedule) =>
+    setEditor({
+      key: Date.now(),
+      editing: schedule,
+      initial: {
+        title: schedule.title,
+        date: schedule.date.slice(0, 10),
+        start: schedule.start,
+        end: schedule.end,
+        kind: schedule.kind,
+        subjectId: schedule.subjectId ?? '',
+      },
+    });
+  function goToday() {
+    scrollToNow.current = true;
+    setDay(today);
+    if (isToday) {
+      nowLine.current?.scrollIntoView({ block: 'center' });
+      scrollToNow.current = false;
     }
   }
-  async function remove() {
-    if (!editing || editing === 'new') return;
-    setBusy(true);
-    try {
-      await api(`/schedules/${editing.id}`, {}, 'DELETE');
-      await refresh();
-      setEditing(null);
-      toast('일정을 삭제했어요');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+
   async function toggle(schedule: Schedule) {
-    if (busy) return;
-    setBusy(true);
+    if (pending) return;
+    setPending(schedule.id);
     try {
       await api(`/schedules/${schedule.id}`, { done: !schedule.done }, 'PATCH');
       await refresh();
     } catch (e) {
       toast((e as Error).message);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   }
+  async function applyFix(schedule: Schedule, fix: { start: string; end: string; kind: string }) {
+    if (pending) return;
+    setPending(schedule.id);
+    try {
+      await api(`/schedules/${schedule.id}`, { start: fix.start, end: fix.end }, 'PATCH');
+      await refresh();
+      toast(
+        `${josa(schedule.title, '을')} ${josa(`${fix.start}–${fix.end}`, '으로')} ${fix.kind === 'move' ? '옮겼어요' : '줄였어요'}`,
+      );
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setPending(null);
+    }
+  }
+
+  function onStripKey(event: KeyboardEvent<HTMLDivElement>) {
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    focusDay.current = true;
+    setDay(shiftDate(day, step));
+  }
+  function onStripDown(event: PointerEvent<HTMLDivElement>) {
+    swipe.current = { x: event.clientX, y: event.clientY, swiped: false };
+  }
+  function onStripUp(event: PointerEvent<HTMLDivElement>) {
+    const start = swipe.current;
+    if (!start) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      start.swiped = true;
+      setDay(shiftDate(day, dx < 0 ? 7 : -7));
+    } else swipe.current = null;
+  }
+
+  // AI suggestions: the durable task keeps one request per date; acknowledging ends it.
   const schedulesRef = useRef(data.schedules);
   schedulesRef.current = data.schedules;
   function showSuggestion(result: PlannerResult, date: string) {
@@ -199,9 +301,15 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
     setSuggestionDate(recovered.date);
     setDay(recovered.date);
     setPlans(recovered.plans);
+    setPlanMethod(result.method ?? '');
+    setPlanDropped(result.dropped ?? 0);
     setSelectedPlan(recovered.selectedIndex);
     setSavedPlanCount(recovered.savedCount);
-    setAiError(result.plans.length ? '' : '지금은 추천할 빈 시간이 없어요. 일정을 확인해 주세요.');
+    setAiError(
+      result.plans.some((plan) => plan.blocks.length)
+        ? ''
+        : '담을 수 있는 빈 시간을 찾지 못했어요. 직접 추가하거나 다른 날을 골라 보세요.',
+    );
   }
   async function inspectSuggestion(task: PlannerTask, signal: AbortSignal) {
     setAiUnconfirmed(false);
@@ -234,22 +342,27 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
     const controller = new AbortController();
     aiController.current = controller;
     void (async () => {
+      let found = false;
       try {
         const task = await findAiTask<PlannerResult>({
           userId: data.profile.id,
           endpoint: '/planner/suggest',
         });
         if (!task || task.acknowledged || controller.signal.aborted) return;
+        found = true;
         const taskDate = String(task.payload.date);
         setSuggestionDate(taskDate);
         setDay(taskDate);
-        setAiOpen(true);
+        // A request still running shows on the fill button; the sheet opens with its result.
         setAiBusy(true);
         await inspectSuggestion(task, controller.signal);
       } catch (e) {
         if (!controller.signal.aborted) setAiError((e as Error).message);
       } finally {
-        if (!controller.signal.aborted) setAiBusy(false);
+        if (!controller.signal.aborted) {
+          setAiBusy(false);
+          if (found) setAiOpen(true);
+        }
       }
     })();
     return () => {
@@ -257,16 +370,31 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
       aiController.current?.abort();
     };
   }, [data.profile.id]);
-  async function suggest(retryFailed = false, continueRequest = false) {
+  async function suggest(
+    options: { gap?: Gap; retryFailed?: boolean; continueRequest?: boolean } = {},
+  ) {
+    const { gap, retryFailed = false, continueRequest = false } = options;
     if (aiBusy) return;
     aiController.current?.abort();
     const controller = new AbortController();
     aiController.current = controller;
-    setAiOpen(true);
+    // Today's proposals must not start in time that has already passed.
+    const payload = isToday ? { date: day, after: ceilTime(new Date(), 5) } : { date: day };
+    if (!retryFailed && !continueRequest) setAiContext({ free: freeMinutes, gap });
+    // Every request works on the screen itself (button, free-time rows, toast), including retries
+    // started from the sheet; the sheet only ever shows a result or an error.
+    const startedAt = Date.now();
+    setAiOpen(false);
+    toast(
+      retryFailed
+        ? '추천을 다시 만들고 있어요'
+        : continueRequest
+          ? '같은 요청을 이어서 보내고 있어요'
+          : '빈 시간에 맞는 공부를 찾고 있어요',
+    );
     setAiError('');
     setAiBusy(true);
     setAiUnconfirmed(false);
-    setAiTask(null);
     setPlans([]);
     setSuggestionDate(day);
     setSavedPlanCount(0);
@@ -274,17 +402,19 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
       const stored = await findAiTask<PlannerResult>({
         userId: data.profile.id,
         endpoint: '/planner/suggest',
-        payload: { date: day },
+        match: { date: day },
       });
       if (controller.signal.aborted) return;
       if (stored && !stored.acknowledged && !retryFailed && !continueRequest) {
         await inspectSuggestion(stored, controller.signal);
       } else {
-        setPlans([]);
+        // Continuing or retrying keeps the stored identity so no second task lingers for the day.
+        const request = (continueRequest || retryFailed) && aiTask ? aiTask.payload : payload;
+        setAiTask(null);
         const result = await runAiTask<PlannerResult>({
           userId: data.profile.id,
           endpoint: '/planner/suggest',
-          payload: { date: day },
+          payload: request,
           retryFailed,
           signal: controller.signal,
           onStatus: (task) => {
@@ -296,14 +426,26 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
     } catch (e) {
       if (!controller.signal.aborted) setAiError((e as Error).message);
     } finally {
-      if (!controller.signal.aborted) setAiBusy(false);
+      await revealResult(controller, startedAt);
     }
+  }
+  /** Keeps the working state readable even for an instant result, then opens the sheet. */
+  async function revealResult(controller: AbortController, startedAt: number) {
+    if (controller.signal.aborted) return;
+    const rest = 900 - (Date.now() - startedAt);
+    if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));
+    if (controller.signal.aborted) return;
+    setAiBusy(false);
+    setAiOpen(true);
   }
   async function checkPreviousRequest() {
     if (!aiTask || aiBusy) return;
     aiController.current?.abort();
     const controller = new AbortController();
     aiController.current = controller;
+    const startedAt = Date.now();
+    setAiOpen(false);
+    toast('이전 요청을 확인하고 있어요');
     setAiBusy(true);
     setAiError('');
     try {
@@ -311,18 +453,31 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
     } catch (e) {
       if (!controller.signal.aborted) setAiError((e as Error).message);
     } finally {
-      if (!controller.signal.aborted) setAiBusy(false);
+      await revealResult(controller, startedAt);
     }
   }
   function closeSuggestion() {
-    if (busy) return;
+    if (applying) return;
     aiController.current?.abort();
     setAiBusy(false);
     setAiOpen(false);
   }
+  async function declineSuggestion() {
+    if (applying) return;
+    if (aiTask?.status === 'COMPLETED')
+      await acknowledgeAiTask({
+        userId: data.profile.id,
+        endpoint: '/planner/suggest',
+        payload: aiTask.payload,
+      }).catch(() => {});
+    closeSuggestion();
+    setPlans([]);
+    setAiTask(null);
+    openNew(aiContext.gap, suggestionDate);
+  }
   async function applyPlan() {
     if (!plans[selectedPlan]) return;
-    setBusy(true);
+    setApplying(true);
     setAiError('');
     let added = 0;
     const original = aiTask?.result ?? { plans };
@@ -334,11 +489,12 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
         added++;
       }
       await refresh();
-      await acknowledgeAiTask({
-        userId: data.profile.id,
-        endpoint: '/planner/suggest',
-        payload: { date: suggestionDate },
-      });
+      if (aiTask)
+        await acknowledgeAiTask({
+          userId: data.profile.id,
+          endpoint: '/planner/suggest',
+          payload: aiTask.payload,
+        });
       setAiOpen(false);
       setPlans([]);
       setAiTask(null);
@@ -359,402 +515,535 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
           : (e as Error).message,
       );
     } finally {
-      setBusy(false);
+      setApplying(false);
     }
   }
+
+  const monthLabel =
+    day.slice(0, 4) === today.slice(0, 4)
+      ? `${Number(day.slice(5, 7))}월`
+      : `${day.slice(0, 4)}년 ${Number(day.slice(5, 7))}월`;
+  const fixedTitles = [
+    ...new Set(
+      data.schedules
+        .filter((s) => s.date.slice(0, 10) === suggestionDate && s.kind === 'FIXED')
+        .map((s) => s.title.trim()),
+    ),
+  ];
+  const selected = plans[selectedPlan];
+  // What went wrong decides the single next action: retry, resend, re-check or add by hand.
+  const failure: keyof typeof FAILURE_TITLE =
+    aiTask?.status === 'FAILED' || aiTask?.status === 'INTERRUPTED'
+      ? 'failed'
+      : aiTask?.status === 'READY' || aiUnconfirmed
+        ? 'unconfirmed'
+        : aiTask?.status === 'RUNNING'
+          ? 'waiting'
+          : aiTask?.status === 'COMPLETED'
+            ? 'empty'
+            : 'unknown';
+  function meta(schedule: Schedule) {
+    const length = durationLabel(schedule.start, schedule.end);
+    if (schedule.kind === 'FIXED') {
+      const subject = schedule.subjectId ? subjectNames.get(schedule.subjectId) : '';
+      return [length, subject && !schedule.title.includes(subject) ? subject : ''];
+    }
+    if (schedule.done) return [length, '완료'];
+    const subject = schedule.subjectId ? subjectNames.get(schedule.subjectId) : '';
+    const due = schedule.subjectId ? (dueBySubject.get(schedule.subjectId) ?? 0) : 0;
+    return [
+      length,
+      subject && !schedule.title.includes(subject) ? subject : '',
+      due ? `복습 카드 ${due}장` : '',
+    ];
+  }
+
   return (
     <>
       <ScreenHeader
         title="시간표"
         action={
-          <IconButton label="일정 추가" onClick={() => open()}>
-            <Plus size={24} />
-          </IconButton>
-        }
-      />
-      <div className="page-inset pb-8">
-        <div className="flex items-center justify-between mb-3">
-          <span className="font-bold text-[17px] py-2">
-            {new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long' }).format(
-              new Date(`${day}T12:00:00`),
-            )}
-          </span>
-          <div className="flex items-center">
-            {day !== dateKey() && (
-              <button
-                onClick={() => setDay(dateKey())}
-                className="min-h-11 px-2 text-[13px] font-semibold text-muted"
-              >
-                오늘
-              </button>
-            )}
-            <IconButton label="이전 주" onClick={() => setDay(shiftDate(day, -7))}>
-              <ChevronLeft size={20} />
-            </IconButton>
-            <IconButton label="다음 주" onClick={() => setDay(shiftDate(day, 7))}>
-              <ChevronRight size={20} />
+          <div className="planner-header-actions">
+            <button type="button" className="planner-header-chip" onClick={goToday}>
+              오늘
+            </button>
+            <button
+              type="button"
+              className="planner-header-chip"
+              aria-haspopup="dialog"
+              aria-label={`${day.slice(0, 4)}년 ${Number(day.slice(5, 7))}월 · 날짜 고르기`}
+              onClick={() => setMonthOpen(true)}
+            >
+              {monthLabel}
+              <ChevronDown size={12} aria-hidden="true" />
+            </button>
+            <IconButton label="일정 추가" disabled={generating} onClick={() => openNew()}>
+              <Plus size={24} />
             </IconButton>
           </div>
-        </div>
-        <div className="grid grid-cols-7 gap-1.5 mb-6" aria-label="날짜 선택">
+        }
+      />
+      <div className="page-inset planner-screen">
+        <div
+          ref={strip}
+          className="week-strip"
+          role="group"
+          aria-label="날짜 선택 · 좌우로 밀면 주가 바뀌어요"
+          onKeyDown={onStripKey}
+          onPointerDown={onStripDown}
+          onPointerUp={onStripUp}
+          onPointerCancel={() => (swipe.current = null)}
+          onClickCapture={(event) => {
+            if (swipe.current?.swiped) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+            swipe.current = null;
+          }}
+        >
           {weekDates(day).map((date, index) => (
             <button
               key={date}
+              data-date={date}
+              className="week-day"
+              tabIndex={date === day ? 0 : -1}
               aria-pressed={day === date}
-              aria-current={date === dateKey() ? 'date' : undefined}
-              aria-label={new Intl.DateTimeFormat('ko-KR', {
-                month: 'long',
-                day: 'numeric',
-                weekday: 'long',
-              }).format(new Date(`${date}T12:00:00`))}
+              aria-current={date === today ? 'date' : undefined}
+              aria-label={`${dayLabel(date, 'long')}${data.schedules.some((s) => s.date.slice(0, 10) === date) ? ', 일정 있음' : ''}`}
               onClick={() => setDay(date)}
-              className={`relative flex h-[68px] flex-col items-center justify-center gap-1 rounded-[18px] ${date === day ? 'bg-ink text-white' : 'text-muted'}`}
             >
-              <span className="text-[12px] font-medium">{'월화수목금토일'[index]}</span>
-              <span className={`text-[18px] font-bold ${date === day ? '' : 'text-ink'}`}>
-                {Number(date.slice(-2))}
-              </span>
-              {data.schedules.some((s) => s.date.slice(0, 10) === date) && (
-                <span
-                  className={`absolute bottom-[7px] h-1 w-1 rounded-full ${date === day ? 'bg-white' : 'bg-brand'}`}
-                />
-              )}
+              <span className="week-day-name">{'월화수목금토일'[index]}</span>
+              <span className="week-day-number">{Number(date.slice(-2))}</span>
+              <i data-on={data.schedules.some((s) => s.date.slice(0, 10) === date)} />
             </button>
           ))}
         </div>
-        {conflicts.length > 0 && (
-          <button
-            onClick={() => open(conflicts[0].find((s) => s.kind === 'FLEXIBLE') ?? conflicts[0][0])}
-            className="mb-5 flex w-full items-center gap-3 rounded-2xl bg-ink px-4 py-3.5 text-left text-white"
-          >
-            <TriangleAlert size={20} className="shrink-0" />
-            <span className="flex-1 text-[13px] font-semibold">
-              {conflicts[0][0].title}와 {conflicts[0][1].title} 시간이 겹쳐요
-            </span>
-            <span className="text-[13px] font-bold whitespace-nowrap">바꾸기</span>
+
+        {progress.count > 0 ? (
+          <div className="planner-progress">
+            <div className="planner-progress-copy">
+              <p>
+                {progress.doneMinutes === progress.minutes ? (
+                  <>공부 {josa(formatMinutes(progress.minutes), '을')} 모두 마쳤어요</>
+                ) : !progress.doneMinutes && day > today ? (
+                  <>공부 {josa(formatMinutes(progress.minutes), '을')} 계획했어요</>
+                ) : (
+                  <>
+                    공부 {formatMinutes(progress.minutes)} 중{' '}
+                    <em>{formatMinutes(progress.doneMinutes)}</em> 했어요
+                  </>
+                )}
+              </p>
+              <span aria-label={`자율 학습 ${progress.count}개 중 ${progress.doneCount}개 완료`}>
+                {progress.doneCount}/{progress.count}
+              </span>
+            </div>
+            <div
+              className="planner-progress-bar"
+              role="progressbar"
+              aria-label="공부 시간 진행"
+              aria-valuemin={0}
+              aria-valuemax={progress.minutes}
+              aria-valuenow={progress.doneMinutes}
+            >
+              <span style={{ width: `${(progress.doneMinutes / progress.minutes) * 100}%` }} />
+            </div>
+          </div>
+        ) : daySchedules.length ? (
+          <p className="planner-progress-empty">자율 학습을 담으면 공부 시간을 함께 세어 드려요</p>
+        ) : null}
+
+        {schoolHint && (
+          <button type="button" className="planner-hint" onClick={() => setSchoolOpen(true)}>
+            <School size={16} aria-hidden="true" />
+            <span>학교 시간을 담으면 진짜 빈 시간만 남아요</span>
+            <strong>
+              학교 담기
+              <ChevronRight size={12} aria-hidden="true" />
+            </strong>
           </button>
         )}
-        <div className="mb-4 flex justify-between items-center">
-          <h2 className="font-bold text-[17px]">
-            {day === dateKey()
-              ? '오늘의 일정'
-              : `${Number(day.slice(5, 7))}월 ${Number(day.slice(-2))}일 일정`}
-          </h2>
-          <span className="text-[13px] text-muted">
-            {completed} / {schedules.length} 완료
-          </span>
-        </div>
-        {!schedules.length ? (
+
+        {!daySchedules.length ? (
           <EmptyState
-            title="아직 여유로운 하루예요"
-            description="학교, 학원처럼 정해진 시간부터 적어 볼까요?"
+            title="비어 있는 하루예요"
+            description={
+              day < today
+                ? '이날 담긴 일정이 없어요. 지난 공부도 기록으로 남길 수 있어요.'
+                : weekday
+                  ? '학교·학원처럼 정해진 시간부터 담으면 남는 공부 시간을 정확히 계산해요.'
+                  : '공부할 시간을 직접 담거나 추천을 받아 보세요.'
+            }
             action={
-              <Button variant="secondary" onClick={() => open()}>
-                <Plus size={18} />첫 일정 추가하기
-              </Button>
+              <div className="planner-empty-actions">
+                {weekday && day >= today ? (
+                  <Button onClick={() => setSchoolOpen(true)}>
+                    <School size={18} />
+                    학교 시간부터 담기
+                  </Button>
+                ) : (
+                  day >= today && (
+                    <Button
+                      className={generating ? 'is-loading' : ''}
+                      aria-busy={generating}
+                      onClick={() => void suggest()}
+                      disabled={aiBusy}
+                    >
+                      {generating ? (
+                        working
+                      ) : (
+                        <>
+                          <Sparkles size={18} />
+                          공부 일정 추천받기
+                        </>
+                      )}
+                    </Button>
+                  )
+                )}
+                <Button variant="secondary" disabled={generating} onClick={() => openNew()}>
+                  <Plus size={18} />
+                  직접 추가
+                </Button>
+              </div>
             }
           />
         ) : (
-          <div className="flex flex-col gap-2.5">
-            {schedules.map((schedule) => {
-              const gap = gaps.get(schedule.id);
-              const current =
-                !schedule.done &&
-                day === dateKey(now) &&
-                schedule.start <= currentTime &&
-                currentTime < schedule.end;
-              return (
-                <Fragment key={schedule.id}>
-                  {gap && (
-                    <button
-                      className="schedule-gap"
-                      aria-label={`${gap.start}부터 ${gap.end}까지 ${durationLabel(gap.start, gap.end)} 여유 시간에 일정 추가`}
-                      onClick={() => {
-                        setEditing('new');
-                        setForm({ ...blank(gap.date), start: gap.start, end: gap.end });
-                        setError('');
-                      }}
-                    >
-                      <span className="schedule-gap-description">
-                        <Clock3 size={15} aria-hidden="true" />
-                        {durationLabel(gap.start, gap.end)} 여유
-                      </span>
-                      <span className="schedule-gap-action">
-                        <Plus size={16} aria-hidden="true" /> 일정 추가
-                      </span>
-                    </button>
-                  )}
-                  <div className="flex gap-3 items-start">
-                    <span
-                      className="schedule-time-range"
-                      aria-label={`${schedule.start}부터 ${schedule.end}까지`}
-                    >
-                      <strong>{schedule.start}</strong>
-                      <small>{schedule.end}</small>
+          <div className="planner-list">
+            {rows.map((row) => {
+              if (row.type === 'now')
+                return (
+                  <div
+                    key="now"
+                    ref={nowLine}
+                    className="planner-now"
+                    role="separator"
+                    aria-label={`지금 ${row.time}`}
+                  >
+                    <span>{row.time}</span>
+                    <i />
+                  </div>
+                );
+              if (row.type === 'gap')
+                return (
+                  <div key={`gap-${row.start}`} className="planner-row">
+                    <span className="planner-gap-time" aria-hidden="true">
+                      {row.start}
+                      <br />
+                      {row.end}
                     </span>
-                    <div
-                      className={`flex flex-1 min-w-0 items-center rounded-[18px] ${schedule.done ? 'bg-canvas' : current ? 'bg-ink text-white' : 'bg-surface'}`}
+                    <button
+                      type="button"
+                      className={`planner-gap${generating ? ' is-filling' : ''}`}
+                      disabled={aiBusy}
+                      aria-label={`${row.start}부터 ${row.end}까지 ${formatMinutes(row.minutes)} 비어 있어요. 추천으로 채우기`}
+                      onClick={() => void suggest({ gap: { start: row.start, end: row.end } })}
                     >
-                      <button
-                        onClick={() => open(schedule)}
-                        className="flex-1 min-w-0 px-4 py-[15px] text-left"
-                      >
-                        <span
-                          className={`block text-[15px] font-bold break-words ${schedule.done ? 'line-through text-subtle' : ''}`}
-                        >
-                          {schedule.title}
+                      <span>{formatMinutes(row.minutes)} 비어 있어요</span>
+                      {generating ? (
+                        <strong>
+                          <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
+                          고르는 중
+                        </strong>
+                      ) : (
+                        <strong>
+                          채우기
+                          <ChevronRight size={12} aria-hidden="true" />
+                        </strong>
+                      )}
+                    </button>
+                  </div>
+                );
+              if (row.type === 'conflict') {
+                const { movable, fix, other } = row;
+                const range = fix ? `${fix.start}–${fix.end}` : '';
+                return (
+                  <div key={row.id} className="planner-row">
+                    <span />
+                    <div className="planner-conflict" role="status">
+                      <span>
+                        <TriangleAlert size={15} aria-hidden="true" />
+                        <span className="truncate">
+                          {`${other.title}${particle(other.title, '과')}`}{' '}
+                          {formatMinutes(row.overlap)} 겹쳐요
                         </span>
-                        <span
-                          className={`mt-1 flex flex-wrap gap-x-1.5 items-center text-[12px] ${current ? 'text-white/70' : 'text-muted'}`}
+                      </span>
+                      {movable && fix ? (
+                        <button
+                          type="button"
+                          disabled={!!pending}
+                          aria-label={`${josa(movable.title, '을')} ${josa(range, '으로')} ${fix.kind === 'move' ? '옮기기' : '줄이기'}`}
+                          onClick={() => void applyFix(movable, fix)}
                         >
-                          {schedule.kind === 'FIXED' && <LockKeyhole size={12} />}
-                          {durationLabel(schedule.start, schedule.end)}
-                          {schedule.kind === 'FIXED' ? ' · 고정' : ''}
-                          {current ? ' · 지금' : ''}
-                        </span>
-                      </button>
-                      <button
-                        disabled={busy}
-                        aria-label={`${schedule.title} ${schedule.done ? '완료 취소' : '완료하기'}`}
-                        aria-pressed={schedule.done}
-                        onClick={() => toggle(schedule)}
-                        className="p-3.5 shrink-0"
-                      >
-                        <span
-                          className={`flex size-6 items-center justify-center rounded-full ${schedule.done ? 'bg-ink text-white' : current ? 'border-[1.5px] border-white/50' : 'border-[1.5px] border-line-strong'}`}
-                        >
-                          {schedule.done && <Check size={15} />}
-                        </span>
-                      </button>
+                          {fix.kind === 'move'
+                            ? `${josa(fix.start, '으로')} 옮기기`
+                            : `${josa(range, '으로')} 줄이기`}
+                        </button>
+                      ) : (
+                        <button type="button" onClick={() => openEdit(row.anchor)}>
+                          바꾸기
+                        </button>
+                      )}
                     </div>
                   </div>
-                </Fragment>
+                );
+              }
+              const { schedule, current } = row;
+              const fixed = schedule.kind === 'FIXED';
+              const done = !fixed && schedule.done;
+              const state = current ? 'current' : done ? 'done' : fixed ? 'fixed' : 'open';
+              return (
+                <div key={schedule.id} className="planner-row planner-item" data-state={state}>
+                  <span
+                    className="planner-time"
+                    aria-label={`${schedule.start}부터 ${schedule.end}까지`}
+                  >
+                    <strong>{schedule.start}</strong>
+                    <small>{schedule.end}</small>
+                  </span>
+                  <div className="planner-card">
+                    <button
+                      type="button"
+                      className="planner-card-main"
+                      onClick={() => openEdit(schedule)}
+                    >
+                      <span className="planner-card-title">{schedule.title}</span>
+                      <span className="planner-card-meta">
+                        {fixed && <LockKeyhole size={11} aria-hidden="true" />}
+                        {meta(schedule).filter(Boolean).join(' · ')}
+                        {current ? <span className="sr-only"> · 지금</span> : null}
+                      </span>
+                    </button>
+                    {fixed ? (
+                      <span className="planner-card-tag">고정</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="planner-check"
+                        disabled={!!pending}
+                        aria-label={`${schedule.title} ${schedule.done ? '완료 취소' : '완료하기'}`}
+                        aria-pressed={schedule.done}
+                        onClick={() => void toggle(schedule)}
+                      >
+                        <span>{schedule.done && <Check size={13} />}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
               );
             })}
+            <div className="planner-row">
+              <span />
+              <Button
+                variant="secondary"
+                className="planner-add"
+                disabled={generating}
+                onClick={() => openNew()}
+              >
+                <Plus size={18} aria-hidden="true" />
+                일정 추가
+              </Button>
+            </div>
           </div>
         )}
-        {!!schedules.length && (
-          <button
-            onClick={() => open()}
-            className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl text-[14px] font-semibold text-muted"
+        {ctaVisible && <div className="planner-cta-space" aria-hidden="true" />}
+        <span className="sr-only" role="status">
+          {generating ? generatingCopy : ''}
+        </span>
+      </div>
+      {ctaVisible && (
+        <div className="planner-cta">
+          <Button
+            className={`w-full${generating ? ' is-loading' : ''}`}
+            aria-busy={generating}
+            onClick={() => void suggest()}
+            disabled={aiBusy}
           >
-            <Plus size={18} />
-            일정 추가
-          </button>
-        )}
-        <div className="mt-6 flex justify-end">
-          <Button onClick={() => void suggest()} disabled={aiBusy} className="!rounded-full">
-            <Sparkles size={19} /> 빈 시간 추천받기
+            {generating ? (
+              working
+            ) : (
+              <>
+                <Sparkles size={18} />빈 {formatMinutes(freeMinutes)} 채우기
+              </>
+            )}
           </Button>
         </div>
-      </div>
+      )}
+
+      {editor && (
+        <ScheduleEditor
+          key={editor.key}
+          data={data}
+          editing={editor.editing}
+          initial={editor.initial}
+          onClose={() => setEditor(null)}
+          onSaved={async (date, message) => {
+            await refresh();
+            setDay(date);
+            setEditor(null);
+            toast(message);
+          }}
+        />
+      )}
+      {monthOpen && (
+        <MonthSheet
+          day={day}
+          today={today}
+          schedules={data.schedules}
+          onClose={() => setMonthOpen(false)}
+          onPick={(date) => {
+            scrollToNow.current = date === today;
+            setDay(date);
+            setMonthOpen(false);
+          }}
+        />
+      )}
+      {schoolOpen && (
+        <SchoolSheet
+          data={data}
+          day={day}
+          today={today}
+          onClose={() => setSchoolOpen(false)}
+          onSaved={async (message) => {
+            await refresh();
+            setSchoolOpen(false);
+            toast(message);
+          }}
+        />
+      )}
+
       <Sheet
-        open={!!editing}
-        onClose={() => !busy && setEditing(null)}
-        title={editing === 'new' ? '어떤 일정을 담을까요?' : '일정 바꾸기'}
+        open={aiOpen}
+        onClose={closeSuggestion}
+        title={
+          aiError && !plans.length
+            ? FAILURE_TITLE[failure]
+            : aiContext.free >= 60
+              ? `빈 ${josa(formatMinutes(aiContext.free), '을')} 채워요`
+              : '공부 일정을 추천해요'
+        }
+        description={
+          aiError && !plans.length
+            ? dayLabel(suggestionDate)
+            : `${dayLabel(suggestionDate)} · ${
+                fixedTitles.length === 0
+                  ? '지금 있는 일정은 그대로 둬요'
+                  : fixedTitles.length <= 2
+                    ? `${fixedTitles.join('·')} 시간은 피했어요`
+                    : `고정 일정 ${fixedTitles.length}개는 피했어요`
+              }`
+        }
       >
-        <form onSubmit={save} className="planner-editor flex flex-col gap-5">
-          <label className="text-sm font-semibold">
-            일정 이름
-            <input
-              autoFocus
-              className="field mt-2"
-              required
-              maxLength={100}
-              placeholder="예: 생명과학 개념 복습"
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-            />
-          </label>
-          {
-            <div className="segmented-control">
-              {(['FIXED', 'FLEXIBLE'] as const).map((kind) => (
-                <button
-                  key={kind}
-                  type="button"
-                  aria-pressed={form.kind === kind}
-                  className="segment-option"
-                  onClick={() => setForm({ ...form, kind })}
-                >
-                  {kind === 'FIXED' ? '고정 일정' : '자율 학습'}
-                </button>
-              ))}
-            </div>
-          }
-          <label className="text-sm font-semibold">
-            날짜
-            <DateTimeField
-              type="date"
-              className="mt-2"
-              required
-              value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
-            />
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="text-sm font-semibold">
-              시작
-              <DateTimeField
-                type="time"
-                className="mt-2"
-                required
-                value={form.start}
-                onChange={(e) => setForm({ ...form, start: e.target.value })}
-              />
-            </label>
-            <label className="text-sm font-semibold">
-              종료
-              <DateTimeField
-                type="time"
-                className="mt-2"
-                required
-                value={form.end}
-                onChange={(e) => setForm({ ...form, end: e.target.value })}
-              />
-            </label>
-          </div>
-          {form.start && form.end && !formValidation && (
-            <p
-              className={`-mt-2 flex items-start gap-2 text-[13px] leading-5 ${overlapping ? 'text-danger' : 'text-muted'}`}
-              role={overlapping ? 'status' : undefined}
-            >
-              {overlapping ? (
-                <TriangleAlert size={16} className="shrink-0 mt-0.5" />
-              ) : (
-                <Clock3 size={16} className="shrink-0 mt-0.5" />
+        {aiError && plans.length > 0 && <ErrorNote error={aiError} />}
+        {aiError && !plans.length && (
+          <div className="planner-error">
+            <ErrorNote error={aiError} />
+            <div className="planner-submit">
+              {failure === 'failed' && (
+                <Button onClick={() => void suggest({ retryFailed: true })}>새로 추천받기</Button>
               )}
-              {overlapping
-                ? `${overlapping.title}(${overlapping.start}–${overlapping.end})와 겹쳐요. 시간을 바꿔 주세요.`
-                : `${durationLabel(form.start, form.end)} 동안 ${form.kind === 'FIXED' ? '고정된 일정이에요' : '공부할 시간이에요'}`}
-            </p>
-          )}
-          {editing === 'new' && (
-            <label className="text-sm font-semibold">
-              연결할 과목
-              <select
-                className="field mt-2"
-                value={form.subjectId}
-                onChange={(e) => setForm({ ...form, subjectId: e.target.value })}
-              >
-                <option value="">과목 없이 추가</option>
-                {data.subjects.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {error && (
-            <p role="alert" className="text-sm text-danger">
-              {error}
-            </p>
-          )}
-          <Button type="submit" disabled={busy || !!overlapping}>
-            {busy ? '저장하고 있어요…' : '저장하기'}
-          </Button>
-          {editing !== 'new' && (
-            <Button type="button" variant="ghost" onClick={remove} disabled={busy}>
-              <Trash2 size={17} /> 일정 삭제
-            </Button>
-          )}
-        </form>
-      </Sheet>
-      <Sheet open={aiOpen} onClose={closeSuggestion} title="빈 시간을 알차게 채워요">
-        <p className="text-[15px] text-muted mb-5">
-          고정 일정 사이의 빈 시간과 과목을 기준으로 두 가지 시간표를 만들어요. 추천을 확인하고 직접
-          선택해 주세요.
-        </p>
-        {aiBusy && !plans.length && (
-          <div role="status" className="py-10 text-center text-muted">
-            <Sparkles className="mx-auto mb-3 animate-pulse" />
-            {aiTask?.status === 'READY'
-              ? '추천 요청을 준비하고 있어요'
-              : '시간표를 살펴보고 있어요'}
-            <p className="mt-3 text-[13px] leading-5">
-              화면을 닫아도 요청은 남아 있어요.
-              <br />
-              다시 들어오면 결과를 확인할 수 있어요.
-            </p>
-          </div>
-        )}
-        {aiError && (
-          <div role="alert" className="rounded-2xl bg-surface p-5 mb-5">
-            <Clock3 size={24} className="mb-3" />
-            <p className="text-[15px] leading-6">{aiError}</p>
-            {aiTask && (
-              <div className="mt-4 flex flex-col gap-2">
-                <Button variant="secondary" onClick={checkPreviousRequest} disabled={aiBusy}>
-                  이전 요청 확인
-                </Button>
-                {(aiTask.status === 'FAILED' || aiTask.status === 'INTERRUPTED') && (
-                  <Button onClick={() => void suggest(true)} disabled={aiBusy}>
-                    새로 추천받기
-                  </Button>
-                )}
-                {(aiTask.status === 'READY' || aiUnconfirmed) && (
-                  <Button onClick={() => void suggest(false, true)} disabled={aiBusy}>
+              {failure === 'unconfirmed' && (
+                <>
+                  <Button onClick={() => void suggest({ continueRequest: true })}>
                     같은 요청 이어서 보내기
                   </Button>
-                )}
-              </div>
-            )}
-            <button
-              className="text-[14px] font-bold mt-4"
-              onClick={() => {
-                closeSuggestion();
-                open();
-              }}
-            >
-              직접 일정 추가하기 →
-            </button>
+                  <Button variant="secondary" onClick={checkPreviousRequest}>
+                    이전 요청 확인
+                  </Button>
+                </>
+              )}
+              {failure === 'waiting' && (
+                <Button onClick={checkPreviousRequest}>다시 확인하기</Button>
+              )}
+              {failure === 'unknown' && (
+                <Button onClick={() => void suggest()}>다시 시도하기</Button>
+              )}
+              <Button
+                variant={failure === 'empty' ? 'primary' : 'ghost'}
+                onClick={() => void declineSuggestion()}
+              >
+                직접 일정 추가하기
+              </Button>
+            </div>
           </div>
         )}
         {!!plans.length && (
-          <p className="mb-4 text-[13px] text-muted">
-            {Number(suggestionDate.slice(5, 7))}월 {Number(suggestionDate.slice(-2))}일 시간표
-            {savedPlanCount > 0 ? ` · 저장한 ${savedPlanCount}개는 제외했어요` : ''}
-          </p>
-        )}
-        <div className="flex flex-col gap-3">
-          {plans.map((plan, i) => (
-            <button
-              key={plan.name}
-              disabled={busy || aiBusy}
-              onClick={() => {
-                setSelectedPlan(i);
-                setSavedPlanCount(
-                  Math.max(
-                    0,
-                    (aiTask?.result?.plans[i]?.blocks.length ?? plan.blocks.length) -
-                      plan.blocks.length,
-                  ),
+          <>
+            {savedPlanCount > 0 && (
+              <p className="planner-help mb-3">저장한 {savedPlanCount}개는 목록에서 뺐어요</p>
+            )}
+            <div className="planner-plans">
+              {plans.map((plan, i) => {
+                const total = blockMinutes(plan.blocks);
+                return (
+                  <button
+                    key={`${i}-${plan.name}`}
+                    type="button"
+                    className="planner-plan"
+                    disabled={applying || aiBusy}
+                    aria-pressed={selectedPlan === i}
+                    onClick={() => {
+                      setSelectedPlan(i);
+                      setSavedPlanCount(
+                        Math.max(
+                          0,
+                          (aiTask?.result?.plans[i]?.blocks.length ?? plan.blocks.length) -
+                            plan.blocks.length,
+                        ),
+                      );
+                    }}
+                  >
+                    <span className="planner-plan-head">
+                      <span>
+                        <strong>{plan.name}</strong>
+                        {plan.reason && <small>{plan.reason}</small>}
+                      </span>
+                      <i>{selectedPlan === i && <Check size={13} />}</i>
+                    </span>
+                    {plan.blocks.length ? (
+                      <span className="planner-plan-blocks">
+                        {plan.blocks.map((block, j) => (
+                          <span key={j} className="planner-plan-block">
+                            <b>{block.start}</b>
+                            <span>{block.title}</span>
+                            <small>{durationLabel(block.start, block.end)}</small>
+                          </span>
+                        ))}
+                      </span>
+                    ) : (
+                      <span className="planner-help">담을 블록이 남아 있지 않아요</span>
+                    )}
+                    {plan.blocks.length > 0 && (
+                      <span className="planner-plan-foot">
+                        <span>{formatMinutes(total)}</span>
+                        <span>{plan.blocks.length}개</span>
+                      </span>
+                    )}
+                  </button>
                 );
-              }}
-              aria-pressed={selectedPlan === i}
-              className={`text-left p-5 rounded-[20px] ${selectedPlan === i ? 'bg-ink text-white' : 'bg-surface'}`}
-            >
-              <span className="flex justify-between mb-3 font-bold text-[18px]">
-                {plan.name}
-                {selectedPlan === i && <Check size={21} />}
-              </span>
-              {plan.blocks.map((b, j) => (
-                <span className="flex gap-3 text-sm py-1" key={j}>
-                  <span className="opacity-60 tabular-nums">{b.start}</span>
-                  {b.title}
-                </span>
-              ))}
-            </button>
-          ))}
-        </div>
-        {!!plans.length && (
-          <Button className="w-full mt-5" onClick={applyPlan} disabled={busy || aiBusy}>
-            {busy
-              ? '일정을 담고 있어요…'
-              : plans[selectedPlan]?.blocks.length
-                ? `${plans[selectedPlan]?.name}로 채우기`
-                : '저장된 일정 확인하고 닫기'}
-          </Button>
+              })}
+            </div>
+            <p className="planner-help text-center planner-plan-note">
+              담은 뒤에도 하나씩 옮기거나 지울 수 있어요 · 화면을 닫아도 요청은 남아요
+              {planMethod === 'AI+규칙'
+                ? ' · 한 안은 규칙 기반이에요'
+                : planMethod && planMethod !== 'AI'
+                  ? ' · 규칙 기반 추천이에요'
+                  : ''}
+              {planDropped > 0 ? ` · 조건에 맞지 않는 ${planDropped}개는 뺐어요` : ''}
+            </p>
+            <div className="planner-submit">
+              <Button onClick={applyPlan} disabled={applying || aiBusy}>
+                {applying
+                  ? '일정을 담고 있어요…'
+                  : selected?.blocks.length
+                    ? `${josa(selected.name, '으로')} ${selected.blocks.length}개 담기`
+                    : '저장된 일정 확인하고 닫기'}
+              </Button>
+              <Button variant="ghost" onClick={() => void declineSuggestion()} disabled={applying}>
+                둘 다 아니에요 · 직접 추가
+              </Button>
+            </div>
+          </>
         )}
       </Sheet>
     </>
