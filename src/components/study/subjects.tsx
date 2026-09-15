@@ -103,11 +103,10 @@ export function StudyHome(props: ScreenProps) {
         }
       />
       <div className="page-inset pb-8">
+        {/* The row opens the card library; the review itself starts from there or from home. */}
         <button
           className="study-today"
-          onClick={() =>
-            hasCards ? props.navigate(due ? '/flashcards?review=1' : '/flashcards') : setCreate(true)
-          }
+          onClick={() => (hasCards ? props.navigate('/flashcards') : setCreate(true))}
         >
           <span className="study-today-copy">
             <strong>
@@ -128,7 +127,7 @@ export function StudyHome(props: ScreenProps) {
             </small>
           </span>
           <span className={`study-today-pill${due ? ' is-primary' : ''}`}>
-            {due ? '시작' : hasCards ? '카드 보기' : '만들기'}
+            {due ? '바로 가기' : hasCards ? '카드 보기' : '만들기'}
           </span>
         </button>
         <div className="study-section-head">

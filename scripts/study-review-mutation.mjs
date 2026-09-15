@@ -38,6 +38,12 @@ const MUTATIONS = [
     to: 'className="study-today-pill is-primary"',
   },
   {
+    name: 'today row keeps the mock\'s "시작" instead of "바로 가기"',
+    file: 'src/components/study/subjects.tsx',
+    from: "{due ? '바로 가기' : hasCards ? '카드 보기' : '만들기'}",
+    to: "{due ? '시작' : hasCards ? '카드 보기' : '만들기'}",
+  },
+  {
     name: 'review session in creation order instead of the "오늘" list order',
     file: 'src/components/study/cards.tsx',
     from: 'libraryGroups(initial).today.map((c) => c.id)',

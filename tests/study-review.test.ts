@@ -368,6 +368,7 @@ test('study home is a library: one review row, subject state, methods list; no d
   assert.ok(!t.includes('카드가 기다려요'), 'no personified hero');
   assert.ok(!html.includes('<select'), 'semester is a chip that opens a sheet');
   assert.equal((html.match(/is-primary/g) || []).length, 1, 'one brand action on the screen');
+  assert.ok(/class="study-today-pill is-primary"[^>]*>바로 가기</.test(html), 'the row goes to the card library');
   const none = render('/study', { ...fixture(), cards: [] });
   assert.ok(text(none).includes('복습 카드가 아직 없어요'));
   assert.ok(!none.includes('is-primary'), 'nothing to review is not the main action');

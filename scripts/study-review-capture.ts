@@ -239,6 +239,13 @@ async function run(width: number, height: number) {
     assert.equal(home.todayRow, 56);
     assert.ok((home.subjectRows as number[]).every((h) => h >= 64));
     assert.ok((home.methodRows as number[]).every((h) => h >= 56));
+    assert.ok(String(home.todayText).endsWith('바로 가기'));
+    // "바로 가기" opens the card library, not a review session.
+    await click('.study-today');
+    await waitFor('.recall-summary');
+    assert.equal(await evaluate(`location.pathname + location.search`), '/flashcards');
+    assert.equal(await evaluate(`!!document.querySelector('.recall-card')`), false);
+    await go('/study', '.study-today');
     await evaluate(`window.scrollTo(0, document.documentElement.scrollHeight)`);
     await shot('study-home-lower', '{}');
     await evaluate(`window.scrollTo(0, 0)`);
