@@ -28,6 +28,7 @@ import {
   runAiTask,
   type AiTaskRecord,
 } from '@/lib/ai-task';
+import { useRetryCountdown, waitingLabel } from '@/lib/retry-countdown';
 import { exactKeywords, exactOrder, latestAttempts, mix } from './logic';
 import {
   BusyText,
@@ -153,10 +154,12 @@ function EssayExercise({
   const [hint, setHint] = useState(draft?.hint || false);
   const [answer, setAnswer] = useState(draft?.answer ?? previous?.answer ?? '');
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [viewer, setViewer] = useState<Material | null>(null);
+  const [viewer, setViewer] = useState<{ material: Material; citation?: string } | null>(null);
   const [dragged, setDragged] = useState<number | null>(null);
   const [task, setTask] = useState<AiTaskRecord | null>(null);
   const action = useAction();
+  // A refused or interrupted grading that said when to come back keeps the button waiting.
+  const retryIn = useRetryCountdown(action.retryAt, task?.retryAt);
   useEffect(() => {
     if (feedback) {
       removeEssayDraft(props.data.profile.id, essay.id);
@@ -185,6 +188,7 @@ function EssayExercise({
     feedback,
     previous?.answer,
   ]);
+  // jitter: none — one status GET for a stored submission on navigation, with no loop [site src/components/study/essay.tsx:197]
   useEffect(() => {
     const controller = new AbortController();
     findAiTask<Feedback>({
@@ -474,7 +478,11 @@ function EssayExercise({
               <ErrorNote error={action.error} />
               <Button
                 className="w-full"
-                disabled={answer.trim().length < 10 || action.busy}
+                disabled={
+                  answer.trim().length < 10 ||
+                  action.busy ||
+                  (retryIn > 0 && task?.status !== 'RUNNING' && task?.status !== 'READY')
+                }
                 onClick={() =>
                   action.run(async () => {
                     const lookup = {
@@ -483,6 +491,7 @@ function EssayExercise({
                       payload: { essayId: essay.id, answer: answer.trim() },
                     };
                     try {
+                      // jitter: none — students finish their answers at different times; the wait loop's timing is runAiTask's [site src/components/study/essay.tsx:486]
                       const response = await runAiTask<Feedback>({
                         ...lookup,
                         retryFailed: task?.status === 'FAILED' || task?.status === 'INTERRUPTED',
@@ -508,9 +517,9 @@ function EssayExercise({
                 ) : task?.status === 'RUNNING' || task?.status === 'READY' ? (
                   '이전 채점 이어가기'
                 ) : task?.status === 'FAILED' || task?.status === 'INTERRUPTED' ? (
-                  '새로 채점 요청하기'
+                  waitingLabel('새로 채점 요청하기', retryIn)
                 ) : props.data.aiAvailable ? (
-                  '답안 제출하고 코칭 받기'
+                  waitingLabel('답안 제출하고 코칭 받기', retryIn)
                 ) : (
                   '연습 채점 받기'
                 )}
@@ -568,7 +577,7 @@ function EssayExercise({
             <Citation
               citation={essay.citation}
               material={material}
-              onOpen={() => setViewer(material || null)}
+              onOpen={() => setViewer(material ? { material, citation: essay.citation } : null)}
             />
             <ErrorNote error={action.error} />
             {feedback.score < 100 && (
@@ -592,7 +601,7 @@ function EssayExercise({
           </div>
         )}
       </div>
-      <MaterialViewer material={viewer} onClose={() => setViewer(null)} />
+      <MaterialViewer material={viewer?.material ?? null} citation={viewer?.citation} onClose={() => setViewer(null)} />
     </>
   );
 }

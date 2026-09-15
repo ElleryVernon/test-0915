@@ -7,8 +7,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { db } from '../src/lib/server/db';
-import { createSession } from '../src/lib/server/auth';
+import { db } from './lib/db';
+import { createSession } from './lib/session';
 import { assertLoopbackDatabase } from './lib/browser';
 
 assertLoopbackDatabase();
@@ -65,8 +65,10 @@ try {
   check(!/-- \d+ of \d+ --/.test(u.content) && !u.content.includes('\t') && u.content.includes('I. 공모 개요 (2쪽)'), 'extracted text is clean');
   check(u.images.length === 2 && u.images.map((i: { page: number }) => i.page).join() === '2,3' && u.images.every((i: { paragraph: number; url: string }) => i.paragraph >= 0 && i.url.startsWith(`/api/uploads/${u.uploadId}/images/`)), `images located ${JSON.stringify(u.images.map((i: { page: number; paragraph: number }) => [i.page, i.paragraph]))}`);
   check(u.warning === undefined, 'no warning for a text PDF');
-  const row = await db.upload.findUnique({ where: { id: u.uploadId }, include: { blob: true, _count: { select: { images: true } } } });
-  check(row?.blob?.data.length === pdf.length && row._count.images === 2 && row.sha256 && row.textHash, 'bytes, images and hashes stored together');
+  const row = await db.upload.findUnique({ where: { id: u.uploadId }, include: { _count: { select: { images: true } } } });
+  const storedBytes = async (key: string) => (await db.$queryRaw<{ n: number | null }[]>`SELECT length(data)::int AS n FROM ops.blob WHERE key = ${key}`)[0]?.n ?? null;
+  check((await storedBytes(`uploads/${u.uploadId}`)) === pdf.length && row?._count.images === 2 && row.sha256 && row.textHash, 'bytes, images and hashes stored together');
+  check((await db.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ops.blob WHERE key LIKE ${`uploads/${u.uploadId}/images/%`}`)[0].n === 2, 'image bytes stored under the upload');
 
   // Material: the server decides the type and keeps page offsets for the unedited text.
   const made = await json(owner.cookie, '/materials', { subjectId: subject.id, title: u.title, content: u.content, type: 'TXT', uploadId: u.uploadId });
@@ -109,7 +111,7 @@ try {
   await db.upload.create({ data: { id: legacyId, userId: owner.user.id, mime: 'text/plain; charset=utf-8', name: 'old.txt', size: legacyBytes.length } });
   const legacy = await call(owner.cookie, `/uploads/${legacyId}`);
   check(legacy.status === 200 && Buffer.from(await legacy.arrayBuffer()).equals(legacyBytes), 'legacy file served');
-  check((await db.uploadBlob.findUnique({ where: { uploadId: legacyId } }))?.data.length === legacyBytes.length, 'legacy file copied into the database');
+  check((await storedBytes(`uploads/${legacyId}`)) === legacyBytes.length, 'legacy file copied into the blob store');
   const missingId = randomUUID();
   await db.upload.create({ data: { id: missingId, userId: owner.user.id, mime: 'application/pdf', name: 'gone.pdf', size: 10 } });
   const missing = await json(owner.cookie, `/uploads/${missingId}`);
@@ -117,14 +119,14 @@ try {
 
   // Deleting a material deletes its file, bytes and images.
   check((await json(owner.cookie, `/materials/${made.data.id}`, undefined, 'DELETE')).status === 200, 'material deleted');
-  check((await db.upload.count({ where: { id: u.uploadId } })) === 0 && (await db.uploadBlob.count({ where: { uploadId: u.uploadId } })) === 0 && (await db.uploadImage.count({ where: { uploadId: u.uploadId } })) === 0, 'file, bytes and images went with it');
+  check((await db.upload.count({ where: { id: u.uploadId } })) === 0 && (await db.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ops.blob WHERE key LIKE ${`uploads/${u.uploadId}%`}`)[0].n === 0 && (await db.uploadImage.count({ where: { uploadId: u.uploadId } })) === 0, 'file, bytes and images went with it');
 
   // Stale unlinked uploads are collected on the next upload; a card's image is not.
   const old = new Date(Date.now() - 2 * 86_400_000);
   const [abandoned, cardImage] = [randomUUID(), randomUUID()];
   for (const id of [abandoned, cardImage]) {
     await db.upload.create({ data: { id, userId: owner.user.id, mime: 'image/png', name: `${id}.png`, size: 3, createdAt: old } });
-    await db.uploadBlob.create({ data: { uploadId: id, data: new Uint8Array([1, 2, 3]) } });
+    await db.$executeRaw`INSERT INTO ops.blob (key, content_type, size, data) VALUES (${`uploads/${id}`}, 'image/png', 3, ${Buffer.from([1, 2, 3])})`;
   }
   await db.card.create({ data: { userId: owner.user.id, subjectId: subject.id, front: '그림 카드', back: '답', type: 'BLIND', image: `/api/uploads/${cardImage}`, nextReviewAt: new Date() } });
   const txt = await upload(owner.cookie, '노트.txt', new TextEncoder().encode('첫 줄\r\n둘째 줄 한글'.normalize('NFD')), 'text/plain');
@@ -135,7 +137,23 @@ try {
   // A page without a text layer is reported, not filled with nothing.
   const scanned = await upload(owner.cookie, '스캔.pdf', new Uint8Array(readFileSync('tests/fixtures/pdf/scanned.pdf')), 'application/pdf');
   check(scanned.status === 200 && scanned.data.warning === '1쪽은 이미지로만 되어 있어 본문에 넣지 못했어요.' && scanned.data.content.includes('둘째 쪽') && JSON.stringify(scanned.data.pageBreaks) === '[0,0]', `scan warning ${scanned.data?.warning}`);
-  console.log(`MATERIALS_HTTP_OK (${checks} checks; storage, serving, legacy migration, 410, delete cascade, collection, extraction)`);
+  // A sample material for a fresh account: made once with its questions and essay, then reused; parents cannot.
+  const fresh = await account('sample');
+  const sampleFirst = await json(fresh.cookie, '/materials/sample', {});
+  check(sampleFirst.status === 201 && sampleFirst.data.created === true && sampleFirst.data.material.title === '3. 항상성과 몸의 조절' && sampleFirst.data.questions.length === 2 && sampleFirst.data.essays.length === 1 && sampleFirst.data.material.contentLength >= 20, `sample material with its items (${sampleFirst.status})`);
+  const sampleAgain = await json(fresh.cookie, '/materials/sample', {});
+  check(sampleAgain.status === 200 && sampleAgain.data.created === false && sampleAgain.data.material.id === sampleFirst.data.material.id, 'sample material created once');
+  check((await db.material.count({ where: { userId: fresh.user.id } })) === 1 && (await db.question.count({ where: { userId: fresh.user.id } })) === 2 && (await db.essay.count({ where: { userId: fresh.user.id } })) === 1 && (await db.subject.count({ where: { userId: fresh.user.id, name: '생명과학Ⅰ' } })) === 1, 'nothing duplicated');
+  // The sample is marked, not matched by title: a learner's own material with the same title does not stand in for it.
+  const namesake = await account('namesake');
+  const ownSubject = await db.subject.create({ data: { userId: namesake.user.id, name: '내 과목' } });
+  await json(namesake.cookie, '/materials', { subjectId: ownSubject.id, title: '3. 항상성과 몸의 조절', content: '내가 직접 정리한 항상성 노트입니다. 체온과 혈당 조절을 적었다.', type: 'TXT' });
+  const namesakeSample = await json(namesake.cookie, '/materials/sample', {});
+  check(namesakeSample.status === 201 && namesakeSample.data.created === true && namesakeSample.data.questions.length === 2, `own material with the sample's title does not block the sample (${namesakeSample.status})`);
+  const parent = await db.user.create({ data: { id: `${prefix}-parent`, name: '학부모', nickname: `${prefix}-parent`.slice(0, 30), role: 'PARENT', points: 0 } });
+  const parentCookie = (await createSession(parent.id, new Request(base!))).split(';')[0];
+  check((await json(parentCookie, '/materials/sample', {})).status === 403, 'a parent cannot make a sample material');
+  console.log(`MATERIALS_HTTP_OK (${checks} checks; storage, serving, legacy migration, 410, delete cascade, collection, extraction, sample)`);
 } finally {
   for (const file of legacyFiles) rmSync(file, { force: true });
   await db.user.deleteMany({ where: { id: { startsWith: prefix } } });

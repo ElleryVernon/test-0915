@@ -15,7 +15,7 @@ import {
   type Line,
   type Piece,
   type Placement,
-} from '../src/lib/server/pdf-extract';
+} from '../server/testdata/reference/pdf-extract';
 
 const piece = (str: string, x: number, y: number, width = str.length * 10, size = 10): Piece => ({ str, x, y, width, size });
 const line = (text: string, y: number, x = 50, right = 500, size = 10): Line => ({ text, x, right, y, size });

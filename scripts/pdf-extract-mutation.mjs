@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const TEST = 'tests/pdf-extract.test.ts';
-const FILE = 'src/lib/server/pdf-extract.ts';
+const FILE = 'server/testdata/reference/pdf-extract.ts';
 const MUTATIONS = [
   { name: 'tabs and runs of spaces kept in a line', from: "text: text.replace(/\\s+/g, ' ').trim(),", to: 'text: text.trim(),' },
   { name: 'every glyph gap becomes a space', from: 'gap > Math.max(piece.size, 1) * 0.2', to: 'gap > 0' },

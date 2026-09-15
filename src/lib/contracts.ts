@@ -32,7 +32,14 @@ export interface Material {
   id: string;
   subjectId: string;
   title: string;
-  content: string;
+  /** Present on create/edit responses and on the detail; absent from bootstrap (see MaterialDetail). */
+  content?: string;
+  /** Length of the trimmed body — decides whether questions can be generated (>= 20). */
+  contentLength: number;
+  /** The first 160 characters of the body, whitespace collapsed. */
+  excerpt: string;
+  /** sha256 (hex) of the stored body's UTF-8 bytes; changes with every edit, so it keys the detail cache. */
+  contentHash: string;
   type: string;
   url?: string;
   /** The uploaded file; its bytes and images are served under /api/uploads/:uploadId. */
@@ -44,6 +51,12 @@ export interface Material {
   pages?: number;
   imageCount?: number;
   createdAt: string;
+}
+/** GET /api/materials/:id — the material with its body, page count and extracted images. */
+export interface MaterialDetail extends Material {
+  content: string;
+  pages?: number;
+  images: MaterialImage[];
 }
 /** An image found in an uploaded PDF, with the page and paragraph it appeared after. */
 export interface MaterialImage {
@@ -60,9 +73,6 @@ export interface MaterialImage {
   height: number;
   /** Start of the paragraph it follows. */
   context: string;
-}
-export interface MaterialDetail extends Material {
-  images: MaterialImage[];
 }
 export interface Question {
   id: string;
@@ -119,6 +129,8 @@ export interface Card {
   masks?: Mask[];
   /** Completed reviews recorded on the server; absent in review responses. */
   reviewCount?: number;
+  /** The material an AI generation made this card from; null for hand-made and wrong-note cards. */
+  materialId?: string | null;
 }
 export interface StudyAttempt {
   id: string;
@@ -202,7 +214,13 @@ export interface AppData {
   aiAvailable: boolean;
   demo: boolean;
 }
-export type Navigate = (path: string) => void;
+/** Goes to path; `replace` swaps the current history entry (for one-shot intents like home's camera link). */
+/**
+ * Moves to path. replace swaps the history entry instead of pushing one. keepScreen updates the
+ * address without remounting the current screen (screens are keyed by their path): a screen that
+ * has consumed a one-shot intent from its query tidies the address this way and keeps its state.
+ */
+export type Navigate = (path: string, options?: { replace?: boolean; keepScreen?: boolean }) => void;
 export interface ScreenProps {
   data: AppData;
   refresh: () => Promise<void>;
@@ -213,7 +231,7 @@ export interface ScreenProps {
 // All mutation endpoints use { ...payload }, return JSON { data: T } or { error: string }, HTTP 4xx/5xx on failures.
 // GET /api/bootstrap; POST /api/session {role}; POST /api/logout.
 // POST /api/subjects {name,examName?,examDate?}; PATCH /api/subjects/:id {name?,examName?,examDate?:'YYYY-MM-DD'|null} (examDate null clears the exam); DELETE soft-deletes.
-// POST /api/materials {subjectId,title,content,type,url?}; POST /api/generate {materialId,count:1..10,mode:'quiz'|'essay'|'cards'}.
+// POST /api/materials {subjectId,title,content,type,url?}; POST /api/materials/sample {} => {material,questions,essays,created} (201 once, then 200); POST /api/generate {materialId,count:1..10,mode:'quiz'|'essay'|'cards'}.
 // POST /api/quiz/answer {questionId,answer:number} => {correct,explanation,citation}; POST /api/essay/submit {essayId,answer} => {score,matched:string[],missing:string[],feedback}.
 // POST /api/cards {subjectId,front,back,type,image?,masks?}; PATCH /api/cards/:id {deleted?:boolean,front?,back?}; POST /api/cards/review {cardId,rating:'EASY'|'GOOD'|'HARD'|'AGAIN',reviewId:uuid} => Card; POST /api/wrong-notes/cards {questionIds:string[]}.
 // POST /api/schedules {title,date,start,end,kind,subjectId?}; PATCH /api/schedules/:id {done?,title?,start?,end?}; DELETE /api/schedules/:id; POST /api/planner/suggest {date,after?:'HH:MM'} => {plans:{name:string,reason?:string,blocks:Omit<Schedule,'id'>[]}[],method:string}.

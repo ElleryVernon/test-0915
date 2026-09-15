@@ -16,6 +16,7 @@ import { api } from '@/lib/api';
 import type { Profile, ScreenProps } from '@/lib/contracts';
 import { Button, EmptyState, IconButton, ScreenHeader, SectionTitle, Sheet } from '@/components/ui';
 import { dateKey, relativeTime, shiftDate, subjectAccuracy, weekDates } from './helpers';
+import { Stepper } from '@/components/ui-choice';
 
 export default function Parent(props: ScreenProps) {
   const { data, navigate } = props;
@@ -345,6 +346,7 @@ export function ChildLinks({ data, refresh, toast }: ScreenProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [removing, setRemoving] = useState<Profile | null>(null);
+  // jitter: none — one GET per screen visit; it reloads only after link, select or unlink [site src/components/social/parent.tsx:351]
   useEffect(() => {
     let active = true;
     api<(Profile & { selected: boolean })[]>('/children')
@@ -450,7 +452,7 @@ export function ChildLinks({ data, refresh, toast }: ScreenProps) {
           </div>
         </div>
       ) : (
-        <form onSubmit={link} className="mt-6">
+        <form onSubmit={link} noValidate className="mt-6">
           <p className="text-[16px] font-bold">새 자녀 연결하기</p>
           <p className="text-[13px] text-muted leading-6 mt-2 mb-4">
             자녀의 마이페이지에서 만든
@@ -545,7 +547,7 @@ export function CheerScreen(props: ScreenProps) {
                 <br />
                 아이에겐 큰 힘이 돼요.
               </p>
-              <form onSubmit={send} className="mt-6">
+              <form onSubmit={send} noValidate className="mt-6">
                 <label className="sr-only" htmlFor="cheer-message">
                   응원 메시지
                 </label>
@@ -595,15 +597,14 @@ export function CheerScreen(props: ScreenProps) {
                   </div>
                   <label className="mt-3 flex items-center gap-3 text-[13px] text-muted">
                     직접 입력
-                    <input
-                      type="number"
-                      aria-label="보낼 포인트"
+                    <Stepper
+                      label="보낼 포인트"
+                      name="points"
                       min={0}
                       max={data.profile.points}
-                      step={1}
+                      step={100}
                       value={points}
-                      onChange={(e) => setPoints(Math.max(0, Math.floor(Number(e.target.value))))}
-                      className="field !w-28 !py-2 !min-h-0 !text-sm text-right"
+                      onChange={setPoints}
                     />
                     P
                   </label>

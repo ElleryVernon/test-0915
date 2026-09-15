@@ -18,6 +18,7 @@ import {
   SubjectSelect,
   useAction,
 } from './shared';
+import { Checkbox } from '@/components/ui-choice';
 
 type AnswerResult = { correct: boolean; explanation: string; citation: string };
 export function Quiz(props: ScreenProps) {
@@ -37,7 +38,7 @@ export function Quiz(props: ScreenProps) {
   const [selection, setSelection] = useState<number | null>(null);
   const [result, setResult] = useState<AnswerResult | null>(null);
   const [answered, setAnswered] = useState<{ id: string; correct: boolean }[]>([]);
-  const [viewer, setViewer] = useState<Material | null>(null);
+  const [viewer, setViewer] = useState<{ material: Material; citation?: string } | null>(null);
   const [finished, setFinished] = useState(false);
   const action = useAction();
   const latest = latestAttempts(props.data.attempts, 'questionId');
@@ -249,7 +250,7 @@ export function Quiz(props: ScreenProps) {
             <Citation
               citation={result.citation}
               material={material}
-              onOpen={() => setViewer(material || null)}
+              onOpen={() => setViewer(material ? { material, citation: result.citation } : null)}
             />
             <section className="mt-7">
               <h3 className="mb-3 text-[16px] font-bold">개념은 이렇게 이어져요</h3>
@@ -301,7 +302,7 @@ export function Quiz(props: ScreenProps) {
           </>
         )}
       </div>
-      <MaterialViewer material={viewer} onClose={() => setViewer(null)} />
+      <MaterialViewer material={viewer?.material ?? null} citation={viewer?.citation} onClose={() => setViewer(null)} />
     </>
   );
 }
@@ -408,7 +409,7 @@ export function WrongNotes(props: ScreenProps) {
   const [subject, setSubject] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [opened, setOpened] = useState<string | null>(null);
-  const [viewer, setViewer] = useState<Material | null>(null);
+  const [viewer, setViewer] = useState<{ material: Material; citation?: string } | null>(null);
   const action = useAction();
   const questions = wrongQuestions(props.data).filter((q) => !subject || q.subjectId === subject);
   const essays = wrongEssays(props.data).filter((e) => !subject || e.subjectId === subject);
@@ -447,17 +448,18 @@ export function WrongNotes(props: ScreenProps) {
                 {questions.map((q) => (
                   <article key={q.id} className="rounded-[20px] bg-surface p-4">
                     <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        aria-label={`${q.prompt} 선택`}
+                      <Checkbox
+                        name="wrong-note"
                         checked={selected.includes(q.id)}
-                        onChange={(e) =>
+                        onChange={(checked) =>
                           setSelected((ids) =>
-                            e.target.checked ? [...ids, q.id] : ids.filter((id) => id !== q.id),
+                            checked ? [...ids, q.id] : ids.filter((id) => id !== q.id),
                           )
                         }
-                        className="mt-1 h-5 w-5 shrink-0 accent-ink"
-                      />
+                        className="shrink-0"
+                      >
+                        <span className="sr-only">{q.prompt} 선택</span>
+                      </Checkbox>
                       <button
                         className="flex-1 text-left"
                         onClick={() => setOpened(opened === q.id ? null : q.id)}
@@ -475,11 +477,10 @@ export function WrongNotes(props: ScreenProps) {
                         <Citation
                           citation={q.citation}
                           material={props.data.materials.find((m) => m.id === q.materialId)}
-                          onOpen={() =>
-                            setViewer(
-                              props.data.materials.find((m) => m.id === q.materialId) || null,
-                            )
-                          }
+                          onOpen={() => {
+                            const found = props.data.materials.find((m) => m.id === q.materialId);
+                            setViewer(found ? { material: found, citation: q.citation } : null);
+                          }}
                         />
                         <Button
                           className="w-full"
@@ -550,7 +551,7 @@ export function WrongNotes(props: ScreenProps) {
           />
         )}
       </div>
-      <MaterialViewer material={viewer} onClose={() => setViewer(null)} />
+      <MaterialViewer material={viewer?.material ?? null} citation={viewer?.citation} onClose={() => setViewer(null)} />
     </>
   );
 }

@@ -3,17 +3,20 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { BookOpen, ChevronRight, FileText, ImageIcon, LoaderCircle } from '@/components/icons';
 import type { AppData, ScreenProps, Material, MaterialImage } from '@/lib/contracts';
 import { Button, ErrorNote, Sheet } from '@/components/ui';
-import { api } from '@/lib/api';
+import { api, apiErrorOf } from '@/lib/api';
 import {
   acknowledgeAiTask,
+  AI_CLIENT_DEADLINE_MS,
   AiTaskFailureError,
   AiTaskPendingError,
   runAiTask,
   type AiTaskRecord,
 } from '@/lib/ai-task';
+import { retryAtOf, useRetryCountdown, waitingLabel } from '@/lib/retry-countdown';
 import { exclusively, generatedItemCount, type GenerationMode } from './logic';
-import PdfViewer from './pdf-viewer';
 import { recoverGenerationTask } from './generation-task';
+import { generationCopy, progressCopy } from '@/lib/ai-progress';
+import { OptionField, OptionList } from '@/components/ui-choice';
 
 export function params(path: string) {
   return new URL(path, 'https://memoryz.local').searchParams;
@@ -28,6 +31,9 @@ export function errorMessage(error: unknown) {
 export function useAction() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // A refusal that says when to come back keeps the action's button waiting until then.
+  const [retryAt, setRetryAt] = useState<number | null>(null);
+  const retryIn = useRetryCountdown(retryAt);
   const lock = useRef(false);
   async function run(action: () => Promise<void>) {
     await exclusively(lock, async () => {
@@ -35,14 +41,16 @@ export function useAction() {
       setError('');
       try {
         await action();
+        setRetryAt(null);
       } catch (error) {
         setError(errorMessage(error));
+        setRetryAt(retryAtOf(error));
       } finally {
         setBusy(false);
       }
     });
   }
-  return { busy, error, setError, run };
+  return { busy, error, setError, run, retryAt, retryIn };
 }
 export { ErrorNote };
 export function BusyText({ children }: { children: ReactNode }) {
@@ -99,19 +107,16 @@ export function SubjectSelect({
   all?: boolean;
 }) {
   return (
-    <select
-      aria-label="과목 선택"
-      className="field"
+    <OptionField
+      label="과목 선택"
+      name="subject"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {all && <option value="">모든 과목</option>}
-      {data.subjects.map((s) => (
-        <option key={s.id} value={s.id}>
-          {s.name}
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      options={[
+        ...(all ? [{ value: '', label: '모든 과목' }] : []),
+        ...data.subjects.map((s) => ({ value: s.id, label: s.name })),
+      ]}
+    />
   );
 }
 export function Citation({
@@ -146,47 +151,7 @@ export function Citation({
     </div>
   );
 }
-export function MaterialViewer({
-  material,
-  onClose,
-}: {
-  material: Material | null;
-  onClose: () => void;
-}) {
-  return (
-    <Sheet open={!!material} onClose={onClose} title={material?.title || '원본 자료'}>
-      {material && (
-        <div className="space-y-4">
-          {material.url && material.type.toLowerCase().includes('image') && (
-            <img src={material.url} alt={material.title} className="w-full rounded-2xl" />
-          )}
-          {material.url && material.type.toLowerCase().includes('pdf') && (
-            <>
-              <PdfViewer key={material.url} url={material.url} title={material.title} />
-              <a
-                href={material.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block text-center text-sm font-bold underline underline-offset-4"
-              >
-                원본 PDF 열기
-              </a>
-            </>
-          )}
-          {material.content ? (
-            <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words rounded-2xl bg-surface p-4 text-[15px] leading-[1.8]">
-              {material.content}
-            </div>
-          ) : (
-            <p className="muted text-sm">
-              원본을 보며 학습해 주세요. 문제를 만들려면 자료에 본문 텍스트를 추가해 주세요.
-            </p>
-          )}
-        </div>
-      )}
-    </Sheet>
-  );
-}
+export { MaterialViewer } from './material-viewer';
 export function MaterialIcon({ type }: { type: string }) {
   return type.toLowerCase().includes('image') ? <ImageIcon size={22} /> : <FileText size={22} />;
 }
@@ -210,9 +175,29 @@ export function GenerationSheet({
   const [task, setTask] = useState<AiTaskRecord | null>(null);
   const [restoring, setRestoring] = useState(true);
   const action = useAction();
+  // A failure that said when to come back (stored on the task, or the last refusal) keeps the button waiting.
+  const retryIn = useRetryCountdown(action.retryAt, task?.retryAt);
   const selected = props.data.materials.find((item) => item.id === material);
-  const sourceReady = !!selected && selected.content.trim().length >= 20;
+  const sourceReady = !!selected && selected.contentLength >= 20;
   const label = mode === 'quiz' ? '문제' : mode === 'essay' ? '서술형 문제' : '복습 카드';
+  // Elapsed time since the button was pressed, so a one-minute generation reads as progress.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!action.busy) return setElapsed(0);
+    const startedAt = Date.now();
+    // jitter: none — an elapsed-time counter in the sheet; it sends nothing [site src/components/study/shared.tsx:179]
+    const timer = setInterval(() => setElapsed(Date.now() - startedAt), 1000);
+    return () => clearInterval(timer);
+  }, [action.busy]);
+  const progress = progressCopy(generationCopy(label), task?.steps, elapsed);
+  // A run belongs to the sheet that started it: once the sheet is gone (back navigation), the run
+  // stops waiting and never acknowledges, so a reopened sheet recovers the stored result instead.
+  const lifetime = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => controller.abort();
+  }, []);
   useEffect(() => {
     if (open) {
       setCreated(null);
@@ -260,6 +245,7 @@ export function GenerationSheet({
     // Count is restored from the task. Including it here would reset recovery after restoration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, material, mode, props.data.profile.id]);
+  // jitter: none — one POST per click, already spread by people; runAiTask owns polling and cooldown, the server's admission queue caps concurrency [site src/components/study/shared.tsx:243]
   async function generate() {
     const lookup = {
       userId: props.data.profile.id,
@@ -277,7 +263,9 @@ export function GenerationSheet({
         ...lookup,
         retryFailed: task?.status === 'FAILED' || task?.status === 'INTERRUPTED',
         onStatus: setTask,
+        signal: lifetime.current?.signal,
       });
+      if (lifetime.current?.signal.aborted) return;
       setCreated(generatedItemCount(result, mode, count));
       setUncertain(false);
     } catch (error) {
@@ -288,6 +276,7 @@ export function GenerationSheet({
       throw error;
     }
     await props.refresh();
+    if (lifetime.current?.signal.aborted) return;
     await acknowledgeAiTask(lookup);
     props.toast(`${label} ${count}개를 만들었어요`);
     onClose();
@@ -305,24 +294,25 @@ export function GenerationSheet({
         <p className="text-[15px] leading-relaxed text-muted">
           내 자료에서 근거를 찾아 만들어요. 사용할 자료를 골라 주세요.
         </p>
-        <label className="block text-sm font-semibold">
-          자료
-          <select
-            className="field mt-2"
+        <div>
+          <p className="mb-2 text-sm font-semibold">자료</p>
+          <OptionList
+            label="자료"
+            name="material"
             value={material}
-            disabled={action.busy || restoring || created !== null || uncertain}
-            onChange={(e) => setMaterial(e.target.value)}
-          >
-            <option value="" disabled>
-              자료를 선택해 주세요
-            </option>
-            {props.data.materials.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.title}
-              </option>
-            ))}
-          </select>
-        </label>
+            collapse={5}
+            onChange={(next) => {
+              if (!(action.busy || restoring || created !== null || uncertain)) setMaterial(next);
+            }}
+            options={props.data.materials.map((m) => ({
+              value: m.id,
+              label: m.title,
+              description: `${m.type.toUpperCase()} · ${m.contentLength.toLocaleString('ko-KR')}자${m.contentLength < 20 ? ' · 본문이 짧아 만들 수 없어요' : ''}`,
+              icon: <MaterialIcon type={m.type} />,
+              disabled: m.contentLength < 20,
+            }))}
+          />
+        </div>
         <div>
           <p className="mb-2 text-sm font-semibold">만들 개수</p>
           <div className="grid grid-cols-3 gap-2">
@@ -356,8 +346,19 @@ export function GenerationSheet({
                     : `자료를 읽고 ${label}를 만들고 있어요`}
                 </p>
                 <p className="mt-2 text-[13px] leading-relaxed on-primary">
-                  원문과 근거를 확인하고 있어요. 자료 길이에 따라 조금 더 걸릴 수 있어요.
+                  {created !== null ? (
+                    '저장된 결과를 가져오고 있어요.'
+                  ) : (
+                    <>
+                      {progress.stage}
+                      {/* The ticking seconds stay out of the live region; only stage changes are announced. */}
+                      <span aria-hidden="true"> · {progress.elapsed}</span>
+                    </>
+                  )}
                 </p>
+                {created === null && (
+                  <p className="mt-1 text-[13px] leading-relaxed on-primary">{progress.hint}</p>
+                )}
               </div>
             </div>
           </div>
@@ -407,6 +408,7 @@ export function GenerationSheet({
           disabled={
             action.busy ||
             restoring ||
+            (created === null && retryIn > 0) ||
             (created === null && !uncertain && (!sourceReady || !props.data.aiAvailable))
           }
           onClick={() => action.run(generate)}
@@ -420,9 +422,9 @@ export function GenerationSheet({
           ) : uncertain ? (
             '이전 요청 이어가기'
           ) : task?.status === 'FAILED' || task?.status === 'INTERRUPTED' ? (
-            '다시 만들기'
+            waitingLabel('다시 만들기', retryIn)
           ) : (
-            `${count}개 만들기`
+            waitingLabel(`${count}개 만들기`, retryIn)
           )}
         </Button>
         {!props.data.materials.length && (
@@ -464,17 +466,24 @@ export async function imageFile(file: File): Promise<File> {
     URL.revokeObjectURL(url);
   }
 }
+// No automatic retry: each one re-sends up to 10 MB and mints a new upload id. A refusal (the PDF
+// queue's [30 s, 60 s), OCR admission's [10 s, 20 s)) keeps 다시 시도 waiting instead.
+// jitter: cooldown on a refused upload (hint + U[0,1 s)); client deadline 190 s above the server's 180 s [site src/components/study/shared.tsx:446]
 export async function uploadFile(file: File) {
   validateUploadSize(file);
   const prepared = await imageFile(file);
   validateUploadSize(prepared);
   const form = new FormData();
   form.append('file', prepared);
-  const response = await fetch('/api/upload', { method: 'POST', body: form });
+  const response = await fetch('/api/upload', {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.timeout(AI_CLIENT_DEADLINE_MS),
+  });
   const result = await response
     .json()
     .catch(() => ({ error: '파일 업로드 응답을 읽지 못했어요. 다시 시도해 주세요.' }));
-  if (!response.ok) throw new Error(result.error || '파일을 올리지 못했어요.');
+  if (!response.ok) throw apiErrorOf(response, result, '파일을 올리지 못했어요.');
   return result.data as {
     uploadId: string;
     url: string;

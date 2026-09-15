@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { db } from '../src/lib/server/db';
+import { db } from '../scripts/lib/db';
 
 export const DEMO_STUDENT = 'demo-student';
 export const DEMO_PARENT = 'demo-parent';

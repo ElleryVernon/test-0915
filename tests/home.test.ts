@@ -7,6 +7,7 @@ import {
   homeAgenda,
   homeWeek,
   homeContinuations,
+  homeStart,
   remainingMaterialQuestions,
   recentMaterials,
   materialMeta,
@@ -27,6 +28,9 @@ const material = (id: string, createdAt = '2026-09-15T01:00:00Z'): Material => (
   subjectId: 'bio',
   title: `자료 ${id}`,
   content: '내용',
+  contentLength: 2,
+  excerpt: '내용',
+  contentHash: 'h-' + id,
   type: 'TEXT',
   createdAt,
 });
@@ -291,9 +295,16 @@ test('empty home renders a real onboarding action without invented progress or c
       refresh: async () => {},
     }),
   );
-  assert.match(markup, /첫 학습 자료 올리기/);
+  // (B) no material: the onboarding card replaces both the continue and the recent-material sections.
+  assert.match(markup, /첫 자료로 시작하기/);
+  assert.match(markup, /사진 찍기/);
+  assert.match(markup, /샘플 자료로 체험/);
   assert.match(markup, /첫 복습 카드 만들기/);
-  assert.match(markup, /진행 중인 공부가 없어요/);
+  assert.match(markup, /공부 시간 정하기 · 2분/);
+  assert.doesNotMatch(
+    markup,
+    /최근 자료|진행 중인 공부가 없어요|문제 · 서술형 · 오답노트 전체|첫 학습 자료 올리기/,
+  );
   assert.doesNotMatch(markup, /오늘의 일정을 모두 마쳤어요|문제 0|14%|12일째/);
   data.materials = [material('m1')];
   const existing = renderToStaticMarkup(
@@ -305,5 +316,143 @@ test('empty home renders a real onboarding action without invented progress or c
       refresh: async () => {},
     }),
   );
-  assert.doesNotMatch(existing, /자료 하나가 여러 번의 공부로|첫 학습 자료 올리기/);
+  assert.doesNotMatch(
+    existing,
+    /자료 하나가 여러 번의 공부로|첫 학습 자료 올리기|첫 자료로 시작하기/,
+  );
+});
+
+const render = (data: AppData) =>
+  renderToStaticMarkup(
+    createElement(HomeScreen, {
+      data,
+      path: '/',
+      navigate: () => {},
+      toast: () => {},
+      refresh: async () => {},
+    }),
+  );
+
+test("homeStart offers the newest material's actions with exact copy, chips and routes", () => {
+  const data = fixture();
+  data.materials = [
+    material('old', '2026-09-10T00:00:00Z'),
+    {
+      ...material('m1', '2026-09-15T00:00:00Z'),
+      title: '3. 항상성과 몸의 조절',
+      contentLength: 300,
+    },
+  ];
+  const start = homeStart(data);
+  assert.ok(start);
+  assert.equal(start.material.id, 'm1');
+  assert.deepEqual(
+    start.actions.map((a) => [a.kind, a.title, a.description, a.chip, a.href]),
+    [
+      ['quiz', '문제 2개 풀기', '5지선다 · 약 3분', '풀기', '/quiz?material=m1'],
+      [
+        'essay',
+        '서술형 1개 쓰기',
+        '4단계 · 약 5분 · "광합성을 설명하세요"',
+        '쓰기',
+        '/essay?material=m1',
+      ],
+      [
+        'cards',
+        '복습 카드 만들기',
+        'AI가 이 자료에서 카드를 만들어요',
+        '만들기',
+        '/flashcards?generate=1&material=m1',
+      ],
+    ],
+  );
+  // A partly answered material is a continuation, not a start; its essay and cards still are.
+  data.attempts = [attempt('q1')];
+  assert.deepEqual(
+    homeStart(data)!.actions.map((a) => a.kind),
+    ['essay', 'cards'],
+  );
+  // An essay already submitted is not offered again; a short body cannot make cards.
+  data.attempts = [
+    attempt('q1'),
+    {
+      id: 'e',
+      essayId: 'e1',
+      correct: true,
+      score: 90,
+      answer: 'x',
+      createdAt: '2026-09-15T02:00:00Z',
+    },
+  ];
+  data.materials[1].contentLength = 5;
+  assert.equal(homeStart(data), null);
+  data.materials = [];
+  assert.equal(homeStart(data), null);
+  // Cards made from the newest material end the card offer (generation records materialId).
+  const withCards = fixture();
+  withCards.materials = [{ ...material('m1'), contentLength: 300 }];
+  withCards.cards = [
+    {
+      id: 'g1',
+      subjectId: 'bio',
+      front: 'f',
+      back: 'b',
+      type: 'CONCEPT',
+      bucket: 'AGAIN',
+      consecutiveEasy: 0,
+      nextReviewAt: '2026-09-20T00:00:00Z',
+      deleted: false,
+      materialId: 'm1',
+    },
+  ];
+  assert.deepEqual(
+    homeStart(withCards)!.actions.map((a) => a.kind),
+    ['quiz', 'essay'],
+  );
+  withCards.cards[0].deleted = true;
+  assert.deepEqual(
+    homeStart(withCards)!.actions.map((a) => a.kind),
+    ['quiz', 'essay', 'cards'],
+  );
+  // Rendering (A): the section is titled by intent, tails the material, and rows carry verb chips.
+  const rich = fixture();
+  rich.materials = [{ ...material('m1'), title: '3. 항상성과 몸의 조절', contentLength: 300 }];
+  const a = render(rich);
+  assert.match(a, /오늘 시작하기/);
+  assert.match(a, /home-start-source">3\. 항상성과 몸의 조절/);
+  assert.match(a, /home-action-chip">풀기/);
+  assert.match(a, /home-action-chip">쓰기/);
+  assert.match(a, /home-action-chip">만들기/);
+  assert.doesNotMatch(a, /이어서 하기|진행 중인 공부가 없어요|문제 · 서술형 · 오답노트 전체/);
+  // A material in progress keeps the continue section and hides the start rows.
+  const going = fixture();
+  going.attempts = [attempt('q1')];
+  const c = render(going);
+  assert.match(c, /이어서 하기/);
+  assert.doesNotMatch(c, /오늘 시작하기/);
+  // (C) all done: no section at all.
+  const done = fixture();
+  done.materials = [{ ...material('m1'), contentLength: 5 }];
+  done.questions = [];
+  done.essays = [];
+  const d = render(done);
+  assert.doesNotMatch(d, /오늘 시작하기|이어서 하기|첫 자료로 시작하기/);
+  // The review CTA does not repeat the count the card already shows.
+  const due = fixture();
+  due.cards = Array.from({ length: 8 }, (_, i) => ({
+    id: `c${i}`,
+    subjectId: 'bio',
+    front: 'f',
+    back: 'b',
+    type: 'CONCEPT' as const,
+    bucket: 'AGAIN' as const,
+    consecutiveEasy: 0,
+    nextReviewAt: '2026-09-01T00:00:00Z',
+    deleted: false,
+  }));
+  const r = render(due);
+  assert.match(r, /review-start[^>]*>복습 시작/);
+  assert.doesNotMatch(r, /8장 복습 시작/);
+  assert.match(r, /<strong>8<\/strong><span>장/);
+  console.log('HOME_START_OK');
 });

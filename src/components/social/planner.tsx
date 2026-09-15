@@ -27,6 +27,8 @@ import {
   markAiTaskSeen,
   runAiTask,
 } from '@/lib/ai-task';
+import { retryAtOf, useRetryCountdown, waitingLabel } from '@/lib/retry-countdown';
+import { PLANNER_COPY, progressCopy } from '@/lib/ai-progress';
 import type { AppData, Schedule, ScreenProps } from '@/lib/contracts';
 import { formatMinutes, minutes, scheduleGaps, timeString } from '@/lib/schedule';
 import { isDue } from '@/lib/srs';
@@ -68,12 +70,6 @@ const FAILURE_TITLE = {
   empty: '추천할 빈 시간이 없어요',
   unknown: '추천을 불러오지 못했어요',
 };
-const STAGE_COPY = {
-  LOAD_CONTEXT: '빈 시간과 복습 카드를 보는 중',
-  GENERATE: '두 가지 안을 만드는 중',
-  VALIDATE: '겹치는 시간이 없는지 확인하는 중',
-  COMMIT: '추천을 정리하는 중',
-};
 const blockMinutes = (blocks: Pick<Schedule, 'start' | 'end'>[]) =>
   blocks.reduce((sum, block) => sum + minutes(block.end) - minutes(block.start), 0);
 
@@ -97,6 +93,9 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   const [selectedPlan, setSelectedPlan] = useState(0);
   const [aiError, setAiError] = useState('');
   const [aiTask, setAiTask] = useState<PlannerTask | null>(null);
+  // A refusal (or a stored failure) that said when to come back keeps the retry buttons waiting.
+  const [aiRetryAt, setAiRetryAt] = useState<number | null>(null);
+  const retryIn = useRetryCountdown(aiRetryAt, aiTask?.retryAt);
   const [aiBusy, setAiBusy] = useState(false);
   const [applying, setApplying] = useState(false);
   const [aiUnconfirmed, setAiUnconfirmed] = useState(false);
@@ -105,6 +104,9 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   // Unacknowledged suggestions on this device, and the day of a request from an earlier visit being polled.
   const [stored, setStored] = useState<PlannerTask[]>([]);
   const [resumed, setResumed] = useState<string | null>(null);
+  // The latest record of a request resumed on entry, for its stage; and when the shown request began.
+  const [resumedTask, setResumedTask] = useState<PlannerTask | null>(null);
+  const requestStartedAt = useRef<number | null>(null);
   const resumeController = useRef<AbortController | null>(null);
   const viewedDay = useRef(day);
   viewedDay.current = day;
@@ -114,6 +116,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   const strip = useRef<HTMLDivElement>(null);
   const focusDay = useRef(false);
   const swipe = useRef<{ x: number; y: number; swiped: boolean } | null>(null);
+  // jitter: none — a local 60 s clock for due counts and gaps; it sends no request [site src/components/social/planner.tsx:113]
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
@@ -156,7 +159,8 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   const reopenable = dayState === 'ready' || dayState === 'seen' ? dayTask : undefined;
   const readyElsewhere = stored.find(
     (task) =>
-      String(task.payload.date) !== day && suggestionState(task, suggestionContext).kind === 'ready',
+      String(task.payload.date) !== day &&
+      suggestionState(task, suggestionContext).kind === 'ready',
   );
   const freeOn = (date: string) =>
     plannerRows(
@@ -167,17 +171,31 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
     ).reduce((sum, row) => sum + (row.type === 'gap' ? row.minutes : 0), 0);
   const ctaVisible = day >= today && (freeMinutes >= 60 || !!reopenable);
   const generating = (aiBusy && !aiOpen && suggestionDate === day) || resumed === day;
-  const [tick, setTick] = useState(0);
+  // Elapsed seconds since the request itself started (its stored createdAt when resumed), so the
+  // count does not restart when the indicator reappears; the stage comes from the recorded steps.
+  const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
-    if (!generating) return setTick(0);
-    const timer = setInterval(() => setTick((value) => value + 1), 1800);
+    if (!generating) return setElapsed(0);
+    const startedAt = requestStartedAt.current ?? Date.now();
+    const tick = () => setElapsed(Date.now() - startedAt);
+    tick();
+    // jitter: none — an elapsed-time counter in the UI; it sends nothing [site src/components/social/planner.tsx:171]
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [generating]);
-  const stage = aiTask?.steps?.at(-1)?.stage as keyof typeof STAGE_COPY | undefined;
+  const aiProgress = progressCopy(
+    PLANNER_COPY,
+    (resumed === day ? resumedTask : aiTask)?.steps,
+    elapsed,
+  );
+  const announced =
+    aiTask?.status === 'READY' && resumed !== day ? '추천 요청을 준비하는 중' : aiProgress.stage;
   const generatingCopy =
     aiTask?.status === 'READY'
       ? '추천 요청을 준비하는 중'
-      : (stage && STAGE_COPY[stage]) || Object.values(STAGE_COPY)[Math.min(tick, 2)];
+      : elapsed >= 5000
+        ? `${aiProgress.stage} · ${aiProgress.elapsed}`
+        : aiProgress.stage;
   const working = (
     <>
       <LoaderCircle size={18} className="animate-spin" aria-hidden="true" />
@@ -307,8 +325,10 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   }
   async function inspectSuggestion(task: PlannerTask, signal: AbortSignal) {
     setAiUnconfirmed(false);
+    requestStartedAt.current = task.createdAt;
     setAiTask(task);
     let latest = await inspectAiTask<PlannerResult>(task, signal);
+    // jitter: none — a fixed 1600 ms poll (up to 45) started by a tap; errors are thrown to the caller [site src/components/social/planner.tsx:314]
     for (let poll = 0; latest?.status === 'RUNNING' && poll < 45 && !signal.aborted; poll++) {
       setAiTask(latest);
       await new Promise((resolve) => setTimeout(resolve, 1600));
@@ -340,10 +360,14 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   }
   async function resume(task: PlannerTask, signal: AbortSignal) {
     const date = String(task.payload.date);
+    requestStartedAt.current = task.createdAt;
+    setResumedTask(task);
     setResumed(date);
     try {
       let latest = await inspectAiTask<PlannerResult>(task, signal);
+      // jitter: none — each student's own visit starts it, the first error ends it, nothing re-aligns it [site src/components/social/planner.tsx:346]
       for (let poll = 0; latest?.status === 'RUNNING' && poll < 45 && !signal.aborted; poll++) {
+        setResumedTask(latest);
         await new Promise((resolve) => setTimeout(resolve, 1600));
         if (signal.aborted) return;
         latest = await inspectAiTask<PlannerResult>(latest, signal);
@@ -428,6 +452,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
     // Every request works on the screen itself (button, free-time rows, toast), including retries
     // started from the sheet; the sheet only ever shows a result or an error.
     const startedAt = Date.now();
+    requestStartedAt.current = startedAt;
     setAiOpen(false);
     toast(
       retryFailed
@@ -463,6 +488,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
         const request =
           (continueRequest || retryFailed) && aiTask && !stale ? aiTask.payload : payload;
         setAiTask(null);
+        // jitter: none — one request per tap; polling and cooldown belong to the ai-task loop [site src/components/social/planner.tsx:466]
         const result = await runAiTask<PlannerResult>({
           userId: data.profile.id,
           endpoint: '/planner/suggest',
@@ -475,8 +501,12 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
         });
         if (!controller.signal.aborted) showSuggestion(result, day);
       }
+      setAiRetryAt(null);
     } catch (e) {
-      if (!controller.signal.aborted) setAiError((e as Error).message);
+      if (!controller.signal.aborted) {
+        setAiError((e as Error).message);
+        setAiRetryAt(retryAtOf(e));
+      }
     } finally {
       await revealResult(controller, startedAt);
     }
@@ -484,6 +514,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   /** Keeps the working state readable even for an instant result, then opens the sheet. */
   async function revealResult(controller: AbortController, startedAt: number) {
     if (controller.signal.aborted) return;
+    // jitter: none — a 900 ms minimum reveal for the UI only; it sends nothing [site src/components/social/planner.tsx:488]
     const rest = 900 - (Date.now() - startedAt);
     if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));
     if (controller.signal.aborted) return;
@@ -554,6 +585,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
       toast(added ? `${added}개 일정을 시간표에 담았어요` : '저장된 일정을 확인했어요');
       void refreshStored().catch(() => {});
     } catch (e) {
+      // jitter: none — one bounded re-read after a failed tap, no loop [site src/components/social/planner.tsx:558]
       try {
         const current = await api<AppData>('/bootstrap');
         const recovered = recoverPlannerResult(original, suggestionDate, current.schedules);
@@ -921,7 +953,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
         )}
         {ctaVisible && <div className="planner-cta-space" aria-hidden="true" />}
         <span className="sr-only" role="status">
-          {generating ? generatingCopy : ''}
+          {generating ? announced : ''}
         </span>
       </div>
       {ctaVisible && (
@@ -1018,7 +1050,9 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
             <ErrorNote error={aiError} />
             <div className="planner-submit">
               {failure === 'failed' && (
-                <Button onClick={() => void suggest({ retryFailed: true })}>새로 추천받기</Button>
+                <Button disabled={retryIn > 0} onClick={() => void suggest({ retryFailed: true })}>
+                  {waitingLabel('새로 추천받기', retryIn)}
+                </Button>
               )}
               {failure === 'unconfirmed' && (
                 <>
@@ -1034,7 +1068,9 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
                 <Button onClick={checkPreviousRequest}>다시 확인하기</Button>
               )}
               {failure === 'unknown' && (
-                <Button onClick={() => void suggest()}>다시 시도하기</Button>
+                <Button disabled={retryIn > 0} onClick={() => void suggest()}>
+                  {waitingLabel('다시 시도하기', retryIn)}
+                </Button>
               )}
               <Button
                 variant={failure === 'empty' ? 'primary' : 'ghost'}

@@ -19,12 +19,15 @@ import {
   Heart,
   Check,
   Sparkles,
+  Camera,
   LogOut,
   Shield,
   WifiOff,
 } from '@/components/icons';
 import { openDB } from 'idb';
-import { api } from '@/lib/api';
+import { api, retryTransient } from '@/lib/api';
+import { loginBusyRetryAt, retryAtOf, useRetryCountdown, waitingLabel } from '@/lib/retry-countdown';
+import { sessionHint } from '@/lib/session-hint';
 import Onboarding from './onboarding';
 import LearningSettings from './learning-settings';
 import { isDue } from '@/lib/srs';
@@ -32,6 +35,7 @@ import {
   homeAgenda,
   homeWeek,
   homeContinuations,
+  homeStart,
   recentMaterials,
   materialHref,
   materialMeta,
@@ -59,9 +63,25 @@ function ScreenLoading() {
     </div>
   );
 }
-function Login({ onLogin }: { onLogin: (role: Role) => Promise<void> }) {
+// A refused sign-in (the demo login's 429, or an OAuth start the server sent back with
+// loginError=busy&retryAfter=<s>) keeps every sign-in button waiting for the drawn time, so a class
+// told "try again" together comes back spread over the refusal's window.
+// jitter: cooldown on sign-in refusals: rest of the window + U[0,15 s) from the server, + U[0,1 s) here [site src/components/app.tsx:679]
+function Login({
+  onLogin,
+  retryAt: initialRetryAt = null,
+}: {
+  onLogin: (role: Role) => Promise<void>;
+  retryAt?: number | null;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [retryAt, setRetryAt] = useState<number | null>(initialRetryAt);
+  useEffect(() => {
+    if (initialRetryAt) setRetryAt(initialRetryAt);
+  }, [initialRetryAt]);
+  const retryIn = useRetryCountdown(retryAt);
+  const waiting = retryIn > 0;
   const [demo, setDemo] = useState(false);
   const [providers, setProviders] = useState<string[]>([]);
   const [loginRole, setLoginRole] = useState<Role>('STUDENT');
@@ -80,6 +100,7 @@ function Login({ onLogin }: { onLogin: (role: Role) => Promise<void> }) {
       await onLogin(role);
     } catch (e) {
       setError((e as Error).message);
+      setRetryAt(retryAtOf(e));
     } finally {
       setBusy(false);
     }
@@ -120,51 +141,53 @@ function Login({ onLogin }: { onLogin: (role: Role) => Promise<void> }) {
                 </button>
               ))}
             </div>
-            {providers.map((p) => (
-              <a
-                key={p}
-                className="btn btn-secondary w-full"
-                href={`/api/auth/${p}?role=${loginRole}`}
-              >
-                {
-                  (
-                    {
-                      kakao: '카카오',
-                      naver: '네이버',
-                      google: 'Google',
-                      apple: 'Apple',
-                    } as Record<string, string>
-                  )[p]
-                }
-                로 시작하기
-              </a>
-            ))}
+            {providers.map((p) => {
+              const name = (
+                { kakao: '카카오', naver: '네이버', google: 'Google', apple: 'Apple' } as Record<string, string>
+              )[p];
+              // A link cannot be disabled, so while waiting it renders as a disabled button.
+              return waiting ? (
+                <button key={p} className="btn btn-secondary w-full" disabled>
+                  {waitingLabel(`${name}로 시작하기`, retryIn)}
+                </button>
+              ) : (
+                <a key={p} className="btn btn-secondary w-full" href={`/api/auth/${p}?role=${loginRole}`}>
+                  {name}로 시작하기
+                </a>
+              );
+            })}
           </div>
         )}
         {demo && (
           <>
             <div className="demo-divider">샘플 자료로 먼저 만나보세요</div>
-            <Button disabled={busy} className="w-full" onClick={() => start('STUDENT')}>
-              {busy ? '학습 공간을 여는 중…' : '학생으로 체험하기'}
+            <Button disabled={busy || waiting} className="w-full" onClick={() => start('STUDENT')}>
+              {busy ? '학습 공간을 여는 중…' : waitingLabel('학생으로 체험하기', retryIn)}
               <ArrowRight size={18} />
             </Button>
             <Button
-              disabled={busy}
+              disabled={busy || waiting}
               variant="ghost"
               className="w-full mt-1 text-sm"
               onClick={() => start('PARENT')}
             >
-              학부모로 둘러보기
+              {waitingLabel('학부모로 둘러보기', retryIn)}
             </Button>
           </>
         )}
         {!demo && providers.length === 0 && (
           <p className="error-banner">로그인 서비스 연결을 준비하고 있어요.</p>
         )}
-        {error && (
-          <p role="alert" className="error-banner mt-3">
-            {error}
+        {waiting ? (
+          <p role="status" className="error-banner mt-3">
+            로그인 요청이 많아요. {retryIn}초 후 다시 시도해 주세요.
           </p>
+        ) : (
+          error && (
+            <p role="alert" className="error-banner mt-3">
+              {error}
+            </p>
+          )
         )}
         <p className="!mb-0 !mt-4 text-center !text-[11px]">
           {demo
@@ -179,12 +202,14 @@ export function HomeScreen({ data, navigate, toast, refresh }: ScreenProps) {
   const [homeNow, setHomeNow] = useState(() => new Date());
   const [drafts, setDrafts] = useState<EssayDraft[]>([]);
   const [thanking, setThanking] = useState(false);
+  const [sampling, setSampling] = useState(false);
   useEffect(() => {
     const update = () => {
       setHomeNow(new Date());
       setDrafts(readEssayDrafts(data.profile.id));
     };
     update();
+    // jitter: none — a local 60 s clock; 'focus'/'storage' re-read drafts from localStorage; sends no request [site src/components/app.tsx:192]
     const timer = setInterval(update, 60_000);
     window.addEventListener('focus', update);
     window.addEventListener('storage', update);
@@ -203,6 +228,7 @@ export function HomeScreen({ data, navigate, toast, refresh }: ScreenProps) {
     .map((s) => ({ name: s.name, count: wrong.filter((q) => q.subjectId === s.id).length }))
     .filter((s) => s.count);
   const materials = recentMaterials(data.materials);
+  const start = homeStart(data);
   const cheer = [...data.cheers].sort(
     (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
   )[0];
@@ -324,7 +350,7 @@ export function HomeScreen({ data, navigate, toast, refresh }: ScreenProps) {
           }
         >
           {due.length
-            ? `${due.length}장 복습 시작`
+            ? '복습 시작'
             : data.cards.some((c) => !c.deleted)
               ? '복습 카드 살펴보기'
               : '첫 복습 카드 만들기'}
@@ -349,7 +375,7 @@ export function HomeScreen({ data, navigate, toast, refresh }: ScreenProps) {
                   `미완료 일정 ${agenda.total - agenda.done}개 확인하기`
                 )
               ) : (
-                '오늘의 공부 시간을 정해 보세요'
+                '공부 시간 정하기 · 2분'
               )}
             </strong>
           </span>
@@ -360,36 +386,87 @@ export function HomeScreen({ data, navigate, toast, refresh }: ScreenProps) {
           )}
           <ChevronRight size={16} className="text-disabled" />
         </button>
-        <SectionTitle title="이어서 하기" />
-        {continuations.map((item) => (
-          <ListRow
-            key={`${item.kind}-${item.id}`}
-            icon={item.kind === 'quiz' ? <FileText size={22} /> : <NotebookPen size={22} />}
-            title={item.title}
-            description={`${item.description}${item.kind === 'quiz' ? ` · ${relativeTime(item.updatedAt, homeNow.getTime())} 학습` : ''}`}
-            extra={<span className="home-row-progress">{item.progress}</span>}
-            onClick={() => navigate(item.href)}
-          />
-        ))}
-        {wrong.length > 0 && (
-          <ListRow
-            icon={<ListChecks size={22} />}
-            title={`틀린 문제 ${wrong.length}개 다시 풀기`}
-            description={wrongSubjects.map((s) => `${s.name} ${s.count}`).join(' · ')}
-            onClick={() => navigate('/wrong-notes')}
-          />
-        )}
-        {!continuations.length && !wrong.length && (
-          <p className="home-resume-empty">
-            진행 중인 공부가 없어요.
-            <br />
-            새로운 문제를 풀면 여기서 이어갈 수 있어요.
-          </p>
-        )}
-        <button className="home-all-study" onClick={() => navigate('/study')}>
-          문제 · 서술형 · 오답노트 전체
-          <ChevronRight size={15} />
-        </button>
+        {continuations.length + wrong.length > 0 ? (
+          <>
+            <SectionTitle title="이어서 하기" />
+            {continuations.map((item) => (
+              <ListRow
+                key={`${item.kind}-${item.id}`}
+                icon={item.kind === 'quiz' ? <FileText size={22} /> : <NotebookPen size={22} />}
+                title={item.title}
+                description={`${item.description}${item.kind === 'quiz' ? ` · ${relativeTime(item.updatedAt, homeNow.getTime())} 학습` : ''}`}
+                extra={<span className="home-row-progress">{item.progress}</span>}
+                onClick={() => navigate(item.href)}
+              />
+            ))}
+            {wrong.length > 0 && (
+              <ListRow
+                icon={<ListChecks size={22} />}
+                title={`틀린 문제 ${wrong.length}개 다시 풀기`}
+                description={wrongSubjects.map((s) => `${s.name} ${s.count}`).join(' · ')}
+                onClick={() => navigate('/wrong-notes')}
+              />
+            )}
+          </>
+        ) : start ? (
+          <>
+            <SectionTitle
+              title="오늘 시작하기"
+              action={<span className="home-start-source">{start.material.title}</span>}
+            />
+            {start.actions.map((item) => (
+              <ListRow
+                key={item.kind}
+                icon={
+                  item.kind === 'quiz' ? (
+                    <BookOpen size={22} />
+                  ) : item.kind === 'essay' ? (
+                    <NotebookPen size={22} />
+                  ) : (
+                    <Layers size={22} />
+                  )
+                }
+                title={item.title}
+                description={item.description}
+                extra={<span className="home-action-chip">{item.chip}</span>}
+                chevron={false}
+                onClick={() => navigate(item.href)}
+              />
+            ))}
+          </>
+        ) : !materials.length ? (
+          <>
+            <SectionTitle title="첫 자료로 시작하기" />
+            <div className="home-start-card">
+              <p>교과서나 프린트 사진 한 장이면 문제 · 서술형 · 복습 카드가 생겨요</p>
+              <div className="home-start-actions">
+                <button className="home-start-ink" onClick={() => navigate('/study?upload=camera')}>
+                  <Camera size={18} />
+                  사진 찍기
+                </button>
+                <button
+                  className="home-start-plain"
+                  disabled={sampling}
+                  onClick={async () => {
+                    if (sampling) return;
+                    setSampling(true);
+                    try {
+                      await api('/materials/sample', {});
+                      await refresh();
+                      toast('샘플 자료를 넣었어요. 바로 시작해 보세요');
+                    } catch (e) {
+                      toast((e as Error).message);
+                    } finally {
+                      setSampling(false);
+                    }
+                  }}
+                >
+                  {sampling ? '넣는 중' : '샘플 자료로 체험'}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
         {cheer && (
           <>
             <SectionTitle
@@ -431,34 +508,27 @@ export function HomeScreen({ data, navigate, toast, refresh }: ScreenProps) {
             </div>
           </>
         )}
-        <SectionTitle
-          title="최근 자료"
-          action={
-            <button onClick={() => navigate('/study')}>
-              전체 보기
-              <ChevronRight size={13} className="inline" />
-            </button>
-          }
-        />
-        {materials.map((m) => (
-          <ListRow
-            key={m.id}
-            icon={<FileText size={22} />}
-            title={m.title}
-            description={`${materialMeta(data, m)} · ${relativeTime(m.createdAt, homeNow.getTime())}`}
-            onClick={() => navigate(materialHref(m))}
-          />
-        ))}
-        {!materials.length && (
-          <div className="home-material-empty">
-            <Sparkles size={24} />
-            <h3>자료 하나가 여러 번의 공부로</h3>
-            <p>문제부터 서술형, 복습 카드까지 이어져요</p>
-            <Button variant="secondary" className="w-full" onClick={() => navigate('/study')}>
-              첫 학습 자료 올리기
-              <ArrowRight size={16} />
-            </Button>
-          </div>
+        {materials.length > 0 && (
+          <>
+            <SectionTitle
+              title="최근 자료"
+              action={
+                <button onClick={() => navigate('/study')}>
+                  전체 보기
+                  <ChevronRight size={13} className="inline" />
+                </button>
+              }
+            />
+            {materials.map((m) => (
+              <ListRow
+                key={m.id}
+                icon={<FileText size={22} />}
+                title={m.title}
+                description={`${materialMeta(data, m)} · ${relativeTime(m.createdAt, homeNow.getTime())}`}
+                onClick={() => navigate(materialHref(m))}
+              />
+            ))}
+          </>
         )}
       </div>
     </div>
@@ -577,20 +647,28 @@ export default function App() {
   const [data, setData] = useState<AppData | null>(null);
   const [loading, setLoading] = useState(true);
   const [path, setPath] = useState('/');
+  // The key the current screen is mounted under: it follows path, except for a keepScreen
+  // navigation that only tidies the address.
+  const [screen, setScreen] = useState('/');
   const [message, setMessage] = useState('');
   const [offline, setOffline] = useState(false);
   const [roleSheet, setRoleSheet] = useState(false);
   const [error, setError] = useState('');
+  const [loginRetryAt, setLoginRetryAt] = useState<number | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useCallback((m: string) => {
     setMessage(m);
     if (toastTimer.current) clearTimeout(toastTimer.current);
+    // jitter: none — a 3.5 s toast auto-clear for one person; sends nothing [site src/components/app.tsx:637]
     toastTimer.current = setTimeout(() => setMessage(''), 3500);
   }, []);
-  const navigate = useCallback((to: string) => {
+  const navigate = useCallback((to: string, options?: { replace?: boolean; keepScreen?: boolean }) => {
     if (!to.startsWith('/') || to.startsWith('//')) return;
-    window.history.pushState({}, '', to);
+    if (options?.replace) window.history.replaceState({}, '', to);
+    else window.history.pushState({}, '', to);
     setPath(to);
+    if (options?.keepScreen) return;
+    setScreen(to);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
   const refresh = useCallback(async () => {
@@ -601,16 +679,25 @@ export default function App() {
     await db.put('session', result, 'data');
   }, []);
   useEffect(() => {
+    const search = new URLSearchParams(window.location.search);
+    // The sign-in result is read once; a reload must not restart its countdown.
+    if (search.has('loginError')) window.history.replaceState({}, '', window.location.pathname);
     setPath(window.location.pathname + window.location.search);
-    if (new URLSearchParams(window.location.search).has('loginError'))
-      setError('로그인을 완료하지 못했어요. 다시 시작해 주세요.');
+    setScreen(window.location.pathname + window.location.search);
+    // The OAuth start was refused: a top-level navigation cannot read JSON, so the wait rides in the
+    // URL (clamped to what the server can send, so a crafted link cannot lock sign-in).
+    if (search.get('loginError') === 'busy') setLoginRetryAt(loginBusyRetryAt(search.get('retryAfter')));
+    else if (search.has('loginError')) setError('로그인을 완료하지 못했어요. 다시 시작해 주세요.');
+    const booting = new AbortController();
     const pop = () => {
       setPath(window.location.pathname + window.location.search);
+      setScreen(window.location.pathname + window.location.search);
       window.scrollTo(0, 0);
     };
     const update = () => setOffline(!navigator.onLine);
     update();
     window.addEventListener('popstate', pop);
+    // jitter: none — 'offline'/'online' only toggle the offline banner; they send no request [site src/components/app.tsx:663]
     window.addEventListener('offline', update);
     window.addEventListener('online', update);
     const restoreCached = async () => {
@@ -624,10 +711,21 @@ export default function App() {
       return Boolean(cached);
     };
     void (async () => {
-      await restoreCached().catch(() => false);
+      const cached = await restoreCached().catch(() => false);
+      // Without the signed-in flag and without a session this device saved, bootstrap can only
+      // answer 401: show the sign-in screen without asking.
+      if (!cached && !sessionHint(document.cookie)) {
+        setLoading(false);
+        return;
+      }
       try {
-        await refresh();
+        // A deploy or restart at the bell answers 502/503/504 for a moment: bootstrap (idempotent) is
+        // retried up to 3 times with full jitter, never before Retry-After, while the cached shell
+        // stays on screen. A client timeout is not retried (no server answered at all).
+        // jitter: backoff bootstrap retry U[0,4 s), U[0,8 s), U[0,16 s), floored by Retry-After + U[0,1 s) [site src/components/app.tsx:684]
+        await retryTransient(refresh, { retries: 3, baseMs: 2000, capMs: 16000, signal: booting.signal });
       } catch (e) {
+        if (booting.signal.aborted) return;
         if (!navigator.onLine || e instanceof TypeError || (e as Error).name === 'TimeoutError') {
           setOffline(true);
           if (!(await restoreCached().catch(() => false)))
@@ -642,6 +740,7 @@ export default function App() {
       }
     })();
     if ('serviceWorker' in navigator) {
+      // jitter: none — one small no-store GET of /sw.js per page load, spread by people [site src/components/app.tsx:701]
       if (process.env.NODE_ENV === 'production')
         navigator.serviceWorker.register('/sw.js').catch(() => {});
       else {
@@ -660,6 +759,7 @@ export default function App() {
       }
     }
     return () => {
+      booting.abort();
       window.removeEventListener('popstate', pop);
       window.removeEventListener('offline', update);
       window.removeEventListener('online', update);
@@ -716,7 +816,7 @@ export default function App() {
             </button>
           </div>
         )}
-        <Login onLogin={login} />
+        <Login onLogin={login} retryAt={loginRetryAt} />
       </div>
     );
   const base = path.split('?')[0];
@@ -793,9 +893,9 @@ export default function App() {
         ) : base === '/notifications' ? (
           <NotificationsScreen {...props} />
         ) : study ? (
-          <StudyScreens key={path} {...props} />
+          <StudyScreens key={screen} {...props} />
         ) : social ? (
-          <SocialScreens key={path} {...props} />
+          <SocialScreens key={screen} {...props} />
         ) : base === '/' ? (
           isParent ? (
             <SocialScreens {...props} path="/parent" />

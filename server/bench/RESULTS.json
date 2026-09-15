@@ -1,0 +1,885 @@
+{
+  "generatedAt": "2026-09-15T10:10:37Z",
+  "command": "go run . -results RESULTS.json -md RESULTS.md -duration 10s",
+  "machine": {
+    "cpu": "Apple M2 Pro",
+    "cores": 12,
+    "goVersion": "go1.26.5",
+    "ohaVersion": "oha 1.16.0",
+    "os": "macOS 26.2 (Darwin 25.2.0, darwin/arm64)",
+    "loadAvgAtStart": "8.61 7.80 11.39",
+    "postgres": "PostgreSQL 18.6 on aarch64-apple-darwin25.2.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit",
+    "database": "local native PostgreSQL at 127.0.0.1:15444 (credentials from /Users/seongminhan/test/.env), throwaway database memoryz_bench created for this run and dropped afterwards; the app database was not touched",
+    "serverGOMAXPROCS": 1
+  },
+  "candidates": [
+    {
+      "name": "net/http",
+      "module": "standard library",
+      "version": "go1.26.5",
+      "releaseDate": "2026-07-01",
+      "releaseDateSource": "go list -m -json golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64 → .Time 2026-07-01T21:24:27Z",
+      "netHTTPCompatible": true,
+      "netHTTPNote": "the standard library itself: http.ServeMux with Go 1.22+ method/pattern routing",
+      "h2c": true,
+      "h2cProbe": "prior-knowledge HTTP/2 GET /json → HTTP/2.0 200",
+      "lastReleaseWithin6Months": true,
+      "eligible": true,
+      "jsonPath": "encoding/json Encoder to the ResponseWriter, Decoder from the body"
+    },
+    {
+      "name": "chi",
+      "module": "github.com/go-chi/chi/v5",
+      "version": "v5.3.2",
+      "releaseDate": "2026-08-20",
+      "releaseDateSource": "go list -m -json github.com/go-chi/chi/v5@v5.3.2 → .Time 2026-08-20T09:37:52Z",
+      "netHTTPCompatible": true,
+      "netHTTPNote": "*chi.Mux is an http.Handler; handlers are http.HandlerFunc; middleware is func(http.Handler) http.Handler",
+      "h2c": true,
+      "h2cProbe": "prior-knowledge HTTP/2 GET /json → HTTP/2.0 200",
+      "lastReleaseWithin6Months": true,
+      "eligible": true,
+      "jsonPath": "encoding/json Encoder to the ResponseWriter, Decoder from the body (chi has no JSON helpers)"
+    },
+    {
+      "name": "echo",
+      "module": "github.com/labstack/echo/v5",
+      "version": "v5.3.1",
+      "releaseDate": "2026-07-21",
+      "releaseDateSource": "go list -m -json github.com/labstack/echo/v5@v5.3.1 → .Time 2026-07-21T16:09:02Z",
+      "netHTTPCompatible": true,
+      "netHTTPNote": "*echo.Echo is an http.Handler; echo.WrapHandler/WrapMiddleware mount http.Handler and net/http middleware unchanged; c.Response() is the http.ResponseWriter and c.Request() the *http.Request",
+      "h2c": true,
+      "h2cProbe": "prior-knowledge HTTP/2 GET /json → HTTP/2.0 200",
+      "lastReleaseWithin6Months": true,
+      "eligible": true,
+      "jsonPath": "c.JSON via DefaultJSONSerializer (encoding/json Encoder); c.Bind via encoding/json Unmarshal"
+    },
+    {
+      "name": "gin",
+      "module": "github.com/gin-gonic/gin",
+      "version": "v1.12.0",
+      "releaseDate": "2026-02-28",
+      "releaseDateSource": "go list -m -json github.com/gin-gonic/gin@v1.12.0 → .Time 2026-02-28T10:10:09Z",
+      "netHTTPCompatible": true,
+      "netHTTPNote": "*gin.Engine is an http.Handler; gin.WrapH/WrapF mount http.Handler/HandlerFunc unchanged; c.Writer is the http.ResponseWriter and c.Request the *http.Request",
+      "h2c": true,
+      "h2cProbe": "prior-knowledge HTTP/2 GET /json → HTTP/2.0 200",
+      "lastReleaseWithin6Months": false,
+      "eligible": false,
+      "jsonPath": "c.JSON via render.JSON (encoding/json Marshal; built without the jsoniter/go_json/sonic tags); c.ShouldBindJSON via encoding/json Decoder plus go-playground/validator"
+    },
+    {
+      "name": "fiber",
+      "module": "github.com/gofiber/fiber/v3",
+      "version": "v3.5.0",
+      "releaseDate": "2026-08-12",
+      "releaseDateSource": "go list -m -json github.com/gofiber/fiber/v3@v3.5.0 → .Time 2026-08-12T15:09:15Z",
+      "netHTTPCompatible": false,
+      "netHTTPNote": "fasthttp server: *fiber.App is not an http.Handler and cannot be served by net/http.Server; net/http handlers and middleware only through the adaptor package, which copies requests and responses (no http.Flusher streaming, otelhttp cannot wrap the server); fasthttp speaks no HTTP/2",
+      "h2c": false,
+      "h2cProbe": "prior-knowledge HTTP/2 GET /json failed: Get \"http://127.0.0.1:56193/json\": http2: failed reading the frame payload: http2: frame too large, note that the frame header looked like an HTTP/1.1 header",
+      "lastReleaseWithin6Months": true,
+      "eligible": false,
+      "jsonPath": "c.JSON via Config.JSONEncoder (default encoding/json Marshal); c.Bind().JSON via Config.JSONDecoder (default encoding/json Unmarshal)"
+    },
+    {
+      "name": "huma",
+      "module": "github.com/danielgtaylor/huma/v2",
+      "version": "v2.39.1",
+      "releaseDate": "2026-07-29",
+      "releaseDateSource": "go list -m -json github.com/danielgtaylor/huma/v2@v2.39.1 → .Time 2026-07-29T13:42:03Z",
+      "netHTTPCompatible": true,
+      "netHTTPNote": "humago adapter registers plain http.HandlerFunc on a net/http ServeMux, which is the http.Handler; typed operation handlers sit on top; net/http middleware wraps the mux",
+      "h2c": true,
+      "h2cProbe": "prior-knowledge HTTP/2 GET /json → HTTP/2.0 200",
+      "lastReleaseWithin6Months": true,
+      "eligible": true,
+      "jsonPath": "huma.DefaultJSONFormat (encoding/json Encoder / Unmarshal) with request validation against the generated schema"
+    }
+  ],
+  "runs": [
+    {
+      "candidate": "net/http",
+      "endpoint": "/json",
+      "concurrency": 64,
+      "rps": 58399.99880105685,
+      "p50": 0.967834,
+      "p99": 3.343375,
+      "errors": 0,
+      "requests": 584242,
+      "statusCodes": {
+        "200": 584242
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:62034/json"
+    },
+    {
+      "candidate": "net/http",
+      "endpoint": "/json",
+      "concurrency": 256,
+      "rps": 52504.05553288966,
+      "p50": 3.9615839999999998,
+      "p99": 18.951709,
+      "errors": 0,
+      "requests": 525364,
+      "statusCodes": {
+        "200": 525364
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:62034/json"
+    },
+    {
+      "candidate": "net/http",
+      "endpoint": "/users/{id}",
+      "concurrency": 64,
+      "rps": 64966.48836891221,
+      "p50": 0.918458,
+      "p99": 2.283166,
+      "errors": 0,
+      "requests": 649893,
+      "statusCodes": {
+        "200": 649893
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:62034/users/12345"
+    },
+    {
+      "candidate": "net/http",
+      "endpoint": "/users/{id}",
+      "concurrency": 256,
+      "rps": 65699.26428327448,
+      "p50": 3.6527920000000003,
+      "p99": 7.7488339999999996,
+      "errors": 0,
+      "requests": 657367,
+      "statusCodes": {
+        "200": 657367
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:62034/users/12345"
+    },
+    {
+      "candidate": "net/http",
+      "endpoint": "/echo",
+      "concurrency": 64,
+      "rps": 33639.19608607377,
+      "p50": 1.792458,
+      "p99": 4.196166000000001,
+      "errors": 0,
+      "requests": 336562,
+      "statusCodes": {
+        "200": 336562
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:62034/echo"
+    },
+    {
+      "candidate": "net/http",
+      "endpoint": "/echo",
+      "concurrency": 256,
+      "rps": 33972.45608704484,
+      "p50": 7.2594579999999995,
+      "p99": 17.551583,
+      "errors": 0,
+      "requests": 339995,
+      "statusCodes": {
+        "200": 339995
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:62034/echo"
+    },
+    {
+      "candidate": "net/http",
+      "endpoint": "/db",
+      "concurrency": 64,
+      "rps": 32789.7543958196,
+      "p50": 1.798125,
+      "p99": 4.011208,
+      "errors": 0,
+      "requests": 328082,
+      "statusCodes": {
+        "200": 328082
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:62034/db\\?id=[1-9][0-9]{0,3}'"
+    },
+    {
+      "candidate": "net/http",
+      "endpoint": "/db",
+      "concurrency": 256,
+      "rps": 32692.436986211233,
+      "p50": 7.227833,
+      "p99": 15.991792000000002,
+      "errors": 0,
+      "requests": 327286,
+      "statusCodes": {
+        "200": 327286
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:62034/db\\?id=[1-9][0-9]{0,3}'"
+    },
+    {
+      "candidate": "chi",
+      "endpoint": "/json",
+      "concurrency": 64,
+      "rps": 64959.78512989012,
+      "p50": 0.920625,
+      "p99": 2.2047920000000003,
+      "errors": 0,
+      "requests": 649855,
+      "statusCodes": {
+        "200": 649855
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:64684/json"
+    },
+    {
+      "candidate": "chi",
+      "endpoint": "/json",
+      "concurrency": 256,
+      "rps": 64966.68101394262,
+      "p50": 3.667542,
+      "p99": 8.160542,
+      "errors": 0,
+      "requests": 650038,
+      "statusCodes": {
+        "200": 650038
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:64684/json"
+    },
+    {
+      "candidate": "chi",
+      "endpoint": "/users/{id}",
+      "concurrency": 64,
+      "rps": 62189.43749395854,
+      "p50": 0.947625,
+      "p99": 2.395042,
+      "errors": 0,
+      "requests": 622177,
+      "statusCodes": {
+        "200": 622177
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:64684/users/12345"
+    },
+    {
+      "candidate": "chi",
+      "endpoint": "/users/{id}",
+      "concurrency": 256,
+      "rps": 62780.38766729133,
+      "p50": 3.7628340000000002,
+      "p99": 9.242834,
+      "errors": 0,
+      "requests": 628193,
+      "statusCodes": {
+        "200": 628193
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:64684/users/12345"
+    },
+    {
+      "candidate": "chi",
+      "endpoint": "/echo",
+      "concurrency": 64,
+      "rps": 33477.53830985828,
+      "p50": 1.80775,
+      "p99": 4.034000000000001,
+      "errors": 0,
+      "requests": 334946,
+      "statusCodes": {
+        "200": 334946
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:64684/echo"
+    },
+    {
+      "candidate": "chi",
+      "endpoint": "/echo",
+      "concurrency": 256,
+      "rps": 33975.39387193748,
+      "p50": 7.3622499999999995,
+      "p99": 15.744541000000002,
+      "errors": 0,
+      "requests": 340109,
+      "statusCodes": {
+        "200": 340109
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:64684/echo"
+    },
+    {
+      "candidate": "chi",
+      "endpoint": "/db",
+      "concurrency": 64,
+      "rps": 32546.976584889693,
+      "p50": 1.79575,
+      "p99": 4.1047080000000005,
+      "errors": 0,
+      "requests": 325577,
+      "statusCodes": {
+        "200": 325577
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:64684/db\\?id=[1-9][0-9]{0,3}'"
+    },
+    {
+      "candidate": "chi",
+      "endpoint": "/db",
+      "concurrency": 256,
+      "rps": 31936.17360670286,
+      "p50": 7.313542,
+      "p99": 14.404084,
+      "errors": 0,
+      "requests": 319682,
+      "statusCodes": {
+        "200": 319682
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:64684/db\\?id=[1-9][0-9]{0,3}'"
+    },
+    {
+      "candidate": "echo",
+      "endpoint": "/json",
+      "concurrency": 64,
+      "rps": 65753.95103715561,
+      "p50": 0.905917,
+      "p99": 2.253291,
+      "errors": 0,
+      "requests": 657784,
+      "statusCodes": {
+        "200": 657784
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:50928/json"
+    },
+    {
+      "candidate": "echo",
+      "endpoint": "/json",
+      "concurrency": 256,
+      "rps": 66007.50427406505,
+      "p50": 3.6102909999999997,
+      "p99": 7.808959,
+      "errors": 0,
+      "requests": 662980,
+      "statusCodes": {
+        "200": 662980
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:50928/json"
+    },
+    {
+      "candidate": "echo",
+      "endpoint": "/users/{id}",
+      "concurrency": 64,
+      "rps": 64728.699222401294,
+      "p50": 0.909875,
+      "p99": 2.350333,
+      "errors": 0,
+      "requests": 647521,
+      "statusCodes": {
+        "200": 647521
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:50928/users/12345"
+    },
+    {
+      "candidate": "echo",
+      "endpoint": "/users/{id}",
+      "concurrency": 256,
+      "rps": 65956.67714694698,
+      "p50": 3.619667,
+      "p99": 8.213084,
+      "errors": 0,
+      "requests": 659929,
+      "statusCodes": {
+        "200": 659929
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:50928/users/12345"
+    },
+    {
+      "candidate": "echo",
+      "endpoint": "/echo",
+      "concurrency": 64,
+      "rps": 35438.03179596164,
+      "p50": 1.691292,
+      "p99": 4.34325,
+      "errors": 0,
+      "requests": 354591,
+      "statusCodes": {
+        "200": 354591
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:50928/echo"
+    },
+    {
+      "candidate": "echo",
+      "endpoint": "/echo",
+      "concurrency": 256,
+      "rps": 35480.5832992987,
+      "p50": 6.80575,
+      "p99": 19.183083,
+      "errors": 0,
+      "requests": 355104,
+      "statusCodes": {
+        "200": 355104
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:50928/echo"
+    },
+    {
+      "candidate": "echo",
+      "endpoint": "/db",
+      "concurrency": 64,
+      "rps": 33185.81065551665,
+      "p50": 1.776583,
+      "p99": 3.9599159999999998,
+      "errors": 0,
+      "requests": 331963,
+      "statusCodes": {
+        "200": 331963
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:50928/db\\?id=[1-9][0-9]{0,3}'"
+    },
+    {
+      "candidate": "echo",
+      "endpoint": "/db",
+      "concurrency": 256,
+      "rps": 32561.806684433075,
+      "p50": 7.216291,
+      "p99": 17.453500000000002,
+      "errors": 0,
+      "requests": 325890,
+      "statusCodes": {
+        "200": 325890
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:50928/db\\?id=[1-9][0-9]{0,3}'"
+    },
+    {
+      "candidate": "gin",
+      "endpoint": "/json",
+      "concurrency": 64,
+      "rps": 66000.42263746848,
+      "p50": 0.905375,
+      "p99": 2.177958,
+      "errors": 0,
+      "requests": 660219,
+      "statusCodes": {
+        "200": 660219
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:53562/json"
+    },
+    {
+      "candidate": "gin",
+      "endpoint": "/json",
+      "concurrency": 256,
+      "rps": 66010.53892750968,
+      "p50": 3.615083,
+      "p99": 8.055290999999999,
+      "errors": 0,
+      "requests": 660450,
+      "statusCodes": {
+        "200": 660450
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:53562/json"
+    },
+    {
+      "candidate": "gin",
+      "endpoint": "/users/{id}",
+      "concurrency": 64,
+      "rps": 64837.918324477636,
+      "p50": 0.911208,
+      "p99": 2.260292,
+      "errors": 0,
+      "requests": 648612,
+      "statusCodes": {
+        "200": 648612
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:53562/users/12345"
+    },
+    {
+      "candidate": "gin",
+      "endpoint": "/users/{id}",
+      "concurrency": 256,
+      "rps": 64808.79685957491,
+      "p50": 3.648625,
+      "p99": 8.169292,
+      "errors": 0,
+      "requests": 648439,
+      "statusCodes": {
+        "200": 648439
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:53562/users/12345"
+    },
+    {
+      "candidate": "gin",
+      "endpoint": "/echo",
+      "concurrency": 64,
+      "rps": 31917.881904382935,
+      "p50": 1.871625,
+      "p99": 4.291666,
+      "errors": 0,
+      "requests": 319308,
+      "statusCodes": {
+        "200": 319308
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:53562/echo"
+    },
+    {
+      "candidate": "gin",
+      "endpoint": "/echo",
+      "concurrency": 256,
+      "rps": 32777.85308596808,
+      "p50": 7.654667000000001,
+      "p99": 19.21875,
+      "errors": 0,
+      "requests": 328064,
+      "statusCodes": {
+        "200": 328064
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:53562/echo"
+    },
+    {
+      "candidate": "gin",
+      "endpoint": "/db",
+      "concurrency": 64,
+      "rps": 32250.968622174598,
+      "p50": 1.812125,
+      "p99": 4.066415999999999,
+      "errors": 0,
+      "requests": 322623,
+      "statusCodes": {
+        "200": 322623
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:53562/db\\?id=[1-9][0-9]{0,3}'"
+    },
+    {
+      "candidate": "gin",
+      "endpoint": "/db",
+      "concurrency": 256,
+      "rps": 31681.839996662195,
+      "p50": 7.303,
+      "p99": 21.077459,
+      "errors": 0,
+      "requests": 317070,
+      "statusCodes": {
+        "200": 317070
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:53562/db\\?id=[1-9][0-9]{0,3}'"
+    },
+    {
+      "candidate": "fiber",
+      "endpoint": "/json",
+      "concurrency": 64,
+      "rps": 101603.82975059206,
+      "p50": 0.591541,
+      "p99": 1.203792,
+      "errors": 0,
+      "requests": 1017377,
+      "statusCodes": {
+        "200": 1017377
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:56193/json"
+    },
+    {
+      "candidate": "fiber",
+      "endpoint": "/json",
+      "concurrency": 256,
+      "rps": 102957.4645686296,
+      "p50": 2.372166,
+      "p99": 4.251708,
+      "errors": 0,
+      "requests": 1030126,
+      "statusCodes": {
+        "200": 1030126
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:56193/json"
+    },
+    {
+      "candidate": "fiber",
+      "endpoint": "/users/{id}",
+      "concurrency": 64,
+      "rps": 100258.85939285533,
+      "p50": 0.5975,
+      "p99": 1.444917,
+      "errors": 0,
+      "requests": 1003627,
+      "statusCodes": {
+        "200": 1003627
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:56193/users/12345"
+    },
+    {
+      "candidate": "fiber",
+      "endpoint": "/users/{id}",
+      "concurrency": 256,
+      "rps": 101327.5296358814,
+      "p50": 2.385916,
+      "p99": 5.601417,
+      "errors": 0,
+      "requests": 1014313,
+      "statusCodes": {
+        "200": 1014313
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:56193/users/12345"
+    },
+    {
+      "candidate": "fiber",
+      "endpoint": "/echo",
+      "concurrency": 64,
+      "rps": 44029.24583235611,
+      "p50": 1.3636659999999998,
+      "p99": 3.05775,
+      "errors": 0,
+      "requests": 440431,
+      "statusCodes": {
+        "200": 440431
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:56193/echo"
+    },
+    {
+      "candidate": "fiber",
+      "endpoint": "/echo",
+      "concurrency": 256,
+      "rps": 44467.57960033545,
+      "p50": 5.447583,
+      "p99": 12.703333,
+      "errors": 0,
+      "requests": 445011,
+      "statusCodes": {
+        "200": 445011
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:56193/echo"
+    },
+    {
+      "candidate": "fiber",
+      "endpoint": "/db",
+      "concurrency": 64,
+      "rps": 45202.63477209207,
+      "p50": 1.302667,
+      "p99": 3.251625,
+      "errors": 0,
+      "requests": 452189,
+      "statusCodes": {
+        "200": 452189
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:56193/db\\?id=[1-9][0-9]{0,3}'"
+    },
+    {
+      "candidate": "fiber",
+      "endpoint": "/db",
+      "concurrency": 256,
+      "rps": 43355.94066129197,
+      "p50": 5.52275,
+      "p99": 13.212875,
+      "errors": 0,
+      "requests": 433909,
+      "statusCodes": {
+        "200": 433909
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:56193/db\\?id=[1-9][0-9]{0,3}'"
+    },
+    {
+      "candidate": "huma",
+      "endpoint": "/json",
+      "concurrency": 64,
+      "rps": 63357.297646034815,
+      "p50": 0.932667,
+      "p99": 2.306209,
+      "errors": 0,
+      "requests": 633889,
+      "statusCodes": {
+        "200": 633889
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:58815/json"
+    },
+    {
+      "candidate": "huma",
+      "endpoint": "/json",
+      "concurrency": 256,
+      "rps": 63852.895300607175,
+      "p50": 3.7346250000000003,
+      "p99": 8.762832999999999,
+      "errors": 0,
+      "requests": 638850,
+      "statusCodes": {
+        "200": 638850
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:58815/json"
+    },
+    {
+      "candidate": "huma",
+      "endpoint": "/users/{id}",
+      "concurrency": 64,
+      "rps": 62035.963295305555,
+      "p50": 0.958083,
+      "p99": 2.376333,
+      "errors": 0,
+      "requests": 620642,
+      "statusCodes": {
+        "200": 620642
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:58815/users/12345"
+    },
+    {
+      "candidate": "huma",
+      "endpoint": "/users/{id}",
+      "concurrency": 256,
+      "rps": 61697.93773368944,
+      "p50": 3.827833,
+      "p99": 10.138,
+      "errors": 0,
+      "requests": 617376,
+      "statusCodes": {
+        "200": 617376
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s http://127.0.0.1:58815/users/12345"
+    },
+    {
+      "candidate": "huma",
+      "endpoint": "/echo",
+      "concurrency": 64,
+      "rps": 23428.19174298944,
+      "p50": 2.562042,
+      "p99": 6.141208000000001,
+      "errors": 0,
+      "requests": 234401,
+      "statusCodes": {
+        "200": 234401
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:58815/echo"
+    },
+    {
+      "candidate": "huma",
+      "endpoint": "/echo",
+      "concurrency": 256,
+      "rps": 22438.01105114404,
+      "p50": 11.212708,
+      "p99": 28.935375,
+      "errors": 0,
+      "requests": 224646,
+      "statusCodes": {
+        "200": 224646
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json http://127.0.0.1:58815/echo"
+    },
+    {
+      "candidate": "huma",
+      "endpoint": "/db",
+      "concurrency": 64,
+      "rps": 31688.746471133767,
+      "p50": 1.836875,
+      "p99": 4.572083,
+      "errors": 0,
+      "requests": 317086,
+      "statusCodes": {
+        "200": 317086
+      },
+      "command": "oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:58815/db\\?id=[1-9][0-9]{0,3}'"
+    },
+    {
+      "candidate": "huma",
+      "endpoint": "/db",
+      "concurrency": 256,
+      "rps": 31535.20939578607,
+      "p50": 7.4197500000000005,
+      "p99": 19.601042,
+      "errors": 0,
+      "requests": 315639,
+      "statusCodes": {
+        "200": 315639
+      },
+      "command": "oha -z 10s -c 256 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:58815/db\\?id=[1-9][0-9]{0,3}'"
+    }
+  ],
+  "decision": {
+    "rule": "Hard requirements: (1) net/http-compatible handler signature — the router is an http.Handler and plain net/http handlers and func(http.Handler) http.Handler middleware (otelhttp, streaming via http.Flusher, cloudsqlconn-backed pools in the same process) mount unchanged; (2) HTTP/2 h2c support, verified live with a prior-knowledge HTTP/2 request; (3) a release within the last 6 months, taken from the module's .Time in `go list -m -json`. Among the candidates meeting all three, pick the one with the largest sum of /db and /echo requests/s at c=256; if that winner is within 5% of the standard library's sum, choose the standard library (fewer dependencies). Candidates failing a hard requirement are measured and shown but excluded.",
+    "chosen": "net/http",
+    "reason": "echo has the largest /db+/echo sum at c=256 among eligible candidates (68042 req/s) but is within 5% of net/http (66665 req/s, +2.1%), so the rule picks the standard library (fewer dependencies).",
+    "excluded": [
+      {
+        "candidate": "gin",
+        "reason": "last release v1.12.0 on 2026-02-28 is older than 6 months (cutoff 2026-03-15)"
+      },
+      {
+        "candidate": "fiber",
+        "reason": "not net/http compatible: fasthttp server: *fiber.App is not an http.Handler and cannot be served by net/http.Server; net/http handlers and middleware only through the adaptor package, which copies requests and responses (no http.Flusher streaming, otelhttp cannot wrap the server); fasthttp speaks no HTTP/2; no HTTP/2 h2c: prior-knowledge HTTP/2 GET /json failed: Get \"http://127.0.0.1:56193/json\": http2: failed reading the frame payload: http2: frame too large, note that the frame header looked like an HTTP/1.1 header"
+      }
+    ],
+    "scores": [
+      {
+        "candidate": "net/http",
+        "dbRPS256": 32692.436986211233,
+        "echoRPS256": 33972.45608704484,
+        "sum": 66664.89307325607,
+        "eligible": true
+      },
+      {
+        "candidate": "chi",
+        "dbRPS256": 31936.17360670286,
+        "echoRPS256": 33975.39387193748,
+        "sum": 65911.56747864034,
+        "eligible": true
+      },
+      {
+        "candidate": "echo",
+        "dbRPS256": 32561.806684433075,
+        "echoRPS256": 35480.5832992987,
+        "sum": 68042.38998373177,
+        "eligible": true
+      },
+      {
+        "candidate": "gin",
+        "dbRPS256": 31681.839996662195,
+        "echoRPS256": 32777.85308596808,
+        "sum": 64459.69308263028,
+        "eligible": false
+      },
+      {
+        "candidate": "fiber",
+        "dbRPS256": 43355.94066129197,
+        "echoRPS256": 44467.57960033545,
+        "sum": 87823.52026162742,
+        "eligible": false
+      },
+      {
+        "candidate": "huma",
+        "dbRPS256": 31535.20939578607,
+        "echoRPS256": 22438.01105114404,
+        "sum": 53973.22044693011,
+        "eligible": true
+      }
+    ],
+    "releaseCutoff": "2026-03-15",
+    "evaluatedAt": "2026-09-15T10:10:37Z"
+  },
+  "config": {
+    "duration": "10s",
+    "warmup": "3s",
+    "concurrency": [
+      64,
+      256
+    ],
+    "serverGOMAXPROCS": 1,
+    "poolMaxConns": 16,
+    "lookupSQL": "SELECT id, name, score FROM bench WHERE id=$1",
+    "seedRows": 10000,
+    "dbMode": "local",
+    "dbCommands": [
+      "DROP DATABASE IF EXISTS memoryz_bench WITH (FORCE)",
+      "CREATE DATABASE memoryz_bench",
+      "CREATE TABLE bench (id serial PRIMARY KEY, name text NOT NULL, score int NOT NULL)",
+      "INSERT INTO bench (name, score) SELECT 'user-' || g, (g * 7919) % 100 FROM generate_series(1, 10000) AS g",
+      "ANALYZE bench",
+      "-- warm-up: 16 connections x 1000 lookups (SELECT id, name, score FROM bench WHERE id=$1)"
+    ],
+    "echoBody": {
+      "path": "internal/app/echo-body.json",
+      "bytes": 1002,
+      "sha256": "0f4eb2b513d73404536d879bfd4fa8c2d2e847a67b60b1da315da347a1b9da79"
+    },
+    "ohaCommandTemplates": [
+      "/json: oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s 'http://127.0.0.1:\u003cport\u003e/json'",
+      "/users/{id}: oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s 'http://127.0.0.1:\u003cport\u003e/users/12345'",
+      "/echo: oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s -m POST -T application/json -D internal/app/echo-body.json 'http://127.0.0.1:\u003cport\u003e/echo'",
+      "/db: oha -z 10s -c 64 -w --no-tui --http-version 1.1 --output-format json -t 30s --rand-regex-url 'http://127.0.0.1:\u003cport\u003e/db\\?id=[1-9][0-9]{0,3}'"
+    ]
+  },
+  "endpoints": [
+    "GET /json — small JSON object {message, ts}",
+    "GET /users/12345 — path parameter echoed in a small JSON object",
+    "POST /echo — decode the 1002-byte JSON body and re-encode it",
+    "GET /db?id=N — one pgxpool query, N random in 1..9999 per request (oha --rand-regex-url)"
+  ],
+  "routerMicrobench": "$ go test -run ^$ -bench ^BenchmarkRoute$ -benchmem -count 1 ./internal/candidates/\ngoos: darwin\ngoarch: arm64\npkg: memoryz/bench/internal/candidates\ncpu: Apple M2 Pro\nBenchmarkRoute/net_http-12         \t 3129296\t       403.6 ns/op\t      96 B/op\t       4 allocs/op\nBenchmarkRoute/chi-12              \t 1855825\t       636.6 ns/op\t     785 B/op\t       7 allocs/op\nBenchmarkRoute/echo-12             \t 3335486\t       350.0 ns/op\t      80 B/op\t       3 allocs/op\nBenchmarkRoute/gin-12              \t 3046659\t       348.3 ns/op\t     128 B/op\t       4 allocs/op\nBenchmarkRoute/fiber-12            \t 3990861\t       314.9 ns/op\t     112 B/op\t       3 allocs/op\nBenchmarkRoute/huma-12             \t 1468494\t       798.7 ns/op\t     232 B/op\t       9 allocs/op\nPASS\nok  \tmemoryz/bench/internal/candidates\t7.806s\n",
+  "notes": [
+    "PoC scale: 4 high-school classes, about 100 students plus their parents; the expected peak is ~50 concurrent users. c=64 and c=256 are above the target load on purpose: the numbers rank per-request framework overhead, they are not a capacity plan.",
+    "oha ran on the same machine as the candidate server and the Postgres container, so the load generator competed with the server for CPU. Candidate servers ran with GOMAXPROCS=1 to mirror the Cloud Run 1 vCPU target (Go 1.25+ derives GOMAXPROCS from the container CPU limit) and to keep the server, not oha, as the bottleneck; oha used its default worker threads (12).",
+    "This orchestrator ran no parallel builds or other benchmark work during the measurement; unrelated development containers were up, and other sessions on the machine could not be paused (load average at start, 1/5/15 min, including this run's own compilation: 8.61 7.80 11.39).",
+    "Each candidate was compiled into this one binary, started alone as a child process on a free loopback port, checked for identical endpoint semantics against the live server, probed for h2c, warmed up 3s per endpoint at c=64, measured 10s per (endpoint, concurrency) with HTTP/1.1 keep-alive, then stopped before the next candidate.",
+    "Run-to-run variation on a laptop is a few percent; the 5% margin in the decision rule exists for that reason. Re-running the command regenerates both result files.",
+    "All candidates use encoding/json: gin is built without its jsoniter/go_json/sonic tags, fiber keeps its default (encoding/json) encoder and decoder, huma uses DefaultJSONFormat with DefaultConfig's `$schema` link transformer removed (CreateHooks=nil) so its bodies have the same shape as the others.",
+    "Errors = non-200 responses plus failed requests (connection errors, timeouts); oha was run with -w so requests still in flight at the deadline are waited for rather than counted as errors. Runs with errors \u003e 0 are marked ⚠ in the table.",
+    "Database: local native PostgreSQL at 127.0.0.1:15444 (credentials from /Users/seongminhan/test/.env), throwaway database memoryz_bench created for this run and dropped afterwards; the app database was not touched. The native server was preferred over a Docker container because on macOS a container's published port goes through Docker Desktop's user-space proxy, which made /db erratic in trial runs on this machine (identical repeats of the same net/http server at c=256: 12,886 vs 2,102 req/s, p50 17 ms vs 100 ms) while the native server repeated at 23,450 / 22,838 / 16,741 req/s; `-pg docker` still runs the container variant. Only the database memoryz_bench was created and dropped; the app's dedicated database (memoryz) was not touched."
+  ]
+}

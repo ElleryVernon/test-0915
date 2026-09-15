@@ -12,6 +12,20 @@
 - 하네스 장애 검사: 합성 공급자 응답으로 동시 요청 409·입력 변경 409·타인 조회 404·완료 결과 재사용·잘못된 인용 거부·프로세스를 달리한 저장 결과 조회·stale 중단 상태를 검증. 이 검사는 실제 OpenRouter 호출과 구분합니다.
 - Prisma migration diff 및 의존성 감사.
 
+## Go 서버의 실제 프로바이더 검증 (2026-09-15)
+
+`node server/scripts/provider-verify.mjs`(`server verify-provider`)로 quiz·essay·cards·grade·planner·ocr 를 각 1회 실제 호출했다(사용자 지시에 따른 유료 검사). 기록은 `.data/openrouter-verification.json`.
+
+| 실행 | 공급자 순서 | 결과 |
+| --- | --- | --- |
+| 23:31 KST | Bedrock 우선(이전 기본) | 6개 모두 실패: 당시 프로바이더 호출 시한 120초 안에 본문을 끝까지 받지 못함(이후 시한을 175초로 올림) |
+| 23:38 KST | Bedrock 우선 | 카드: Bedrock 이 93.4초 뒤 완성 토큰 0 으로 응답(형식 오류); 서술형: 인용 불일치 → 재시도 → 키워드 겹침으로 거부; 나머지 4개 통과, OpenAI 로 넘어간 호출은 68~89초 |
+| 23:41 KST | `openai/fast` 우선(새 기본) | 6개 모두 통과, 재시도 0. 소요: OCR 1.5초, 카드 1.6초, 채점 2.8초, 퀴즈 3.2초, 서술형 4.5초, 플래너 6.2초. 토큰 3,757/2,194(추론 1,092), 비용 $0.0068 |
+| 2026-09-16 00:28 KST | `openai/fast` 우선 | 리뷰 수정(21건) 뒤 재검증: 통과(leaf-6 Q3 증거; 세부 기록은 아래 실행이 덮어씀) |
+| 2026-09-16 06:05 KST | `openai/fast` 우선 | 지터 작업(입장 세마포어·공급자 504 힌트·코드) 뒤 최종 AI 코드: 6개 모두 통과, 요청 7회(서술형 1회 자가 교정: 모범 답안에 없는 키워드 → 다시 생성). 소요: OCR 1.6초, 카드 2.0초, 채점 3.1초, 퀴즈 3.5초, 플래너 5.3초, 서술형 7.7초. 토큰 4,524/2,866(추론 1,482), 비용 $0.0087, codeHash `4347b533…` |
+
+카드 뒷면은 답 한 문장(원문 문장 그대로)이고 형식 누출이 없다. 이전 Next.js 기록(2026-09-14 16:26 UTC, 6개 요청, $0.0046)과 같은 원문·같은 판정 기준을 쓴다.
+
 ## 실제 외부 AI
 
 OpenRouter 모델 목록에서 `openai/gpt-5.6-luna`와 구조화 출력·추론 옵션을 확인했습니다. 같은 실제 어댑터로 객관식 1개, 서술형 1개, 카드 1개, 의미 채점, 일정 대안 2개, 합성 이미지 OCR을 검증했습니다. 요청 메타데이터는 `.data/openrouter-verification.json`에 기록되며 비밀키·숨겨진 추론은 포함하지 않습니다.
@@ -32,6 +46,41 @@ Codex 브라우저 모바일 뷰포트에서 실제 UI를 클릭·입력·업로
 - 별도 localhost 학부모 세션에서 자녀 통계·비공개 오답 상태·응원 전송·학부모 전용 게시판.
 
 `*-before.png`는 개선 전 비교입니다. 실제 학습 기록을 저장했으므로 캡처별 카드 수·정답률·날짜·일정은 달라질 수 있습니다. 숫자를 맞추기 위해 화면 데이터를 조작하지 않았습니다.
+
+## Go 서버 (2026-09-15)
+
+Next.js 서버 코드를 대체하는 Go 서버(`server/`)는 리프별 검사를 한 러너로 다시 실행한다. 회귀 러너는 유료 AI 키를 비우고 전용 로컬 DB(`127.0.0.1:15444/memoryz`)만 허용하며, 스위트마다 종료 상태와 성공 표식을 함께 요구한다.
+
+```bash
+node server/scripts/regression.mjs
+```
+
+| 스위트 | 명령 | 검사 대상 |
+| --- | --- | --- |
+| static | build · vet · gofmt · `sqlc diff` | 컴파일·정적 결함·생성 코드 최신 여부 |
+| go-test | `go test ./...` | SRS/플래너/PDF 골든(330/410 케이스), 인증, 세션, 캐시(Valkey Docker), 설정, DB, 시드, AI 실행기 |
+| review-static | `server/scripts/review-static.mjs` | staticcheck, 중복 함수, 래퍼 |
+| migrate-check | `server/scripts/migrate-check.mjs` | goose 마이그레이션 = Prisma 스키마 |
+| config-safety | `server/scripts/config-safety.mjs` | 프로덕션 설정 거부 규칙, 비밀 미출력 |
+| foundation-http · auth-http · seed-parity | `server/scripts/*.mjs` | 기반 HTTP(압축·시한·정적), 로그인·쿠키·정지·속도 제한, 데모 시드 13개 테이블 패리티 |
+| integration-check · materials-http · study-review-http | `scripts/*.ts` (기존 검사 재사용) | 소유권·역할·자료·복습·학습 리뷰 계약 |
+| api-contract · api-contract-community · api-contract-parent | `scripts/api-contract.ts`, `scripts/api-contract-community.ts`, `scripts/api-contract-parent.ts` | 전 엔드포인트 계약(가짜 OpenRouter 하네스 포함, 185/283/119 검사) |
+| cache-http | `server/scripts/cache-http.mjs` | 캐시 hit/miss/304, 무효화, 캐시 답 = 계산 답 (29 검사) |
+| telemetry-check | `server/scripts/telemetry-check.mjs` | 서버·질의 스팬 부모 관계, 로그 traceId, 지표, 프로덕션 설정 거부 (13 검사) |
+
+부하(`LOAD_DURATION=15s node server/scripts/load-peak.mjs`, 캐시 계층 포함, 로컬):
+
+| 시나리오 | 결과 |
+| --- | --- |
+| bootstrap c=50 | 12,469 req/s, p95 12 ms, 오류 0/187,150 |
+| posts c=50 | 46,325 req/s, p95 3 ms |
+| reviews 20명 동시 | 3,446 req/s, p95 11 ms |
+| uploads 5 병렬 | 200 ×5, 2.8초 |
+| bootstrap c=50, GOMAXPROCS=1 | 1,742 req/s, p95 50 ms |
+
+bootstrap-parity(`server/scripts/bootstrap-parity.mjs`, TS 서버 ↔ Go 서버 깊은 비교 + 304)는 TS 서버를 제거하기 직전 leaf-1.5 H5 로 증명했고(BOOTSTRAP_PARITY_OK, 2026-09-15), TS 서버가 사라진 뒤로는 회귀 러너에서 제외했다. 이후 Go bootstrap 의 형태는 api-contract·cache-http 가 지킨다.
+
+캐시 전 수치와 설계는 [CACHING.md](CACHING.md), 스팬·지표·로그·알림은 [OBSERVABILITY.md](OBSERVABILITY.md), 리뷰 결과는 [SERVER_REVIEW.md](SERVER_REVIEW.md).
 
 ## 검증의 경계
 

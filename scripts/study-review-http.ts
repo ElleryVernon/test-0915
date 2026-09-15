@@ -3,8 +3,8 @@
 import 'dotenv/config';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { db } from '../src/lib/server/db';
-import { createSession } from '../src/lib/server/auth';
+import { db } from './lib/db';
+import { createSession } from './lib/session';
 
 const base = process.env.TEST_APP_URL ?? 'http://127.0.0.1:3000';
 const database = new URL(process.env.DATABASE_URL!);

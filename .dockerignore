@@ -1,0 +1,16 @@
+.git
+.next
+out
+node_modules
+.data
+.unlazy
+docs
+tests
+prisma/generated
+server/bench
+server/testdata
+server/internal/*/testdata
+scripts/*
+!scripts/precompress.mjs
+*.md
+.env*

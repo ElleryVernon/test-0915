@@ -18,6 +18,8 @@ import type { Comment, Post, ScreenProps } from '@/lib/contracts';
 import { Button, EmptyState, IconButton, ScreenHeader, SectionTitle, Sheet } from '@/components/ui';
 import { relativeTime, selectPosts } from './helpers';
 import SocialHub from './social-hub';
+import { Checkbox, OptionField } from '@/components/ui-choice';
+import { validationMessage } from '@/lib/ui-logic';
 
 const categories = ['전체', '질문', '자유', '수시', '정시', '공부 팁'];
 export default function Community(props: ScreenProps) {
@@ -95,8 +97,9 @@ export default function Community(props: ScreenProps) {
     .slice(0, 3);
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!draft.title.trim() || !draft.body.trim()) {
-      setError('제목과 내용을 모두 적어 주세요.');
+    const problem = validationMessage(draft.title, { label: '제목', required: true, maxLength: 120 }) || validationMessage(draft.body, { label: '내용', required: true, minLength: 2, maxLength: 10000 });
+    if (problem) {
+      setError(problem);
       return;
     }
     setBusy(true);
@@ -267,15 +270,17 @@ export default function Community(props: ScreenProps) {
               내 글
             </button>
           </div>
-          <select
-            aria-label="게시글 정렬"
+          <OptionField
+            label="게시글 정렬"
+            name="sort"
+            compact
             value={sort}
-            onChange={(e) => setSort(e.target.value as 'latest' | 'popular')}
-            className="min-h-11 bg-white text-[13px] text-muted py-1"
-          >
-            <option value="latest">최신순</option>
-            <option value="popular">공감순</option>
-          </select>
+            onChange={(next) => setSort(next as 'latest' | 'popular')}
+            options={[
+              { value: 'latest', label: '최신순' },
+              { value: 'popular', label: '공감순' },
+            ]}
+          />
         </div>
         {loadError && (
           <div role="alert" className="py-6 text-center text-sm">
@@ -379,29 +384,19 @@ export default function Community(props: ScreenProps) {
         onClose={() => !busy && setComposing(false)}
         title={parent ? '이야기 쓰기' : '질문하기'}
       >
-        <form onSubmit={submit} className="community-composer">
+        <form onSubmit={submit} noValidate className="community-composer">
           <div className="flex items-center justify-between gap-3">
-            <select
-              aria-label="작성 게시판"
-              className="field !w-auto"
+            <OptionField
+              label="작성 게시판"
+              name="category"
+              compact
               value={draft.category}
-              onChange={(e) => setDraft({ ...draft, category: e.target.value })}
-            >
-              {categories
-                .filter((c) => c !== '전체' && (!parent || c !== '질문'))
-                .map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-            </select>
-            <label className="flex gap-2 items-center text-sm font-semibold">
-              <input
-                type="checkbox"
-                checked={draft.anonymous}
-                onChange={(e) => setDraft({ ...draft, anonymous: e.target.checked })}
-                className="size-4 accent-ink"
-              />
+              onChange={(category) => setDraft({ ...draft, category })}
+              options={categories.filter((c) => c !== '전체' && (!parent || c !== '질문')).map((c) => ({ value: c, label: c }))}
+            />
+            <Checkbox name="anonymous" checked={draft.anonymous} onChange={(anonymous) => setDraft({ ...draft, anonymous })}>
               익명으로
-            </label>
+            </Checkbox>
           </div>
           <input
             aria-label="글 제목"
@@ -655,7 +650,7 @@ function PostDetail({
               ))
           )}
         </section>
-        <form onSubmit={sendComment} className="mt-5 rounded-2xl bg-surface p-3">
+        <form onSubmit={sendComment} noValidate className="mt-5 rounded-2xl bg-surface p-3">
           {reply && (
             <div className="flex items-center justify-between text-[12px] text-muted mb-2 px-1">
               {reply.author}님에게 답글

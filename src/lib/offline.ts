@@ -2,6 +2,8 @@ import { openDB, type DBSchema } from 'idb';
 import type { Bucket, Card } from './contracts';
 import { scheduleCard, type SrsMode } from './srs';
 import { clearAiTasks } from './ai-task';
+import { retryAfterMsOf, transient } from './api';
+import { between, fullJitter, retryDelay, type Rand } from './jitter';
 
 export interface PendingReview {
   reviewId: string;
@@ -67,6 +69,7 @@ export async function cacheCards(userId: string, cards: Card[]) {
           const key = `${userId}:${card.image}`;
           if (await db.get('images', key)) return;
           try {
+            // jitter: none — one fetch per uncached image per device when cards load (screen open, or the refresh after a sync started over U[0,10 s)); no retry timer [site src/lib/offline.ts:70]
             const response = await fetch(card.image!, { signal: AbortSignal.timeout(8000) });
             if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) return;
             const blob = await response.blob();
@@ -183,6 +186,98 @@ export async function syncReviews(userId: string, send: (item: PendingReview) =>
   } finally {
     if (flushing.get(userId) === task) flushing.delete(userId);
   }
+}
+
+// The per-device review sync scheduler. syncReviews above is serial, one drain in flight per user,
+// and idempotent by reviewId; this decides when to call it without a person asking. A classroom's
+// Wi-Fi coming back fires 'online' on up to 50 devices within about 3 s, so that drain starts at a
+// point drawn over a 10 s window (5 starts a second, the rate of the bell, which the server's pool
+// already absorbs). A transient failure retries with full jitter from 2 s up to 60 s, never earlier
+// than the server's Retry-After, for as long as reviews are pending and the device is online; a
+// refusal that cannot pass by itself (400/404/409) stops the loop and is shown instead.
+interface SyncState {
+  timer: ReturnType<typeof setTimeout> | null;
+  dueAt: number;
+  attempt: number;
+  /** The attempt in flight: callers that join it share its one outcome (one failure counts once). */
+  inflight: Promise<void> | null;
+}
+interface SyncOptions {
+  onError?: (error: unknown) => void;
+  rand?: Rand;
+}
+const syncBackoff = { baseMs: 2_000, capMs: 60_000 };
+const scheduled = new Map<string, SyncState>();
+function syncState(userId: string) {
+  let state = scheduled.get(userId);
+  if (!state) scheduled.set(userId, (state = { timer: null, dueAt: 0, attempt: 0, inflight: null }));
+  return state;
+}
+/** Whether state is still the scheduler for userId (cancelSync drops it; a new mount makes another). */
+const current = (userId: string, state: SyncState) => scheduled.get(userId) === state;
+function armSync(state: SyncState, userId: string, run: () => Promise<unknown>, o: SyncOptions, delay: number) {
+  if (!current(userId, state)) return;
+  if (state.timer) clearTimeout(state.timer);
+  state.dueAt = Date.now() + delay;
+  // jitter: window U[0, windowMs) from syncSoon, or full-jitter backoff from attemptSync: this timer runs the delay its caller drew
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    void (async () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      const pending = (await pendingReviews(userId)).length;
+      if (!current(userId, state)) return; // cancelled while the queue was read
+      if (!pending) {
+        state.attempt = 0;
+        return;
+      }
+      await attemptSync(state, userId, run, o);
+    })();
+  }, delay);
+}
+async function attemptSync(state: SyncState, userId: string, run: () => Promise<unknown>, o: SyncOptions): Promise<void> {
+  if (state.inflight) return state.inflight;
+  let settle!: () => void;
+  state.inflight = new Promise<void>((resolve) => (settle = resolve));
+  try {
+    await run();
+    state.attempt = 0;
+  } catch (error) {
+    // cancelSync ran while this attempt was in flight: the screen is gone, so is the retry.
+    if (!current(userId, state)) return;
+    o.onError?.(error);
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!transient(error) || !online) {
+      state.attempt = 0;
+      return;
+    }
+    state.attempt += 1;
+    // jitter: backoff full jitter U[0, min(60 s, 2 s·2^k)), never before Retry-After + U[0,1 s), while pending and online [site src/lib/offline.ts:154]
+    armSync(state, userId, run, o, retryDelay(fullJitter(state.attempt, syncBackoff.baseMs, syncBackoff.capMs, o.rand), retryAfterMsOf(error), o.rand));
+  } finally {
+    state.inflight = null;
+    settle();
+  }
+}
+/** Starts a drain at a point drawn over windowMs, unless one is already due sooner. */
+export function syncSoon(userId: string, run: () => Promise<unknown>, o: SyncOptions & { windowMs: number }) {
+  const delay = between(0, o.windowMs, o.rand);
+  const state = syncState(userId);
+  if (state.timer && state.dueAt <= Date.now() + delay) return;
+  armSync(state, userId, run, o, delay);
+}
+/** Drains now (a person rated a card or asked): any pending timer is cleared first; a drain already
+ * in flight is joined (syncReviews re-reads the queue, so a review queued meanwhile is sent too). */
+export async function syncNow(userId: string, run: () => Promise<unknown>, o: SyncOptions = {}) {
+  const state = syncState(userId);
+  if (state.timer) clearTimeout(state.timer);
+  state.timer = null;
+  await attemptSync(state, userId, run, o);
+}
+/** Stops the scheduler for userId (offline, sign-out, unmount); an attempt in flight then ends quietly. */
+export function cancelSync(userId: string) {
+  const state = scheduled.get(userId);
+  if (state?.timer) clearTimeout(state.timer);
+  scheduled.delete(userId);
 }
 
 export async function clearStudyCache(userId: string) {

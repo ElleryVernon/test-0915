@@ -4,11 +4,11 @@
 
 ## 공급자와 스킬
 
-OpenRouter의 `openai/gpt-5.6-luna`, reasoning `high`를 호출합니다. 공급자는 `amazon-bedrock/us-east-1`을 먼저 쓰고, 실패하면 `openai/fast`로만 넘깁니다(`provider.order`, `allow_fallbacks: false`). 다른 공급자로는 넘기지 않습니다. `OPENROUTER_PROVIDER_ORDER`로 순서를 바꿀 수 있습니다. Bedrock 엔드포인트는 `response_format`을 지원하지 않습니다. 그래서 JSON Schema를 강제 함수 호출(`tools` + `tool_choice`, `strict: true`)로 전달하고, `require_parameters: true`로 이를 지원하지 않는 경로를 막습니다. 비밀키는 서버 환경 변수에만 저장합니다. 함수 호출 스키마, 응답 시간 제한, 길이 제한, 원문 직접 인용·선택지·채점·시간표 검증을 통과한 결과만 사용합니다. 숨겨진 추론은 요청에서 제외하고 저장하지 않습니다.
+OpenRouter의 `openai/gpt-5.6-luna`, reasoning `high`를 호출합니다. 공급자는 `openai/fast`를 먼저 쓰고, 실패하면 `amazon-bedrock/us-east-1`로만 넘깁니다(`provider.order`, `allow_fallbacks: false`; 2026-09-15 측정으로 순서를 바꿨습니다 — docs/SERVER.md AI 절). 다른 공급자로는 넘기지 않습니다. `OPENROUTER_PROVIDER_ORDER`로 순서를 바꿀 수 있습니다. Bedrock 엔드포인트는 `response_format`을 지원하지 않습니다. 그래서 JSON Schema를 강제 함수 호출(`tools` + `tool_choice`, `strict: true`)로 전달하고, `require_parameters: true`로 이를 지원하지 않는 경로를 막습니다. 비밀키는 서버 환경 변수에만 저장합니다. 함수 호출 스키마, 응답 시간 제한, 길이 제한, 원문 직접 인용·선택지·채점·시간표 검증을 통과한 결과만 사용합니다. 숨겨진 추론은 요청에서 제외하고 저장하지 않습니다.
 
 일정 제안은 규칙에 어긋나는 블록(25–60분 밖, 기존 일정과 겹침, 휴식 10분 미만, 지난 시간, 없는 과목, 하루 4시간·4개 초과)만 버리고 나머지를 사용합니다. 한 안이 비면 같은 의도의 규칙 기반 안으로 채우고, 응답의 `method`(`AI` / `AI+규칙` / `규칙 기반 일정 추천`)와 `dropped`로 출처를 밝힙니다.
 
-`src/lib/server/skills.ts`의 여섯 스킬은 quiz / essay / cards / grade / planner / ocr이며 각각 버전 1.0.0입니다. 저장되는 AI 작업은 LOAD_CONTEXT → GENERATE → VALIDATE → COMMIT의 허용된 순서를 따릅니다. 단독 OCR은 입력·생성·출력 검증을 거쳐 업로드 흐름으로 반환됩니다. Zod로 도구 입력을 검증하고, 자료와 기존 일정의 소유권을 확인한 뒤 생성합니다. 모델에는 셸이나 임의 SQL 실행 권한이 없습니다.
+`server/internal/ai/skills.go`의 여섯 스킬은 quiz / essay / cards / grade / planner / ocr이며 각각 버전 1.0.0입니다. 저장되는 AI 작업은 LOAD_CONTEXT → GENERATE → VALIDATE → COMMIT의 허용된 순서를 따릅니다. 단독 OCR은 입력·생성·출력 검증을 거쳐 업로드 흐름으로 반환됩니다. 입력은 핸들러의 검증기로, 모델 출력은 Go 검증기(`server/internal/ai/tasks.go` 의 parseItems, `server/internal/planner` 의 ValidateAiGrade·ValidateAiPlans)로 확인하고, 자료와 기존 일정의 소유권을 확인한 뒤 생성합니다. 문항·서술형·카드는 모드별 프롬프트로 만들고, 형식 누출·중복·근거 없음으로 거부되면 거부 사유를 붙여 한 번만 다시 만듭니다(핸들러 시한이 60초 이상 남았을 때만). 모델에는 셸이나 임의 SQL 실행 권한이 없습니다.
 
 - 문항: 5개 선택지, 올바른 정답 인덱스, 중복 선택지 방지, 원문에 실제 존재하는 인용.
 - 서술형: 핵심 개념 60점·인과 논리 25점·설명 완결성 15점. 동의어와 정확한 바꾸어 쓰기를 인정하고 맞춘/빠진 개념의 분할을 검증.
@@ -23,7 +23,7 @@ OpenRouter의 `openai/gpt-5.6-luna`, reasoning `high`를 호출합니다. 공급
 
 화면 재진입은 GET 상태 조회만 합니다. 완료 결과를 적용하고 화면 데이터 갱신까지 성공하면 처리 확인을 기록합니다. 실패·중단 상태를 새 UUID로 다시 요청하는 것은 명시적인 버튼 동작입니다. 일정 적용 도중 끊겼다면 이미 저장된 동일 블록을 건너뛰고 원래 날짜에 이어서 적용합니다.
 
-5분 이상 갱신되지 않은 RUNNING은 다음 조회나 요청 때 INTERRUPTED로 표시합니다. **상태와 완료 결과를 복구하는 구조이며, 서버 프로세스 중단 후 모델 실행 자체를 자동 재개하는 작업 큐는 아닙니다.** 외부 공급자는 120초, 브라우저 대기는 150초로 제한합니다. 이미지 업로드/OCR 자체에는 문항 생성과 동일한 AiRun 재실행 방지 계약을 적용하지 않으며, 업로드 후 문항·카드 생성 단계에는 적용합니다. 원본 이미지 재업로드는 별도 요청입니다.
+5분 이상 갱신되지 않은 RUNNING은 다음 조회나 요청 때 INTERRUPTED로 표시합니다. **상태와 완료 결과를 복구하는 구조이며, 서버 프로세스 중단 후 모델 실행 자체를 자동 재개하는 작업 큐는 아닙니다.** 외부 공급자 호출은 175초, AI 핸들러와 이미지 업로드(OCR 포함)는 180초, 브라우저 대기는 190초로 제한합니다. 이미지 업로드/OCR 자체에는 문항 생성과 동일한 AiRun 재실행 방지 계약을 적용하지 않으며, 업로드 후 문항·카드 생성 단계에는 적용합니다. 원본 이미지 재업로드는 별도 요청입니다.
 
 ## 참고한 방법
 

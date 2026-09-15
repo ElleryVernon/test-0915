@@ -23,6 +23,8 @@ import type { Profile, ScreenProps } from '@/lib/contracts';
 import { Button, IconButton, ListRow, ScreenHeader, SectionTitle, Sheet } from '@/components/ui';
 import SocialHub, { type SocialData } from './social-hub';
 import { ChildLinks } from './parent';
+import { OptionField } from '@/components/ui-choice';
+import { validationMessage } from '@/lib/ui-logic';
 
 export default function Account(props: ScreenProps) {
   const { data, navigate, refresh, toast, path } = props;
@@ -33,6 +35,10 @@ export default function Account(props: ScreenProps) {
   const [social, setSocial] = useState<SocialData | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // The counts change with the account, its posts and what happens in the hub (follows, blocks), so
+  // the fetch follows those — not every bootstrap refresh's new posts array.
+  // jitter: none — one-shot GET on navigation, keyed on a stable value [site src/components/social/account.tsx:40]
+  const socialKey = `${data.profile.id}:${data.posts.length}:${hub === null}`;
   useEffect(() => {
     let active = true;
     api<SocialData>('/social')
@@ -43,7 +49,7 @@ export default function Account(props: ScreenProps) {
     return () => {
       active = false;
     };
-  }, [data.posts]);
+  }, [socialKey]);
   const parent = data.profile.role === 'PARENT';
   const privacyRows: { key: keyof Profile['privacy']; title: string; description: string }[] = [
     { key: 'accuracy', title: '정답률 공개', description: '얼마나 이해했는지 비율로만 보여드려요' },
@@ -416,6 +422,7 @@ function ProfileEditor({
   useEffect(() => {
     if (!open || !searching || form.school.trim().length < 1) return;
     let active = true;
+    // jitter: none — a 200 ms search debounce paced by one person's keystrokes [site src/components/social/account.tsx:421]
     const timer = setTimeout(() => {
       api<{ id: string; name: string }[]>(`/schools?q=${encodeURIComponent(form.school)}`)
         .then((s) => {
@@ -432,6 +439,11 @@ function ProfileEditor({
   }, [form.school, searching, open]);
   async function save(e: FormEvent) {
     e.preventDefault();
+    const problem = validationMessage(form.name, { label: '이름', required: true, maxLength: 40 }) || validationMessage(form.nickname, { label: '닉네임', required: true, minLength: 2, maxLength: 30 });
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -447,7 +459,7 @@ function ProfileEditor({
   }
   return (
     <Sheet open={open} onClose={() => !busy && onClose()} title="나를 소개해 주세요">
-      <form onSubmit={save} className="flex flex-col gap-4">
+      <form onSubmit={save} noValidate className="flex flex-col gap-4">
         <label className="text-sm font-semibold">
           이름
           <input
@@ -502,19 +514,19 @@ function ProfileEditor({
                 </span>
               )}
             </label>
-            <label className="text-sm font-semibold">
+            <div className="text-sm font-semibold">
               학년
-              <select
-                className="field mt-2"
-                value={form.grade}
-                onChange={(e) => setForm({ ...form, grade: e.target.value })}
-              >
-                <option value="">학년 선택</option>
-                {['고1', '고2', '고3', 'N수·기타'].map((g) => (
-                  <option key={g}>{g}</option>
-                ))}
-              </select>
-            </label>
+              <div className="mt-2">
+                <OptionField
+                  label="학년"
+                  name="grade"
+                  value={form.grade}
+                  placeholder="학년 선택"
+                  onChange={(grade) => setForm({ ...form, grade })}
+                  options={['고1', '고2', '고3', 'N수·기타'].map((g) => ({ value: g, label: g }))}
+                />
+              </div>
+            </div>
           </>
         )}
         {error && (
@@ -540,6 +552,7 @@ function InviteCode({ toast }: ScreenProps) {
     const tick = () =>
       setRemaining(Math.max(0, Math.ceil((Date.parse(invite.expiresAt) - Date.now()) / 1000)));
     tick();
+    // jitter: none — a local expiry countdown; a new code comes only from the button [site src/components/social/account.tsx:550]
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [invite]);

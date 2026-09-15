@@ -22,7 +22,7 @@ export function IconButton({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
   return (
-    <button aria-label={label} title={label} className={`icon-button ${className}`} {...props}>
+    <button aria-label={label} className={`icon-button ${className}`} {...props}>
       {children}
     </button>
   );
@@ -89,7 +89,7 @@ export function Sheet({
               <Dialog.Title>{title}</Dialog.Title>
             )}
             <Dialog.Close asChild>
-              <IconButton label="닫기">
+              <IconButton label="닫기" data-close-sheet>
                 <X size={22} />
               </IconButton>
             </Dialog.Close>
@@ -134,12 +134,15 @@ export function ListRow({
   description,
   onClick,
   extra,
+  chevron = true,
 }: {
   icon?: ReactNode;
   title: string;
   description?: string;
   onClick?: () => void;
   extra?: ReactNode;
+  /** A row whose trailing chip already names the action drops the chevron. */
+  chevron?: boolean;
 }) {
   return (
     <button className={`list-row${icon ? '' : ' list-row-plain'}`} onClick={onClick}>
@@ -150,7 +153,7 @@ export function ListRow({
       </span>
       <span className="row-trailing">
         {extra}
-        <ChevronRight size={16} className="text-disabled shrink-0" />
+        {chevron && <ChevronRight size={16} className="text-disabled shrink-0" />}
       </span>
     </button>
   );

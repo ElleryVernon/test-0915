@@ -11,8 +11,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { db } from '../src/lib/server/db';
-import { createSession, SESSION_COOKIE } from '../src/lib/server/auth';
+import { db } from './lib/db';
+import { createSession, SESSION_COOKIE } from './lib/session';
 
 async function serveBuild(): Promise<{ url: string; server: ChildProcess }> {
   const port = await new Promise<number>((resolve, reject) => {

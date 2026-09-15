@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { db } from '../src/lib/server/db';
-import { createSession, SESSION_COOKIE } from '../src/lib/server/auth';
+import { db } from './lib/db';
+import { createSession, SESSION_COOKIE } from './lib/session';
 import { assertLoopbackDatabase, consoleErrors, launchChrome, openPage, serveBuild } from './lib/browser';
 
 assertLoopbackDatabase();

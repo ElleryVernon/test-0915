@@ -14,6 +14,7 @@ import {
 import type { CardType, Mask, ScreenProps } from '@/lib/contracts';
 import { Button, EmptyState, IconButton, ScreenHeader } from '@/components/ui';
 import { api } from '@/lib/api';
+import { waitingLabel } from '@/lib/retry-countdown';
 import { detectHighlights, normalizeMask, TYPES } from './logic';
 import {
   BusyText,
@@ -425,6 +426,7 @@ export function CreateCard(props: ScreenProps) {
               !front.trim() ||
               !back.trim() ||
               action.busy ||
+              action.retryIn > 0 ||
               (type === 'BLIND' && (!file || !masks.length))
             }
             onClick={() =>
@@ -443,7 +445,11 @@ export function CreateCard(props: ScreenProps) {
               })
             }
           >
-            {action.busy ? <BusyText>카드를 저장하고 있어요</BusyText> : '카드 저장하기'}
+            {action.busy ? (
+              <BusyText>카드를 저장하고 있어요</BusyText>
+            ) : (
+              waitingLabel('카드 저장하기', action.retryIn)
+            )}
           </Button>
         </div>
       </div>

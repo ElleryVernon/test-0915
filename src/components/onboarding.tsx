@@ -17,6 +17,7 @@ export default function Onboarding({ data, navigate, refresh, toast }: ScreenPro
   useEffect(() => {
     if (school.trim().length < 2) return;
     const c = new AbortController();
+    // jitter: none — a 200 ms debounce paced by keystrokes; the next keystroke aborts it and the server coalesces identical searches [site src/components/onboarding.tsx:20]
     const t = setTimeout(
       () =>
         fetch(`/api/schools?q=${encodeURIComponent(school)}`, { signal: c.signal })

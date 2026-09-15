@@ -1,20 +1,39 @@
 'use client';
 
+// Continuous PDF preview: every page is laid out at once (so the scroll position is the reading
+// position), rendered only when it comes near the viewport, re-rendered on zoom, with a live page
+// indicator. The bytes are fetched first so HTTP failures (410 gone, 401 signed out, 404, offline)
+// are reported precisely instead of as pdf.js's generic loading error.
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, ChevronLeft, ChevronRight, LoaderCircle, RotateCw } from '@/components/icons';
-import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
+import { AlertCircle, LoaderCircle, Minus, Plus, RotateCw } from '@/components/icons';
+import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
+import { describeFailure, nextZoom, ZOOM_STEPS, type ViewerFailure } from './material-layout';
 import { PDF_ASSET_BASE, renderPdfPage } from './pdf-render';
 
-export default function PdfViewer({ url, title }: { url: string; title: string }) {
+type PageSize = { width: number; height: number };
+
+export default function PdfViewer({
+  url,
+  title,
+  initialPage = 1,
+  onPageCount,
+}: {
+  url: string;
+  title: string;
+  /** Page to scroll to once the document is laid out (a citation's page). */
+  initialPage?: number;
+  onPageCount?: (pages: number) => void;
+}) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const canvasHostRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  const [zoom, setZoom] = useState<number>(ZOOM_STEPS[0]);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
-  const [pageNumber, setPageNumber] = useState(1);
+  const [sizes, setSizes] = useState<PageSize[]>([]);
   const [loading, setLoading] = useState(true);
-  const [rendering, setRendering] = useState(false);
-  const [error, setError] = useState('');
+  const [failure, setFailure] = useState<ViewerFailure | null>(null);
+  const [current, setCurrent] = useState(1);
   const [reload, setReload] = useState(0);
+  const [visible, setVisible] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -26,25 +45,37 @@ export default function PdfViewer({ url, title }: { url: string; title: string }
     return () => observer.disconnect();
   }, []);
 
+  // Load: fetch the bytes (precise HTTP errors), then let pdf.js parse them.
   useEffect(() => {
     let active = true;
-    let task: PDFDocumentLoadingTask | undefined;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    let loadFailure = '';
+    let document: PDFDocumentProxy | undefined;
     setPdf(null);
-    setPageNumber(1);
+    setSizes([]);
     setLoading(true);
-    setError('');
-
+    setFailure(null);
+    setCurrent(1);
     async function load() {
       try {
-        // PDF.js touches browser APIs during import; keep it outside server rendering.
+        let response: Response;
+        try {
+          // jitter: none — one fetch a person starts (45 s deadline); retry is only the manual retry button [site src/components/study/pdf-viewer.tsx:61]
+          response = await fetch(url, { credentials: 'same-origin', signal: AbortSignal.timeout(45_000) });
+        } catch (reason) {
+          if (!active) return;
+          setFailure(reason instanceof Error && reason.name === 'TimeoutError' ? { pdf: 'timeout' } : { network: true });
+          return;
+        }
+        if (!response.ok) {
+          if (active) setFailure({ status: response.status });
+          return;
+        }
+        const data = new Uint8Array(await response.arrayBuffer());
+        if (!active) return;
         const pdfjs = await import('pdfjs-dist');
         if (!active) return;
         pdfjs.GlobalWorkerOptions.workerSrc = `${PDF_ASSET_BASE}/pdf.worker.min.mjs`;
-        task = pdfjs.getDocument({
-          url,
-          withCredentials: true,
+        const task = pdfjs.getDocument({
+          data,
           cMapUrl: `${PDF_ASSET_BASE}/cmaps/`,
           cMapPacked: true,
           standardFontDataUrl: `${PDF_ASSET_BASE}/standard_fonts/`,
@@ -53,145 +84,165 @@ export default function PdfViewer({ url, title }: { url: string; title: string }
           enableXfa: false,
         });
         task.onPassword = () => {
-          loadFailure = '암호가 있는 PDF예요. 아래 원본 링크에서 열어 주세요.';
-          if (active) {
-            setError(loadFailure);
-            setLoading(false);
-          }
-          void task?.destroy().catch(() => {});
+          if (active) setFailure({ pdf: 'password' });
+          void task.destroy().catch(() => {});
         };
-        timeout = setTimeout(() => {
-          loadFailure =
-            'PDF를 불러오는 데 시간이 걸리고 있어요. 연결을 확인하고 다시 시도해 주세요.';
-          if (active) {
-            setError(loadFailure);
-            setLoading(false);
-          }
-          void task?.destroy().catch(() => {});
-        }, 45_000);
-        const document = await task.promise;
-        if (active) setPdf(document);
+        document = await task.promise;
+        if (!active) return;
+        const pageSizes: PageSize[] = [];
+        for (let n = 1; n <= document.numPages; n++) {
+          const page = await document.getPage(n);
+          const { width, height } = page.getViewport({ scale: 1 });
+          pageSizes.push({ width, height });
+        }
+        if (!active) return;
+        setSizes(pageSizes);
+        setPdf(document);
+        onPageCount?.(document.numPages);
       } catch (reason) {
         if (!active) return;
         const name = reason instanceof Error ? reason.name : '';
-        setError(
-          loadFailure ||
-            (name === 'InvalidPDFException'
-              ? 'PDF 파일을 읽을 수 없어요. 아래 원본과 본문을 확인해 주세요.'
-              : 'PDF를 불러오지 못했어요. 연결을 확인하고 다시 시도해 주세요.'),
-        );
+        setFailure((prev) => prev ?? (name === 'InvalidPDFException' ? { pdf: 'invalid' } : { network: true }));
       } finally {
-        if (timeout) clearTimeout(timeout);
         if (active) setLoading(false);
       }
     }
     void load();
     return () => {
       active = false;
-      if (timeout) clearTimeout(timeout);
-      void task?.destroy().catch(() => {});
+      void document?.destroy().catch(() => {});
     };
+    // onPageCount is a notification, not an input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, reload]);
 
+  // Which pages are near the viewport, and which one is being read.
   useEffect(() => {
-    const host = canvasHostRef.current;
-    if (!pdf || !width || !host) return;
-    let active = true;
-    let renderTask: RenderTask | undefined;
-    const canvas = document.createElement('canvas');
-    canvas.setAttribute('role', 'img');
-    canvas.setAttribute(
-      'aria-label',
-      `${title}, ${pageNumber}페이지. 본문 텍스트는 아래에서 읽을 수 있어요.`,
+    const viewport = viewportRef.current;
+    if (!viewport || !pdf) return;
+    const slots = [...viewport.querySelectorAll<HTMLElement>('[data-page-slot]')];
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setVisible((prev) => {
+          const next = new Set(prev);
+          for (const entry of entries) {
+            const page = Number((entry.target as HTMLElement).dataset.pageSlot);
+            if (entry.isIntersecting) next.add(page);
+            else next.delete(page);
+          }
+          return next;
+        });
+      },
+      { root: viewport, rootMargin: '150% 0px' },
     );
-    canvas.className = 'block max-w-full bg-white';
-    setRendering(true);
-    setError('');
-    host.replaceChildren();
-
-    async function render() {
-      try {
-        const page = await pdf!.getPage(pageNumber);
-        if (!active) return;
-        renderTask = renderPdfPage(page, canvas, width, window.devicePixelRatio || 1);
-        await renderTask.promise;
-        if (active) host!.replaceChildren(canvas);
-      } catch {
-        if (active)
-          setError('이 페이지를 표시하지 못했어요. 다시 시도하거나 아래 본문을 확인해 주세요.');
-      } finally {
-        if (active) setRendering(false);
-      }
-    }
-    void render();
-    return () => {
-      active = false;
-      renderTask?.cancel();
-      canvas.remove();
+    slots.forEach((slot) => observer.observe(slot));
+    const onScroll = () => {
+      const top = viewport.scrollTop + viewport.clientHeight * 0.35;
+      let page = 1;
+      for (const slot of slots) if (slot.offsetTop <= top) page = Number(slot.dataset.pageSlot);
+      setCurrent(page);
     };
-  }, [pdf, pageNumber, width, title]);
+    onScroll();
+    viewport.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      observer.disconnect();
+      viewport.removeEventListener('scroll', onScroll);
+    };
+  }, [pdf, sizes, zoom, width]);
 
-  const busy = loading || rendering || (!width && !error);
+  // Jump to the requested page once the layout exists.
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !pdf || initialPage <= 1) return;
+    const slot = viewport.querySelector<HTMLElement>(`[data-page-slot="${initialPage}"]`);
+    if (slot) viewport.scrollTo({ top: slot.offsetTop });
+  }, [pdf, initialPage, width]);
+
+  const pageWidth = Math.max(1, Math.floor(width * zoom));
+  const busy = loading || (!width && !failure);
+  const problem = failure ? describeFailure(failure) : null;
   return (
-    <section
-      aria-label="PDF 미리보기"
-      className="overflow-hidden rounded-2xl border border-line bg-surface"
-    >
-      <div className="flex min-h-14 items-center justify-between gap-2 border-b border-line bg-white px-3">
-        <button
-          type="button"
-          aria-label="이전 페이지"
-          disabled={!pdf || busy || pageNumber <= 1}
-          onClick={() => setPageNumber((page) => page - 1)}
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-secondary disabled:opacity-30"
-        >
-          <ChevronLeft size={20} />
+    <section aria-label="PDF 미리보기" className="pdf-preview" data-pdf-preview>
+      <div className="pdf-preview-bar">
+        <button type="button" aria-label="축소" data-zoom-out disabled={!pdf || zoom === ZOOM_STEPS[0]} onClick={() => setZoom((z) => nextZoom(z, -1))}>
+          <Minus size={18} />
         </button>
-        <p aria-live="polite" className="text-[13px] font-semibold tabular-nums text-secondary">
-          {pdf ? `${pageNumber} / ${pdf.numPages} 페이지` : 'PDF 미리보기'}
+        <p aria-live="polite" data-page-indicator className="pdf-preview-indicator">
+          {pdf ? `${current} / ${pdf.numPages} 쪽` : 'PDF 미리보기'}
+          {zoom !== 1 && pdf ? ` · ${Math.round(zoom * 100)}%` : ''}
         </p>
-        <button
-          type="button"
-          aria-label="다음 페이지"
-          disabled={!pdf || busy || pageNumber >= pdf.numPages}
-          onClick={() => setPageNumber((page) => page + 1)}
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-secondary disabled:opacity-30"
-        >
-          <ChevronRight size={20} />
+        <button type="button" aria-label="확대" data-zoom-in disabled={!pdf || zoom === ZOOM_STEPS[ZOOM_STEPS.length - 1]} onClick={() => setZoom((z) => nextZoom(z, 1))}>
+          <Plus size={18} />
         </button>
       </div>
-      <div
-        ref={viewportRef}
-        aria-busy={busy}
-        className="relative max-h-[55vh] min-h-64 overflow-auto overscroll-contain"
-      >
-        <div ref={canvasHostRef} className={busy || error ? 'hidden' : ''} />
-        {busy && !error && (
-          <div
-            role="status"
-            className="flex min-h-64 flex-col items-center justify-center gap-3 page-inset text-[14px] text-muted"
-          >
+      <div ref={viewportRef} aria-busy={busy} className="pdf-preview-viewport">
+        {busy && !failure && (
+          <div role="status" className="pdf-preview-state">
             <LoaderCircle size={24} className="animate-spin" />
-            {loading ? 'PDF를 불러오고 있어요' : '페이지를 준비하고 있어요'}
+            PDF를 불러오고 있어요
           </div>
         )}
-        {error && (
-          <div
-            role="alert"
-            className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center"
-          >
+        {problem && (
+          <div role="alert" className="pdf-preview-state" data-preview-error>
             <AlertCircle size={24} className="text-muted" />
-            <p className="text-[14px] leading-relaxed text-secondary">{error}</p>
-            <button
-              type="button"
-              onClick={() => setReload((value) => value + 1)}
-              className="mt-1 flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-[14px] font-semibold"
-            >
-              <RotateCw size={16} /> 다시 불러오기
-            </button>
+            <p>{problem.message}</p>
+            {problem.retry && (
+              <button type="button" data-preview-retry onClick={() => setReload((v) => v + 1)} className="pdf-preview-retry">
+                <RotateCw size={16} /> 다시 시도
+              </button>
+            )}
+          </div>
+        )}
+        {pdf && !problem && (
+          <div className="pdf-preview-pages" style={{ width: pageWidth }}>
+            {sizes.map((size, i) => (
+              <PageSlot key={i} pdf={pdf} page={i + 1} width={pageWidth} height={Math.round((size.height / size.width) * pageWidth)} render={visible.has(i + 1)} title={title} />
+            ))}
           </div>
         )}
       </div>
     </section>
+  );
+}
+
+function PageSlot({ pdf, page, width, height, render, title }: { pdf: PDFDocumentProxy; page: number; width: number; height: number; render: boolean; title: string }) {
+  const host = useRef<HTMLDivElement>(null);
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => {
+    const element = host.current;
+    if (!element || !render) return;
+    let active = true;
+    let task: RenderTask | undefined;
+    const canvas = document.createElement('canvas');
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', `${title}, ${page}쪽`);
+    canvas.dataset.pageCanvas = String(page);
+    canvas.className = 'pdf-preview-canvas';
+    setDrawn(false);
+    (async () => {
+      try {
+        const proxy = await pdf.getPage(page);
+        if (!active) return;
+        task = renderPdfPage(proxy, canvas, width, window.devicePixelRatio || 1);
+        await task.promise;
+        if (active) {
+          element.replaceChildren(canvas);
+          setDrawn(true);
+        }
+      } catch {
+        /* a cancelled render (zoom, unmount) draws nothing; the slot keeps its size */
+      }
+    })();
+    return () => {
+      active = false;
+      task?.cancel();
+      canvas.remove();
+    };
+  }, [pdf, page, width, render, title]);
+  return (
+    <div data-page-slot={page} data-page-drawn={drawn ? 'true' : 'false'} className="pdf-preview-slot" style={{ width, height }}>
+      <div ref={host} className="pdf-preview-slot-host" />
+      <span className="pdf-preview-page-badge">{page}</span>
+    </div>
   );
 }

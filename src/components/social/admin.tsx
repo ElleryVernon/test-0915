@@ -24,6 +24,7 @@ export default function Admin({ data, navigate, toast }: ScreenProps) {
   const [query, setQuery] = useState('');
   const [school, setSchool] = useState('');
   const [user, setUser] = useState<AdminData['users'][number] | null>(null);
+  // jitter: none — admins only; one GET per visit, again only after an admin mutation [site src/components/social/admin.tsx:30]
   useEffect(() => {
     let active = true;
     if (data.profile.role !== 'ADMIN') return;
@@ -189,7 +190,7 @@ export default function Admin({ data, navigate, toast }: ScreenProps) {
                 ))}
             {tab === 'schools' && (
               <>
-                <form onSubmit={addSchool} className="flex gap-2 mb-5">
+                <form onSubmit={addSchool} noValidate className="flex gap-2 mb-5">
                   <input
                     aria-label="등록할 학교명"
                     required
@@ -200,7 +201,7 @@ export default function Admin({ data, navigate, toast }: ScreenProps) {
                     value={school}
                     onChange={(e) => setSchool(e.target.value)}
                   />
-                  <Button type="submit" disabled={busy} className="shrink-0 !px-4">
+                  <Button type="submit" disabled={busy || school.trim().length < 2} className="shrink-0 !px-4">
                     추가
                   </Button>
                 </form>

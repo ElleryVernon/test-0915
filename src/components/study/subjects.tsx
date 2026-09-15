@@ -1,5 +1,5 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Plus,
   ChevronRight,
@@ -24,6 +24,8 @@ import {
 import type { ScreenProps, Material, Subject } from '@/lib/contracts';
 import { Button, EmptyState, IconButton, Sheet } from '@/components/ui';
 import { api } from '@/lib/api';
+import { useRetryCountdown, waitingLabel } from '@/lib/retry-countdown';
+import { useMaterialDetail } from '@/lib/materials';
 import { seoulDateKey } from '@/lib/home';
 import {
   acknowledgeAiTask,
@@ -55,6 +57,8 @@ import {
   useAction,
 } from './shared';
 import { StudyHeader } from './study-header';
+import { Checkbox } from '@/components/ui-choice';
+import { DateField } from '@/components/ui-date';
 
 export function SubjectGlyph({ name }: { name: string }) {
   return /수학|미적분|대수/.test(name) ? (
@@ -72,11 +76,44 @@ export function SubjectGlyph({ name }: { name: string }) {
 const METHOD_ICONS = { quiz: BookOpen, essay: PencilLine, wrong: ListChecks, cards: Layers };
 const EXAM_NAMES = ['중간고사', '기말고사', '모의고사', '수행평가'];
 const dayLabel = (iso: string) =>
-  new Date(iso).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' });
+  new Date(iso).toLocaleDateString('ko-KR', {
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'Asia/Seoul',
+  });
 
 export function StudyHome(props: ScreenProps) {
   const [add, setAdd] = useState(false);
   const [create, setCreate] = useState(false);
+  // Home's "사진 찍기": go to a subject's upload sheet with the camera first; with no subject yet,
+  // the subject editor opens and the upload follows the first subject made.
+  const cameraIntent = useRef(params(props.path).get('upload') === 'camera');
+  const subjectCount = props.data.subjects.length;
+  const latestSubject = props.data.subjects[subjectCount - 1];
+  useEffect(() => {
+    if (!cameraIntent.current) return;
+    if (latestSubject) {
+      cameraIntent.current = false;
+      // Replace, not push: back from the upload sheet returns to where 사진 찍기 was pressed.
+      props.navigate(`/subjects/${latestSubject.id}?upload=1&capture=1`, { replace: true });
+    } else {
+      // keepScreen: remounting this screen would drop the editor opened here and the intent itself.
+      props.navigate('/study', { replace: true, keepScreen: true });
+      setAdd(true);
+    }
+    // The intent resolves on the subject list; navigate is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subjectCount]);
+  // Closing the editor without making a subject abandons the camera intent (a subject made later
+  // from this screen does not open the camera by surprise).
+  const editorWasOpen = useRef(false);
+  useEffect(() => {
+    if (add) editorWasOpen.current = true;
+    else if (editorWasOpen.current) {
+      editorWasOpen.current = false;
+      if (subjectCount === 0) cameraIntent.current = false;
+    }
+  }, [add, subjectCount]);
   const [semesterOpen, setSemesterOpen] = useState(false);
   const [semester, setSemester] = useState('');
   const now = Date.now();
@@ -201,7 +238,15 @@ export function StudyHome(props: ScreenProps) {
           })}
         </nav>
       </div>
-      <SubjectEditor open={add} onClose={() => setAdd(false)} props={props} />
+      <SubjectEditor
+        open={add}
+        onClose={() => {
+          // Closing the editor without a subject abandons the camera intent.
+          cameraIntent.current = false;
+          setAdd(false);
+        }}
+        props={props}
+      />
       <CreateSheet
         open={create}
         onClose={() => setCreate(false)}
@@ -369,7 +414,11 @@ function SubjectEditor({
           </legend>
           <div className="flex flex-wrap gap-2">
             {EXAM_NAMES.map((n) => (
-              <Chip key={n} active={examName === n} onClick={() => setExamName(examName === n ? '' : n)}>
+              <Chip
+                key={n}
+                active={examName === n}
+                onClick={() => setExamName(examName === n ? '' : n)}
+              >
                 {n}
               </Chip>
             ))}
@@ -382,12 +431,12 @@ function SubjectEditor({
             placeholder="시험 이름 (비우면 '시험')"
             aria-label="시험 이름"
           />
-          <input
-            type="date"
-            className="field"
+          <DateField
+            label="시험 날짜"
+            name="exam-date"
             value={examDate}
-            onChange={(e) => setExamDate(e.target.value)}
-            aria-label="시험 날짜"
+            onChange={setExamDate}
+            clearable
           />
           {past && <p className="study-exam-note">지난 날짜라 D-day 가 보이지 않아요.</p>}
           {examDate && (
@@ -545,6 +594,7 @@ export function SubjectDetail(props: ScreenProps) {
               return (
                 <button
                   key={m.id}
+                  data-material-id={m.id}
                   onClick={() => {
                     setSelected(m);
                     setDeleteMaterial(false);
@@ -669,6 +719,7 @@ export function SubjectDetail(props: ScreenProps) {
         onClose={() => setUpload(false)}
         props={props}
         subject={subject}
+        capture={params(props.path).get('capture') === '1'}
       />
       <Sheet
         open={!!selected && !view && !edit && !generation}
@@ -691,7 +742,12 @@ export function SubjectDetail(props: ScreenProps) {
                 <p className="text-xs text-muted">서술형 문제</p>
               </div>
             </div>
-            <Button className="w-full" variant="secondary" onClick={() => setView(true)}>
+            <Button
+              className="w-full"
+              variant="secondary"
+              data-material-open
+              onClick={() => setView(true)}
+            >
               원본 보기
             </Button>
             <Button className="w-full" variant="secondary" onClick={() => setEdit(true)}>
@@ -800,7 +856,16 @@ function MaterialEdit({
   onSaved: (m: Material) => void;
 }) {
   const [title, setTitle] = useState(material.title);
-  const [content, setContent] = useState(material.content);
+  const [content, setContent] = useState(material.content ?? '');
+  // Bootstrap carries only a summary; the editor needs the body before it can show or save it.
+  const body = useMaterialDetail(material.content === undefined ? material : null);
+  const [loaded, setLoaded] = useState(material.content !== undefined);
+  useEffect(() => {
+    if (body.detail && !loaded) {
+      setContent(body.detail.content);
+      setLoaded(true);
+    }
+  }, [body.detail, loaded]);
   const action = useAction();
   return (
     <Sheet open onClose={onClose} title="자료 수정">
@@ -821,18 +886,23 @@ function MaterialEdit({
             value={content}
             onChange={(e) => setContent(e.target.value)}
             maxLength={100000}
-            placeholder="문제를 만들 원문을 입력해 주세요"
+            placeholder={loaded ? '문제를 만들 원문을 입력해 주세요' : '본문을 불러오고 있어요'}
+            disabled={!loaded}
           />
         </label>
-        <ErrorNote error={action.error} />
+        <ErrorNote error={action.error || body.error} />
         <Button
           className="w-full"
-          disabled={!title.trim() || action.busy}
+          disabled={!title.trim() || action.busy || !loaded}
           onClick={() =>
             action.run(async () => {
-              await api(`/materials/${material.id}`, { title: title.trim(), content }, 'PATCH');
+              const saved = await api<Material>(
+                `/materials/${material.id}`,
+                { title: title.trim(), content },
+                'PATCH',
+              );
               await props.refresh();
-              onSaved({ ...material, title, content });
+              onSaved(saved);
               props.toast('자료를 수정했어요');
             })
           }
@@ -848,11 +918,14 @@ function UploadSheet({
   onClose,
   props,
   subject,
+  capture = false,
 }: {
   open: boolean;
   onClose: () => void;
   props: ScreenProps;
   subject: Subject;
+  /** Opened from home's "사진 찍기": the camera comes first and reads as the main action. */
+  capture?: boolean;
 }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -865,15 +938,21 @@ function UploadSheet({
   const [uncertainStage, setUncertainStage] = useState(false);
   const [task, setTask] = useState<AiTaskRecord | null>(null);
   // A retry after a failed save reuses the upload instead of sending the file again.
-  const uploaded = useRef<{ file: File; result: Awaited<ReturnType<typeof uploadFile>> } | null>(null);
+  const uploaded = useRef<{ file: File; result: Awaited<ReturnType<typeof uploadFile>> } | null>(
+    null,
+  );
   const input = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const action = useAction();
+  // A refused upload or generation that said when to come back keeps the button waiting.
+  const retryIn = useRetryCountdown(action.retryAt, task?.retryAt);
+  // jitter: none — a serial upload, save, and 2-3 generation chain a person starts; uneven stages already spread devices, waits live in uploadFile and runAiTask [site src/components/study/subjects.tsx:960]
   async function save() {
     let material = saved;
     if (!material) {
       setProgress(file ? '자료를 올리고 있어요' : '자료를 저장하고 있어요');
-      if (file && uploaded.current?.file !== file) uploaded.current = { file, result: await uploadFile(file) };
+      if (file && uploaded.current?.file !== file)
+        uploaded.current = { file, result: await uploadFile(file) };
       const upload = file ? uploaded.current?.result : undefined;
       // The server decides the type and keeps page offsets only while the text is the extracted one.
       material = await api<Material>('/materials', {
@@ -974,7 +1053,7 @@ function UploadSheet({
             }
           }}
         />
-        <div className="grid grid-cols-2 gap-3">
+        <div className={`grid grid-cols-2 gap-3${capture ? ' upload-capture-first' : ''}`}>
           <button
             className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl bg-surface text-sm font-bold"
             disabled={!!saved || action.busy}
@@ -984,7 +1063,7 @@ function UploadSheet({
             파일 선택
           </button>
           <button
-            className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl bg-surface text-sm font-bold"
+            className={`flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl text-sm font-bold${capture ? ' upload-capture-main' : ' bg-surface'}`}
             disabled={!!saved || action.busy}
             onClick={() => camera.current?.click()}
           >
@@ -1032,27 +1111,24 @@ function UploadSheet({
             }
           />
         </label>
-        <label className="flex min-h-12 items-center gap-3">
-          <input
-            type="checkbox"
-            className="h-5 w-5 accent-ink"
-            checked={generate}
-            disabled={!props.data.aiAvailable || action.busy}
-            onChange={(e) => setGenerate(e.target.checked)}
-          />
-          <span className="text-sm font-semibold">문제와 복습 카드 함께 만들기</span>
-        </label>
+        <Checkbox
+          name="generate"
+          checked={generate}
+          disabled={!props.data.aiAvailable || action.busy}
+          onChange={setGenerate}
+        >
+          문제와 복습 카드 함께 만들기
+        </Checkbox>
         {generate && (
-          <label className="flex min-h-11 items-center gap-3">
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-ink"
-              checked={essay}
-              disabled={action.busy}
-              onChange={(e) => setEssay(e.target.checked)}
-            />
-            <span className="text-sm">서술형 4단계 코칭도 만들기</span>
-          </label>
+          <Checkbox
+            name="essay"
+            checked={essay}
+            disabled={action.busy}
+            onChange={setEssay}
+            className="font-medium"
+          >
+            서술형 4단계 코칭도 만들기
+          </Checkbox>
         )}
         {!props.data.aiAvailable && (
           <p className="text-xs leading-relaxed text-muted">
@@ -1099,7 +1175,7 @@ function UploadSheet({
         <ErrorNote error={action.error} />
         <Button
           className="w-full"
-          disabled={action.busy || !title.trim() || (!file && !content.trim())}
+          disabled={action.busy || (!uncertainStage && retryIn > 0) || !title.trim() || (!file && !content.trim())}
           onClick={() => action.run(save)}
         >
           {action.busy ? (
@@ -1107,11 +1183,11 @@ function UploadSheet({
           ) : uncertainStage ? (
             '진행 상황 확인'
           ) : saved ? (
-            '생성 다시 시도'
+            waitingLabel('생성 다시 시도', retryIn)
           ) : generate ? (
-            '문제와 카드 만들기'
+            waitingLabel('문제와 카드 만들기', retryIn)
           ) : (
-            '자료 저장하기'
+            waitingLabel('자료 저장하기', retryIn)
           )}
         </Button>
       </div>

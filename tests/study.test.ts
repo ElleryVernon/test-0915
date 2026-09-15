@@ -87,6 +87,9 @@ const data: AppData = {
       title: '수업 노트',
       type: 'text/plain',
       content: '삼투는 선택적 투과성 막을 통한 물의 이동이다.',
+      contentLength: 27,
+      excerpt: '삼투는 선택적 투과성 막을 통한 물의 이동이다.',
+      contentHash: 'h-material-1',
       createdAt: new Date(now).toISOString(),
     },
   ],
@@ -189,8 +192,9 @@ test('PDF canvas uses matching local resources and paints both document pages', 
     }),
   );
   assert.doesNotMatch(markup, /<iframe/);
-  assert.match(markup, /이전 페이지/);
-  assert.match(markup, /다음 페이지/);
+  assert.match(markup, /aria-label="축소"/);
+  assert.match(markup, /aria-label="확대"/);
+  assert.match(markup, /data-page-indicator/);
   assert.match(markup, /PDF를 불러오고 있어요/);
   assert.match(markup, /aria-busy="true"/);
 
@@ -669,6 +673,33 @@ test('AI task harness retains identity, restores completed and running work with
     assert.deepEqual(first, { value: 'stored-result' });
     assert.deepEqual(concurrent, first);
     assert.equal(postCount, 1);
+    assert.equal(getCount, 0, 'no status read while the POST itself answers with the result');
+    console.log('AI_TASK_FIRST_POLL_OK');
+    // Signed out mid-run: a 401 on the status read ends the wait at once with the server's message
+    // (it used to poll until the 190 s deadline and report "pending").
+    const signedOut = {
+      userId,
+      endpoint: '/generate' as const,
+      payload: { materialId: 'material-401', mode: 'cards', count: 3 },
+    };
+    const realFetch = globalThis.fetch;
+    let unauthorizedReads = 0;
+    globalThis.fetch = async (input, init) => {
+      if (init?.method === 'POST')
+        return Response.json({ error: '로그인이 필요해요.' }, { status: 401 });
+      unauthorizedReads++;
+      return Response.json({ error: '로그인이 필요해요.' }, { status: 401 });
+    };
+    const startedAt = Date.now();
+    await assert.rejects(
+      runAiTask(signedOut),
+      (error: unknown) =>
+        error instanceof AiTaskFailureError && error.task.error === '로그인이 필요해요.',
+    );
+    assert.ok(Date.now() - startedAt < 10_000, 'a 401 ends the wait promptly');
+    assert.equal(unauthorizedReads, 1, 'one status read, then stop');
+    globalThis.fetch = realFetch;
+    console.log('AI_TASK_401_FINAL_OK');
     const stored = await findAiTask(lookup);
     assert.ok(stored);
     assert.equal(stored.status, 'COMPLETED');

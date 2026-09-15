@@ -6,7 +6,8 @@ node_modules/
 *.tsbuildinfo
 .data/
 uploads/
-src/lib/server/generated/
+prisma/generated/
 tmp/
 *.log
 .DS_Store
+out/

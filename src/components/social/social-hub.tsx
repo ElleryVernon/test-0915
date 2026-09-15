@@ -171,7 +171,7 @@ export default function SocialHub({
             {error}
           </p>
         )}
-        <form onSubmit={send} className="flex gap-2 items-end border-t border-surface pt-4">
+        <form onSubmit={send} noValidate className="flex gap-2 items-end border-t border-surface pt-4">
           <textarea
             aria-label="쪽지 내용"
             placeholder="메시지를 입력하세요"

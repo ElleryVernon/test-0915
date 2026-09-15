@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client"
-  output = "../src/lib/server/generated"
+  output = "./generated"
 }
 
 datasource db {
@@ -128,9 +128,14 @@ model Material {
   pageBreaks Int[] @default([])
   /// How content was produced: pdf-text, pdf-ocr, pdf-mixed, text, image-ocr or manual.
   extraction String?
+  /// sha256 of content and its first 160 characters, kept by the server when the text changes.
+  contentHash String @default("")
+  excerpt     String @default("")
   createdAt DateTime @default(now())
   questions Question[]
   essays    Essay[]
+  cards     Card[]
+  @@index([subjectId])
   @@index([userId, subjectId])
 }
 
@@ -150,6 +155,8 @@ model Question {
   past        String
   future      String
   attempts    Attempt[]
+  @@index([subjectId])
+  @@index([materialId])
   @@index([userId, subjectId])
 }
 
@@ -167,6 +174,8 @@ model Essay {
   modelAnswer String @db.Text
   citation    String @db.Text
   attempts    Attempt[]
+  @@index([subjectId])
+  @@index([materialId])
   @@index([userId, subjectId])
 }
 
@@ -182,6 +191,8 @@ model Attempt {
   correct    Boolean
   score      Int
   createdAt  DateTime @default(now())
+  @@index([questionId])
+  @@index([essayId])
   @@index([userId, createdAt])
 }
 
@@ -201,9 +212,13 @@ model Card {
   image           String?
   masks           Json @default("[]")
   sourceQuestionId String?
+  materialId      String?
+  material        Material? @relation(fields: [materialId], references: [id], onDelete: SetNull)
   fsrs            Json?
   createdAt       DateTime @default(now())
   reviews         CardReview[]
+  @@index([subjectId])
+  @@index([materialId])
   @@unique([userId, sourceQuestionId])
   @@index([userId, deleted, nextReviewAt])
 }
@@ -217,6 +232,7 @@ model CardReview {
   rating    String
   result    Json
   createdAt DateTime @default(now())
+  @@index([cardId])
   @@index([userId, createdAt])
 }
 
@@ -232,6 +248,7 @@ model Schedule {
   subjectId String?
   done      Boolean @default(false)
   createdAt DateTime @default(now())
+  @@index([subjectId])
   @@index([userId, date])
 }
 
@@ -249,6 +266,7 @@ model Post {
   likes     PostLike[]
   saves     PostSave[]
   reports   Report[]
+  @@index([userId])
   @@index([role, createdAt])
 }
 
@@ -263,6 +281,7 @@ model Comment {
   parent    Comment? @relation("replies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   Comment[] @relation("replies")
   createdAt DateTime @default(now())
+  @@index([userId])
   @@index([postId, createdAt])
 }
 
@@ -271,6 +290,7 @@ model PostLike {
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
   postId String
   post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  @@index([postId])
   @@id([userId, postId])
 }
 
@@ -279,6 +299,7 @@ model PostSave {
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
   postId String
   post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  @@index([postId])
   @@id([userId, postId])
 }
 
@@ -291,6 +312,7 @@ model Report {
   reason    String
   status    String @default("OPEN")
   createdAt DateTime @default(now())
+  @@index([postId])
   @@unique([userId, postId])
 }
 
@@ -299,6 +321,7 @@ model Block {
   user      User @relation("blocker", fields: [userId], references: [id], onDelete: Cascade)
   blockedId String
   blocked   User @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  @@index([blockedId])
   @@id([userId, blockedId])
 }
 
@@ -316,6 +339,7 @@ model ParentLink {
   studentId String
   student   User @relation("student", fields: [studentId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+  @@index([studentId])
   @@id([parentId, studentId])
 }
 
@@ -329,6 +353,7 @@ model Cheer {
   points      Int @default(0)
   thanked     Boolean @default(false)
   createdAt   DateTime @default(now())
+  @@index([senderId, createdAt])
   @@index([recipientId, createdAt])
 }
 
@@ -349,6 +374,7 @@ model Follow {
   follower User @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
   followingId String
   following User @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+  @@index([followingId])
   @@id([followerId, followingId])
 }
 
@@ -360,6 +386,7 @@ model Message {
   recipient User @relation("messageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
   body String
   createdAt DateTime @default(now())
+  @@index([recipientId, senderId, createdAt])
   @@index([senderId, recipientId, createdAt])
 }
 
@@ -382,18 +409,12 @@ model Upload {
   /// sha256 of the extracted text, to tell whether a material still holds it unedited.
   textHash String?
   createdAt DateTime @default(now())
-  blob UploadBlob?
   images UploadImage[]
   material Material?
   @@index([userId, createdAt])
 }
-/// The file bytes, kept in the database so every server sharing it can serve the file.
-model UploadBlob {
-  uploadId String @id
-  upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
-  data Bytes
-}
-/// An image embedded in an uploaded PDF, with where it appeared.
+/// An image embedded in an uploaded PDF, with where it appeared. Its bytes live in the blob store
+/// (ops.blob locally, Cloud Storage in the cloud) under uploads/<uploadId>/images/<id>.
 model UploadImage {
   id String @id @default(cuid())
   uploadId String
@@ -413,7 +434,6 @@ model UploadImage {
   mime String
   /// Start of the paragraph it follows, to find its place again after the text is edited.
   context String @default("")
-  data Bytes
   @@index([uploadId, page, order])
 }
 

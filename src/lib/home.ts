@@ -120,6 +120,68 @@ export function homeContinuations(data: AppData, drafts: EssayDraft[]): Continua
     .slice(0, 1);
   return [...quiz, ...essay];
 }
+export interface StartAction {
+  kind: 'quiz' | 'essay' | 'cards';
+  title: string;
+  description: string;
+  /** The trailing chip: the verb, not a status. */
+  chip: string;
+  href: string;
+}
+export interface HomeStart {
+  material: Material;
+  actions: StartAction[];
+}
+/** Minutes a learner needs for n five-choice questions, rounded up, never zero. */
+const quizMinutes = (n: number) => Math.max(1, Math.ceil(n * 1.5));
+/**
+ * What the newest material offers when nothing is in progress: up to three actions in the order
+ * a study session runs (questions, essay, cards). A material with some answered questions is a
+ * continuation and is not offered here again. Null when there is no material or nothing to do.
+ */
+export function homeStart(data: AppData): HomeStart | null {
+  const [material] = recentMaterials(data.materials);
+  if (!material) return null;
+  const questions = data.questions.filter((q) => q.materialId === material.id);
+  const remaining = remainingMaterialQuestions(data, material.id);
+  const attemptedEssays = new Set(data.attempts.map((a) => a.essayId).filter(Boolean));
+  const essays = data.essays.filter(
+    (e) => e.materialId === material.id && !attemptedEssays.has(e.id),
+  );
+  const actions: StartAction[] = [];
+  if (remaining.length && remaining.length === questions.length)
+    actions.push({
+      kind: 'quiz',
+      title: `문제 ${remaining.length}개 풀기`,
+      description: `5지선다 · 약 ${quizMinutes(remaining.length)}분`,
+      chip: '풀기',
+      href: `/quiz?material=${encodeURIComponent(material.id)}`,
+    });
+  if (essays.length) {
+    const first = essays[0].prompt.replace(/\s+/g, ' ').trim();
+    const short = first.length > 14 ? `${first.slice(0, 14)}…` : first;
+    actions.push({
+      kind: 'essay',
+      title: `서술형 ${essays.length}개 쓰기`,
+      // The fixed facts come first so a narrow row truncates the quote, not the effort.
+      description: `4단계 · 약 5분 · "${short}"`,
+      chip: '쓰기',
+      href: `/essay?material=${encodeURIComponent(material.id)}`,
+    });
+  }
+  // Cards already generated from this material (materialId on the card) end the offer, so a second
+  // tap never pays for a duplicate set.
+  const madeCards = data.cards.some((c) => !c.deleted && c.materialId === material.id);
+  if (material.contentLength >= 20 && !madeCards)
+    actions.push({
+      kind: 'cards',
+      title: '복습 카드 만들기',
+      description: 'AI가 이 자료에서 카드를 만들어요',
+      chip: '만들기',
+      href: `/flashcards?generate=1&material=${encodeURIComponent(material.id)}`,
+    });
+  return actions.length ? { material, actions: actions.slice(0, 3) } : null;
+}
 export function recentMaterials(materials: Material[]) {
   return [...materials]
     .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))

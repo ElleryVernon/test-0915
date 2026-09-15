@@ -4,25 +4,18 @@
 
 ## 로컬 실행
 
-Node.js 22.12 이상과 Docker가 필요합니다. 현재 작업 환경에는 전용 PostgreSQL 18.6 native 런타임과 프로덕션 앱이 `http://127.0.0.1:3000`에서 실행되어 있습니다. 공유 Docker VM의 반복적인 연결 지연을 피하도록 DB만 프로젝트 내부에 독립 실행했습니다.
+서버는 Go(`server/`), 웹은 Next.js 정적 빌드(`out/`)이며 한 프로세스가 둘 다 서빙합니다. 자세한 구조는 [docs/SERVER.md](docs/SERVER.md)·[docs/WEB.md](docs/WEB.md), 클라우드 배포는 [docs/CLOUD.md](docs/CLOUD.md).
 
-현재 이 작업 환경에서 다시 시작할 때는 `node scripts/native-db.mjs start` 다음 `npm start`를 실행합니다. 상태와 검증은 `node scripts/native-db.mjs status` / `node scripts/native-db.mjs verify`입니다.
-
-다른 환경에서 새로 설치할 때는 아래 Docker 경로를 사용할 수 있습니다. native와 Docker가 같은 15444 포트를 동시에 사용하면 안 됩니다.
+Node.js 22 이상, Go 1.26, 전용 PostgreSQL(루프백 15444, DB `memoryz`)이 필요합니다. 현재 작업 환경에서는 `node scripts/native-db.mjs start` 로 DB 를 올린 뒤 아래를 실행합니다.
 
 ```sh
 npm ci
-cp .env.example .env
-# 샘플 체험 계정을 사용하려면 .env의 DEMO_MODE=true 설정
-# APP_URL은 실제 접속할 주소와 일치시킵니다.
-docker compose up -d
-npx prisma migrate deploy
-npm run db:seed
-npm run build
-npm start
+cp .env.example .env        # DATABASE_URL, DEMO_MODE=true, APP_URL 확인
+cd server && go run ./cmd/server migrate up && go run ./cmd/server seed-demo && cd ..   # 스키마·데모 시드 (또는 npm run db:seed)
+npm run start               # Go 빌드 + next build + 사전 압축 + http://127.0.0.1:3000 (--detach 로 백그라운드)
 ```
 
-개발 모드는 `npm run dev`입니다. PostgreSQL은 루프백 `15444` 포트의 전용 `memoryz` DB를 사용합니다. 현재 데이터는 `.data/postgres-native/data`에, 업로드 파일은 `.data/uploads`에 보관합니다. 전환 전 Docker 볼륨과 0600 권한의 백업도 보존했습니다. 신규 Docker 설치는 Docker 볼륨을 사용합니다. `.data`는 재생성 가능한 빌드 캐시가 아니므로 삭제하지 마세요. 기존 샘플 사용자가 있으면 seed가 기록을 덮어쓰지 않습니다. 샘플 계정은 공개 서비스에서 사용하지 마세요.
+개발: 터미널 1 `npm run dev:api`(Go, :8080), 터미널 2 `npm run dev`(Next, :3000, /api 는 Go 로 rewrite). 회귀 검사: `node server/scripts/regression.mjs`. 업로드 바이트는 DB(`ops.blob`)에, 클라우드에서는 GCS 에 저장됩니다. 기존 샘플 사용자가 있으면 seed 가 기록을 덮어쓰지 않습니다. 샘플 계정은 공개 서비스에서 사용하지 마세요.
 
 ## 구현된 흐름
 
@@ -50,11 +43,13 @@ npm start
 
 OAuth: Google·Kakao·Naver·Apple의 CLIENT_ID/CLIENT_SECRET, AUTH_SECRET(무작위 32바이트 이상), APP_URL을 설정합니다. 콜백은 `APP_URL/api/auth/{provider}/callback`입니다. Apple secret은 유효한 ES256 JWT를 공급하고 만료 전에 교체합니다. 공급자에서 리다이렉트 주소를 등록해야 합니다. HTTP-only 세션, OAuth state·nonce 검증과 공급자별 불변 계정 ID 연결을 사용합니다.
 
-OpenRouter: `OPENROUTER_API_KEY`, `OPENROUTER_MODEL=openai/gpt-5.6-luna`, `OPENROUTER_REASONING_EFFORT=high`를 설정합니다. 공급자는 Amazon Bedrock us-east-1을 먼저 쓰고 실패하면 OpenAI fast로만 넘깁니다(`OPENROUTER_PROVIDER_ORDER`로 변경 가능). 생성 결과를 스키마와 원문 근거로 검증합니다. 이미지 OCR·문항 생성·의미 기반 서술형 채점·일정 제안에 사용됩니다. 키가 없으면 생성은 명시적으로 사용할 수 없다고 안내합니다. 기존 서술형은 키워드·순서·분량 기준의 연습 피드백으로 동작하고 일정 제안은 규칙 기반이라고 표시합니다. 실제 OpenRouter 생성·의미 채점·일정·OCR 호출을 검증했습니다. 문항 생성·채점·일정 제안은 사용자별 UUID와 PostgreSQL 실행 기록으로 중복 호출을 막고, 새로고침 후 저장된 결과를 복구합니다. [AI 실행 설계](docs/AI_ARCHITECTURE.md)에 스킬·도구·재시도 경계를 정리했습니다. 실제 외부 OAuth 로그인은 공급자 자격 증명이 없어 검증하지 않았습니다.
+OpenRouter: `OPENROUTER_API_KEY`, `OPENROUTER_MODEL=openai/gpt-5.6-luna`, `OPENROUTER_REASONING_EFFORT=high`를 설정합니다. 공급자는 OpenAI fast를 먼저 쓰고 실패하면 Amazon Bedrock us-east-1로만 넘깁니다(2026-09-15 측정으로 순서를 바꿨습니다 — [docs/SERVER.md](docs/SERVER.md) AI 절, `OPENROUTER_PROVIDER_ORDER`로 변경 가능). 문항·서술형·카드는 모드별 프롬프트로 만들고, 다른 형식이 섞이거나 근거가 없으면 거부 사유를 붙여 한 번만 다시 만듭니다. 생성 결과를 스키마와 원문 근거로 검증합니다. 이미지 OCR·문항 생성·의미 기반 서술형 채점·일정 제안에 사용됩니다. 키가 없으면 생성은 명시적으로 사용할 수 없다고 안내합니다. 기존 서술형은 키워드·순서·분량 기준의 연습 피드백으로 동작하고 일정 제안은 규칙 기반이라고 표시합니다. 실제 OpenRouter 생성·의미 채점·일정·OCR 호출을 검증했습니다(Go 서버: `node server/scripts/provider-verify.mjs`, 유료 6회 호출). 문항 생성·채점·일정 제안은 사용자별 UUID와 PostgreSQL 실행 기록으로 중복 호출을 막고, 새로고침 후 저장된 결과를 복구합니다. [AI 실행 설계](docs/AI_ARCHITECTURE.md)에 스킬·도구·재시도 경계를 정리했습니다. Google 로그인 클라이언트는 Google Cloud Console 에서 사람이 만들어야 하므로 `bash scripts/oauth-wizard.sh` 로 설정합니다([docs/CLOUD.md](docs/CLOUD.md)의 Google 로그인 절). Kakao·Naver·Apple 은 키가 있을 때만 켜집니다.
 
-## 배포 조건
+## 배포
 
-이 결과는 로컬 프로덕션 빌드이며 외부 배포는 수행하지 않았습니다. 공개 배포 시 DEMO_MODE=false, HTTPS와 정확한 APP_URL, 실제 OAuth 설정, 전용 DB 자격 증명, DB 백업·복원, 영속 업로드 스토리지가 필요합니다. 다중 인스턴스는 로컬 업로드 디렉터리를 공유 영속 저장소로 교체해야 합니다. 업로드 읽기는 로그인·소유권 검사 후에만 허용됩니다. AI는 120초 제한의 동기 요청이며 대규모 사용량에 대한 부하 검증은 하지 않았습니다.
+PoC 는 GCP 프로젝트 `memoryz-prod`(서울 asia-northeast3)에서 돌아갑니다: Cloud Run(Go 서버가 API 와 정적 웹을 함께 서빙), Cloud SQL PostgreSQL 18, Memorystore for Valkey, GCS 업로드 저장소, 전역 HTTPS 부하분산기와 관리형 인증서 뒤의 공개 주소 **https://memoryz.kr**. 구성·배포 순서·검사·알림은 [docs/CLOUD.md](docs/CLOUD.md) 에 있습니다. 스키마는 Cloud Run 잡이 `server migrate up` 으로 적용합니다.
+
+PoC 에서는 학생·학부모 체험을 위해 체험 계정을 켜 두었습니다(서비스의 `DEMO_MODE=true`). 실사용으로 넘어갈 때 끄고 재배포합니다. 업로드 읽기는 로그인·소유권 검사 뒤에만 허용됩니다. AI 요청은 동기식이며 서버 시한은 180초(공급자 호출 175초)입니다. 수업 피크(두 반 50명 동시 접속) 부하 검증은 [검증 기록](docs/VERIFICATION.md)에 있습니다.
 
 ## 검증
 
@@ -62,16 +57,16 @@ OpenRouter: `OPENROUTER_API_KEY`, `OPENROUTER_MODEL=openai/gpt-5.6-luna`, `OPENR
 npm run typecheck
 npm test
 npm run build
-npx tsx scripts/backend-check.ts
-npx tsx scripts/integration-check.ts
+node server/scripts/regression.mjs      # Go 테스트 + HTTP 계약 스위트 (전용 로컬 DB, 유료 AI 없음)
 node scripts/delivery-check.mjs
+node scripts/cloud-smoke.mjs            # 배포된 서비스 (gcloud 구성 memoryz)
 ```
 
 DB 검사는 호스트·포트·DB 이름을 확인하고 고유 검증 사용자만 생성·정리합니다. 운영 DB를 검사 대상으로 넘기지 마세요. 실행 결과와 실제 브라우저 범위는 [검증 기록](docs/VERIFICATION.md)에 구분해 기록합니다.
 
 ## 기술과 디자인
 
-Next.js 16.3.5 / React 19.3.0 / Tailwind CSS 4.3.3 / Prisma 7.10.0 / PostgreSQL 18.6. 실험적 Prisma 8 RC 대신 최신 안정 버전을 사용했습니다. 재현 가능한 버전은 package-lock.json에 고정되어 있습니다.
+Go 1.26.5(net/http, pgx v5, sqlc, goose, OpenTelemetry) / Next.js 16.3.5 정적 export / React 19.3.0 / Tailwind CSS 4.3.3 / PostgreSQL 18. 스키마는 Go 마이그레이션(`server/internal/db/migrations`)이 소유하고, Prisma 7.10.0 은 로컬 QA 스크립트의 DB 접근에만 씁니다. 재현 가능한 버전은 package-lock.json 과 server/go.mod 에 고정되어 있습니다.
 
 화면 구조·문구·정보 밀도는 제공한 HTML과 PDF, 동작 상세는 세 DOCX와 PRD를 기준으로 구현했습니다. Pretendard·Outfit과 넉넉한 터치 영역, 모바일 하단 메뉴, 흰 바탕과 회색 면을 유지했습니다. 주황색 배경은 추가 제공한 이미지의 크림색 곡선 빛을 참고한 코드 기반 SVG이며 참고 이미지의 로고는 포함하지 않습니다.
 

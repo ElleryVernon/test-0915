@@ -14,7 +14,16 @@ import {
 import type { Bucket, Card, ScreenProps } from '@/lib/contracts';
 import { Button, EmptyState, IconButton, Sheet } from '@/components/ui';
 import { api } from '@/lib/api';
-import { cacheCards, cachedCards, pendingReviews, queueReview, syncReviews } from '@/lib/offline';
+import {
+  cacheCards,
+  cachedCards,
+  cancelSync,
+  pendingReviews,
+  queueReview,
+  syncNow,
+  syncReviews,
+  syncSoon,
+} from '@/lib/offline';
 import { BUCKETS, intervalLabel, localReview, reviewLabel, TYPES } from './logic';
 import { previewIntervals } from '@/lib/srs';
 import { BusyText, ErrorNote, errorMessage, GenerationSheet, params, useAction } from './shared';
@@ -47,7 +56,22 @@ export function Flashcards(props: ScreenProps) {
   const [bucket, setBucket] = useState<Bucket | null>(null);
   const [dueOnly, setDueOnly] = useState(false);
   const [trash, setTrash] = useState(query.get('trash') === '1');
-  const [generation, setGeneration] = useState(false);
+  // Home's "복습 카드 만들기" opens the sheet on the material it names, once: the intent is removed
+  // from the address so back navigation or a reload does not open it again.
+  const [generation, setGeneration] = useState(query.get('generate') === '1');
+  const [generateMaterial] = useState(() => query.get('material') || undefined);
+  useEffect(() => {
+    if (query.get('generate') !== '1') return;
+    const rest = new URLSearchParams(query);
+    rest.delete('generate');
+    rest.delete('material');
+    const tail = rest.toString();
+    // keepScreen: a plain navigate would remount this screen (screens are keyed by their path) and
+    // the new instance, reading the tidied address, would close the sheet it was asked to open.
+    props.navigate(`/flashcards${tail ? `?${tail}` : ''}`, { replace: true, keepScreen: true });
+    // Only the first render carries the intent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [online, setOnline] = useState(true);
   const [pending, setPending] = useState(0);
   const [stored, setStored] = useState(false);
@@ -87,29 +111,33 @@ export function Flashcards(props: ScreenProps) {
   const userId = props.data.profile.id;
   const mode = props.data.profile.srsMode ?? 'FIXED';
   const retention = props.data.profile.desiredRetention ?? 0.9;
-  const sync = useCallback(async () => {
-    if (!navigator.onLine) return;
-    try {
-      const count = await syncReviews(userId, (item) =>
-        api<Card>('/cards/review', {
-          cardId: item.cardId,
-          rating: item.rating,
-          reviewId: item.reviewId,
-          reviewedAt: item.reviewedAt,
-          mode: item.mode,
-          retention: item.retention,
-        }),
-      );
-      setPending((await pendingReviews(userId)).length);
-      setSyncError('');
-      if (count) {
-        setCards(await cachedCards(userId));
-        await props.refresh();
-      }
-    } catch (error) {
-      setSyncError(errorMessage(error));
+  // drain sends the queued reviews and rethrows, so the scheduler can decide whether to retry.
+  const drain = useCallback(async () => {
+    const count = await syncReviews(userId, (item) =>
+      api<Card>('/cards/review', {
+        cardId: item.cardId,
+        rating: item.rating,
+        reviewId: item.reviewId,
+        reviewedAt: item.reviewedAt,
+        mode: item.mode,
+        retention: item.retention,
+      }),
+    );
+    setPending((await pendingReviews(userId)).length);
+    setSyncError('');
+    if (count) {
+      setCards(await cachedCards(userId));
+      await props.refresh();
     }
   }, [userId, props.refresh]);
+  const onSyncError = useCallback((error: unknown) => setSyncError(errorMessage(error)), []);
+  // A rating or a tap on 동기화 is a person's own pace: it drains at once; a transient failure then
+  // retries by the scheduler's backoff.
+  // jitter: backoff only after a failure; a person's rating sends at once [site src/components/study/cards.tsx:208]
+  const sync = useCallback(async () => {
+    if (!navigator.onLine) return;
+    await syncNow(userId, drain, { onError: onSyncError });
+  }, [userId, drain, onSyncError]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -138,18 +166,28 @@ export function Flashcards(props: ScreenProps) {
     };
   }, [userId, props.data.cards]);
   useEffect(() => {
-    const update = () => {
-      setOnline(navigator.onLine);
-      if (navigator.onLine) void sync();
+    // Opening the screen drains at once (people already spread their navigation); a classroom's
+    // Wi-Fi coming back starts the drain somewhere in the next 10 s instead of on every device at once.
+    // jitter: window 'online' → U[0,10 s), then the scheduler's backoff; 'offline' or unmount cancels [site src/components/study/cards.tsx:147]
+    const back = () => {
+      setOnline(true);
+      syncSoon(userId, drain, { windowMs: 10_000, onError: onSyncError });
     };
-    update();
-    window.addEventListener('online', update);
-    window.addEventListener('offline', update);
+    const gone = () => {
+      setOnline(false);
+      cancelSync(userId);
+    };
+    setOnline(navigator.onLine);
+    if (navigator.onLine) void sync();
+    // jitter: window — these listeners run back/gone above: 'online' drains within U[0,10 s), 'offline' cancels
+    window.addEventListener('online', back);
+    window.addEventListener('offline', gone);
     return () => {
-      window.removeEventListener('online', update);
-      window.removeEventListener('offline', update);
+      window.removeEventListener('online', back);
+      window.removeEventListener('offline', gone);
+      cancelSync(userId);
     };
-  }, [sync]);
+  }, [userId, drain, onSyncError, sync]);
   const current = reviewIds
     ? cards.find((c) => c.id === reviewIds[index] && !c.deleted)
     : undefined;
@@ -275,7 +313,9 @@ export function Flashcards(props: ScreenProps) {
               <h1>
                 {result.total}장 복습 끝
                 <br />
-                {next ? `다음 복습은 ${next.when} ${next.count}장이에요` : '예정된 다음 복습이 없어요'}
+                {next
+                  ? `다음 복습은 ${next.when} ${next.count}장이에요`
+                  : '예정된 다음 복습이 없어요'}
               </h1>
               <p className="recall-done-meta">
                 {[
@@ -458,7 +498,8 @@ export function Flashcards(props: ScreenProps) {
                     >
                       <span>{b.label}</span>
                       <small>
-                        {intervalLabel(intervals.find((i) => i.rating === b.id)!.due, previewNow)} 뒤
+                        {intervalLabel(intervals.find((i) => i.rating === b.id)!.due, previewNow)}{' '}
+                        뒤
                       </small>
                     </button>
                   ))}
@@ -579,9 +620,19 @@ export function Flashcards(props: ScreenProps) {
       />
       <div className={`page-inset recall-library${trash ? ' is-trash' : ''}`}>
         {banner}
-        <ErrorNote error={syncError && pending > 0 ? `${pending}개 기록은 기기에 저장되어 있어요. ${syncError}` : ''} />
+        <ErrorNote
+          error={
+            syncError && pending > 0
+              ? `${pending}개 기록은 기기에 저장되어 있어요. ${syncError}`
+              : ''
+          }
+        />
         <div className="recall-filters">
-          <button className="study-chip" aria-haspopup="dialog" onClick={() => setSubjectSheet(true)}>
+          <button
+            className="study-chip"
+            aria-haspopup="dialog"
+            onClick={() => setSubjectSheet(true)}
+          >
             {subjectName ?? '모든 과목'}
             <ChevronDown size={12} />
           </button>
@@ -635,7 +686,10 @@ export function Flashcards(props: ScreenProps) {
                   </p>
                 </div>
                 {due.length > 0 ? (
-                  <Button className="recall-summary-start" onClick={() => start(due.map((c) => c.id))}>
+                  <Button
+                    className="recall-summary-start"
+                    onClick={() => start(due.map((c) => c.id))}
+                  >
                     복습 시작
                     <ArrowRight size={16} />
                   </Button>
@@ -851,6 +905,7 @@ export function Flashcards(props: ScreenProps) {
         onClose={() => setGeneration(false)}
         props={props}
         mode="cards"
+        initialMaterial={generateMaterial}
       />
     </>
   );

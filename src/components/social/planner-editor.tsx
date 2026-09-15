@@ -1,6 +1,7 @@
 'use client';
-import { useRef, useState, type FormEvent } from 'react';
-import { ArrowRight, ChevronDown, Trash2, TriangleAlert, X } from '@/components/icons';
+import { useState, type FormEvent } from 'react';
+import { ArrowRight, Trash2, TriangleAlert, X } from '@/components/icons';
+import { DateField, TimeField } from '@/components/ui-date';
 import { api } from '@/lib/api';
 import type { AppData, Schedule } from '@/lib/contracts';
 import { conflictFixes, formatMinutes, minutes, overlapMinutes, timeString } from '@/lib/schedule';
@@ -12,67 +13,13 @@ export type ScheduleDraft = Pick<Schedule, 'title' | 'date' | 'start' | 'end' | 
 };
 const DURATIONS = [25, 50, 60, 90];
 
-/** Opens the native picker of a visually hidden date/time input where the browser supports it. */
-function openPicker(input: HTMLInputElement | null) {
-  try {
-    input?.showPicker?.();
-  } catch {
-    /* Older browsers open the picker on focus or accept typed input instead. */
-  }
+/** Planner time box: the app's five-minute list instead of the OS time picker. */
+export function TimeBox({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <TimeField label={label} name={label} value={value} onChange={onChange} boxed />;
 }
-export function TimeBox({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const input = useRef<HTMLInputElement>(null);
-  return (
-    <label className="time-box">
-      <span className="time-box-label">{label}</span>
-      <span className="time-box-value" aria-hidden="true">
-        {value || '--:--'}
-      </span>
-      <input
-        ref={input}
-        type="time"
-        required
-        aria-label={`${label} 시각`}
-        className="time-box-input"
-        value={value}
-        onClick={() => openPicker(input.current)}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
-  );
-}
-export function DateChip({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const input = useRef<HTMLInputElement>(null);
-  return (
-    <label className="planner-date-chip">
-      {dayLabel(value, 'long')}
-      <ChevronDown size={12} aria-hidden="true" />
-      <input
-        ref={input}
-        type="date"
-        required
-        aria-label="날짜 바꾸기"
-        className="time-box-input"
-        value={value}
-        onClick={() => openPicker(input.current)}
-        onChange={(e) => e.target.value && onChange(e.target.value)}
-      />
-    </label>
-  );
+/** Planner date chip: the app's month grid instead of the OS date picker. */
+export function DateChip({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return <DateField label="날짜 바꾸기" name="date" variant="chip" value={value} onChange={(date) => date && onChange(date)} format={(date) => dayLabel(date, 'long')} />;
 }
 
 export default function ScheduleEditor({
@@ -167,7 +114,7 @@ export default function ScheduleEditor({
       title={editing ? '일정 바꾸기' : '일정 추가'}
       description={<DateChip value={form.date} onChange={(date) => set({ date })} />}
     >
-      <form onSubmit={save} className="planner-editor">
+      <form onSubmit={save} noValidate className="planner-editor">
         <div className="planner-editor-group">
           <div className="segmented-control" role="group" aria-label="일정 종류">
             {(['FLEXIBLE', 'FIXED'] as const).map((kind) => (
@@ -193,7 +140,6 @@ export default function ScheduleEditor({
             <input
               autoFocus={!editing}
               className="field"
-              required
               maxLength={100}
               aria-label="일정 이름"
               placeholder="예: 생명과학 개념 복습"

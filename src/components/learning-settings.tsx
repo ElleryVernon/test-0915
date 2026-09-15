@@ -5,6 +5,7 @@ import { Button, ScreenHeader } from './ui';
 import { api } from '@/lib/api';
 import { syncReviews } from '@/lib/offline';
 import type { ScreenProps } from '@/lib/contracts';
+import { Slider } from '@/components/ui-choice';
 export default function LearningSettings({ data, navigate, refresh, toast }: ScreenProps) {
   const [mode, setMode] = useState(data.profile.srsMode ?? 'FIXED');
   const [retention, setRetention] = useState(data.profile.desiredRetention ?? 0.9);
@@ -90,16 +91,18 @@ export default function LearningSettings({ data, navigate, refresh, toast }: Scr
                 <span className="text-sm">%</span>
               </strong>
             </div>
-            <input
-              className="w-full mt-6 accent-[#f97316]"
-              aria-label="목표 기억률"
-              type="range"
-              min="80"
-              max="97"
-              step="1"
-              value={Math.round(retention * 100)}
-              onChange={(e) => setRetention(Number(e.target.value) / 100)}
-            />
+            <div className="mt-6">
+              <Slider
+                label="목표 기억률"
+                name="retention"
+                min={80}
+                max={97}
+                step={1}
+                value={Math.round(retention * 100)}
+                format={(v) => `${v}%`}
+                onChange={(v) => setRetention(v / 100)}
+              />
+            </div>
             <div className="flex justify-between text-[11px] text-muted mt-1">
               <span>복습 부담이 가벼워요</span>
               <span>더 자주 복습해요</span>

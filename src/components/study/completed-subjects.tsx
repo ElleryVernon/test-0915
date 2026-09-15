@@ -18,6 +18,7 @@ import {
 } from '@/lib/curriculum';
 import { Button, IconButton, ScreenHeader, Sheet } from '@/components/ui';
 import { BusyText, ErrorNote, useAction } from './shared';
+import { OptionField } from '@/components/ui-choice';
 
 export function CompletedSubjects(props: ScreenProps) {
   const [academicYear] = useState(() => koreanAcademicYear());
@@ -67,35 +68,31 @@ export function CompletedSubjects(props: ScreenProps) {
           시간표나 교과서의 과목명을 기준으로 골라 주세요.
         </p>
         <div className="curriculum-context">
-          <label>
-            학년{' '}
-            <select
-              aria-label="과목 목록 기준 학년"
-              className="field"
-              value={grade}
-              onChange={(e) => changeGrade(e.target.value)}
-            >
-              <option value="고1">고1</option>
-              <option value="고2">고2</option>
-              <option value="고3">고3</option>
-              <option value="기타">졸업 · 기타</option>
-            </select>
-          </label>
-          <label>
-            교육과정{' '}
-            <select
-              aria-label="교육과정"
-              className="field"
-              value={version}
-              onChange={(e) => {
-                setVersion(e.target.value as CurriculumVersion);
-                setGroup('');
-              }}
-            >
-              <option value="2022">2022 개정</option>
-              <option value="2015">2015 개정</option>
-            </select>
-          </label>
+          <OptionField
+            label="과목 목록 기준 학년"
+            name="grade"
+            value={grade}
+            onChange={changeGrade}
+            options={[
+              { value: '고1', label: '고1' },
+              { value: '고2', label: '고2' },
+              { value: '고3', label: '고3' },
+              { value: '기타', label: '졸업 · 기타' },
+            ]}
+          />
+          <OptionField
+            label="교육과정"
+            name="curriculum"
+            value={version}
+            onChange={(next) => {
+              setVersion(next as CurriculumVersion);
+              setGroup('');
+            }}
+            options={[
+              { value: '2022', label: '2022 개정' },
+              { value: '2015', label: '2015 개정' },
+            ]}
+          />
         </div>
         <p className="curriculum-context-note">
           {recommended
@@ -149,23 +146,23 @@ export function CompletedSubjects(props: ScreenProps) {
         )}
         <div className="curriculum-filter-summary">
           {!query.trim() && (
-            <select
-              aria-label="교과 영역"
-              className="curriculum-group-select"
+            <OptionField
+              label="교과 영역"
+              name="group"
+              compact
               value={group}
-              onChange={(e) => setGroup(e.target.value)}
-            >
-              <option value="">전체 교과</option>
-              {COURSE_GROUPS.filter((g) =>
-                CURRICULA[version].some(
-                  (c) =>
-                    c.group === g &&
-                    (stage === 'common' ? c.kind === 'common' : c.kind !== 'common'),
-                ),
-              ).map((g) => (
-                <option key={g}>{g}</option>
-              ))}
-            </select>
+              onChange={setGroup}
+              options={[
+                { value: '', label: '전체 교과' },
+                ...COURSE_GROUPS.filter((g) =>
+                  CURRICULA[version].some(
+                    (c) =>
+                      c.group === g &&
+                      (stage === 'common' ? c.kind === 'common' : c.kind !== 'common'),
+                  ),
+                ).map((g) => ({ value: g, label: g })),
+              ]}
+            />
           )}
           <span aria-live="polite" className="curriculum-result-count">
             {query.trim() ? `전체 과목에서 검색 · ${courses.length}개` : `${courses.length}개 과목`}
@@ -311,6 +308,7 @@ export function CompletedSubjects(props: ScreenProps) {
       </Sheet>
       <Sheet open={customOpen} onClose={() => setCustomOpen(false)} title="학교 과목 직접 추가">
         <form
+          noValidate
           onSubmit={(e) => {
             e.preventDefault();
             if (!customTrimmed || alreadySelected || selected.length >= MAX_COMPLETED_SUBJECTS)
