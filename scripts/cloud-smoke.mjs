@@ -100,20 +100,24 @@ if (oauth) {
   let traced = null;
   let loginTraced = null;
   // Cloud Trace reads have a small per-minute quota: one token, a 10 s pace, and each trace is read
-  // only until it is found; a refused read (429) just waits for the next round.
+  // only until it holds what the checks below need; a refused read (429) just waits for the next round.
+  // A trace is assembled from export batches that become readable separately (a cold miss on a fresh
+  // revision spans two batches), so "found" is not "complete".
   const traceToken = gcloud('auth', 'print-access-token');
   const fetchTrace = async (id) => {
     const res = await fetch(`https://cloudtrace.googleapis.com/v1/projects/${PROJECT}/traces/${id}`, { headers: { authorization: `Bearer ${traceToken}` } });
     return res.status === 200 ? res.json() : null;
   };
-  for (let i = 0; i < 18 && !(logged && traced && loginTraced); i++) {
+  const bootstrapComplete = (t) => !!t?.spans?.some((s) => s.name === 'GET /api/bootstrap') && (first === 'hit' || t.spans.some((s) => /Subject|Material/.test(s.name)));
+  const loginComplete = (t) => !!t?.spans?.some((s) => s.name === 'POST /api/session' && s.labels?.['memoryz.client.hop'] !== undefined);
+  for (let i = 0; i < 18 && !(logged && bootstrapComplete(traced) && loginComplete(loginTraced)); i++) {
     await new Promise((r) => setTimeout(r, 10_000));
     if (!logged) {
       const entries = JSON.parse(gcloud('logging', 'read', `resource.type="cloud_run_revision" AND jsonPayload.requestId="${requestId}"`, '--limit=1', '--format=json', '--freshness=10m') || '[]');
       if (entries[0]) logged = entries[0];
     }
-    if (!traced) traced = await fetchTrace(traceId);
-    if (!loginTraced) loginTraced = await fetchTrace(loginTrace);
+    if (!bootstrapComplete(traced)) traced = (await fetchTrace(traceId)) ?? traced;
+    if (!loginComplete(loginTraced)) loginTraced = (await fetchTrace(loginTrace)) ?? loginTraced;
   }
   check(logged && logged.jsonPayload?.traceId === traceId && logged.trace === `projects/${PROJECT}/traces/${traceId}`, `request log carries the trace (${logged ? logged.jsonPayload?.traceId : 'no log'})`);
   // The front end usually forwards this request (right after the login) as "not sampled": its own
@@ -122,7 +126,7 @@ if (oauth) {
   // Query spans exist only when that request missed the cache.
   const spans = traced?.spans ?? [];
   check(traced && spans.some((s) => s.name === 'GET /api/bootstrap') && (first === 'hit' || spans.some((s) => /Subject|Material/.test(s.name))), `Cloud Trace has the server span${first === 'miss' ? ' and the query spans' : ''} (${traced ? spans.length : 'no trace'} spans, first read ${first}, platform sampled=${platform?.traceSampled === true})`);
-  console.log(`bootstrap trace: ${spans.length} spans in Cloud Trace, platform sampled=${platform ? platform.traceSampled === true : 'no request log'}`);
+  console.log(`bootstrap trace: ${spans.length} spans in Cloud Trace (first read ${first}), platform sampled=${platform ? platform.traceSampled === true : 'no request log'}`);
   const loginSpan = (loginTraced?.spans ?? []).find((s) => s.name === 'POST /api/session');
   const hop = loginSpan?.labels?.['memoryz.client.hop'];
   const entries = loginSpan?.labels?.['memoryz.client.entries'];
