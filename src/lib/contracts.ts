@@ -131,6 +131,7 @@ export interface Comment {
   createdAt: string;
 }
 export interface Cheer {
+  senderName?: string;
   id: string;
   message: string;
   points: number;
@@ -159,6 +160,7 @@ export interface AppData {
   notifications: Notification[];
   stats: {
     todayCards: number;
+    yesterdayCards?: number;
     todayQuestions: number;
     accuracy: number;
     studyMinutes: number;

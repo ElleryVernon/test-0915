@@ -4,6 +4,7 @@ import { ArrowRight, Check, ChevronRight, BookOpen, RotateCcw, Sparkles } from '
 import type { Material, Question, ScreenProps } from '@/lib/contracts';
 import { Button, EmptyState, ScreenHeader, SectionTitle } from '@/components/ui';
 import { api } from '@/lib/api';
+import { remainingMaterialQuestions } from '@/lib/home';
 import { latestAttempts, wrongEssays, wrongQuestions } from './logic';
 import {
   BusyText,
@@ -28,7 +29,9 @@ export function Quiz(props: ScreenProps) {
   const [session, setSession] = useState<Question[] | null>(() =>
     query.get('question')
       ? props.data.questions.filter((q) => q.id === query.get('question'))
-      : null,
+      : query.get('resume') === '1' && query.get('material')
+        ? remainingMaterialQuestions(props.data, query.get('material')!)
+        : null,
   );
   const [index, setIndex] = useState(0);
   const [selection, setSelection] = useState<number | null>(null);

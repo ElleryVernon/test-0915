@@ -1,0 +1,21 @@
+{
+  "agendaBottom": 459.890625,
+  "ctaBottom": 357.890625,
+  "documentHeight": 1180,
+  "documentWidth": 390,
+  "firstContinuationBottom": 581.890625,
+  "header": 44,
+  "height": 844,
+  "navTop": 794,
+  "primaryIcons": [
+    "rgb(255, 255, 255)"
+  ],
+  "route": "/",
+  "rows": [
+    66,
+    66,
+    66,
+    66
+  ],
+  "width": 390
+}

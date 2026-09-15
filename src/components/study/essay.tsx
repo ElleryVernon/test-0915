@@ -12,6 +12,12 @@ import {
   RotateCcw,
 } from '@/components/icons';
 import type { Essay, Material, ScreenProps } from '@/lib/contracts';
+import {
+  findEssayDraft,
+  saveEssayDraft,
+  removeEssayDraft,
+  essayRevision,
+} from '@/lib/study-drafts';
 import { Button, EmptyState, IconButton, ScreenHeader } from '@/components/ui';
 import {
   acknowledgeAiTask,
@@ -134,17 +140,51 @@ function EssayExercise({
   onBack: () => void;
 }) {
   const previous = latestAttempts(props.data.attempts, 'essayId').get(essay.id);
-  const [stage, setStage] = useState(1);
-  const [selected, setSelected] = useState<string[]>([]);
+  const [draft] = useState(() => {
+    const saved = findEssayDraft(props.data.profile.id, essay);
+    return saved && (!previous || Date.parse(saved.updatedAt) > Date.parse(previous.createdAt))
+      ? saved
+      : undefined;
+  });
+  const [stage, setStage] = useState(draft?.stage || 1);
+  const [selected, setSelected] = useState<string[]>(draft?.selected || []);
   const [checked, setChecked] = useState(false);
-  const [order, setOrder] = useState(mix(essay.keywords));
-  const [hint, setHint] = useState(false);
-  const [answer, setAnswer] = useState(previous?.answer || '');
+  const [order, setOrder] = useState(draft?.order || mix(essay.keywords));
+  const [hint, setHint] = useState(draft?.hint || false);
+  const [answer, setAnswer] = useState(draft?.answer ?? previous?.answer ?? '');
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [viewer, setViewer] = useState<Material | null>(null);
   const [dragged, setDragged] = useState<number | null>(null);
   const [task, setTask] = useState<AiTaskRecord | null>(null);
   const action = useAction();
+  useEffect(() => {
+    if (feedback) {
+      removeEssayDraft(props.data.profile.id, essay.id);
+    } else if (selected.length || stage > 1 || answer !== (previous?.answer || '')) {
+      saveEssayDraft(props.data.profile.id, {
+        essayId: essay.id,
+        revision: essayRevision(essay),
+        stage,
+        selected,
+        order,
+        hint,
+        answer,
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      removeEssayDraft(props.data.profile.id, essay.id);
+    }
+  }, [
+    props.data.profile.id,
+    essay,
+    stage,
+    selected,
+    order,
+    hint,
+    answer,
+    feedback,
+    previous?.answer,
+  ]);
   useEffect(() => {
     const controller = new AbortController();
     findAiTask<Feedback>({

@@ -28,6 +28,16 @@ import { api } from '@/lib/api';
 import Onboarding from './onboarding';
 import LearningSettings from './learning-settings';
 import { isDue } from '@/lib/srs';
+import {
+  homeAgenda,
+  homeWeek,
+  homeContinuations,
+  recentMaterials,
+  materialHref,
+  materialMeta,
+} from '@/lib/home';
+import { readEssayDrafts, type EssayDraft } from '@/lib/study-drafts';
+import { relativeTime } from './social/helpers';
 import { wrongQuestions, wrongEssays } from './study/logic';
 import { cachedCards, clearStudyCache, pendingReviews, syncReviews } from '@/lib/offline';
 import type { AppData, Role, ScreenProps } from '@/lib/contracts';
@@ -165,48 +175,64 @@ function Login({ onLogin }: { onLogin: (role: Role) => Promise<void> }) {
     </div>
   );
 }
-function HomeScreen({ data, navigate, toast, refresh }: ScreenProps) {
-  const due = data.cards.filter((c) => isDue(c));
-  const firstEssay = data.essays[0];
-  const wrongCount = wrongQuestions(data).length + wrongEssays(data).length;
-  const cheer = data.cheers[0];
-  const [thanks, setThanks] = useState(false);
+export function HomeScreen({ data, navigate, toast, refresh }: ScreenProps) {
   const [homeNow, setHomeNow] = useState(() => new Date());
+  const [drafts, setDrafts] = useState<EssayDraft[]>([]);
+  const [thanking, setThanking] = useState(false);
   useEffect(() => {
-    const timer = setInterval(() => setHomeNow(new Date()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-  const weekly = data.stats.weekly;
-  const todayKey = homeNow.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-  const nowTime = homeNow.toLocaleTimeString('en-GB', {
-    timeZone: 'Asia/Seoul',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-  const todaySchedule = data.schedules
-    .filter((s) => s.date.slice(0, 10) === todayKey)
-    .sort((a, b) => a.start.localeCompare(b.start));
-  const nextSchedule = todaySchedule.find((s) => !s.done && s.end > nowTime);
-
+    const update = () => {
+      setHomeNow(new Date());
+      setDrafts(readEssayDrafts(data.profile.id));
+    };
+    update();
+    const timer = setInterval(update, 60_000);
+    window.addEventListener('focus', update);
+    window.addEventListener('storage', update);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', update);
+      window.removeEventListener('storage', update);
+    };
+  }, [data.profile.id]);
+  const due = data.cards.filter((c) => isDue(c));
+  const week = homeWeek(data.stats.weekly, homeNow);
+  const agenda = homeAgenda(data, homeNow);
+  const continuations = homeContinuations(data, drafts);
+  const wrong = [...wrongQuestions(data), ...wrongEssays(data)];
+  const wrongSubjects = data.subjects
+    .map((s) => ({ name: s.name, count: wrong.filter((q) => q.subjectId === s.id).length }))
+    .filter((s) => s.count);
+  const materials = recentMaterials(data.materials);
+  const cheer = [...data.cheers].sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+  )[0];
+  const unread = data.notifications.filter((n) => !n.read).length;
   const date = new Intl.DateTimeFormat('ko-KR', {
     timeZone: 'Asia/Seoul',
     month: 'long',
     day: 'numeric',
     weekday: 'long',
-  }).format(new Date());
+  }).format(homeNow);
   return (
-    <>
-      <header className="main-header">
+    <div className="home-screen">
+      <header className="main-header home-header">
         <button className="brand" onClick={() => navigate('/')}>
           memoryz.
         </button>
-        <div className="flex items-center -mr-2">
+        <div className="home-header-actions">
           <IconButton label="검색" onClick={() => navigate('/search')}>
             <Search size={22} />
           </IconButton>
-          <IconButton label="알림" onClick={() => navigate('/notifications')}>
+          <IconButton
+            label={unread ? `알림, 읽지 않은 알림 ${unread}개` : '알림'}
+            onClick={() => navigate('/notifications')}
+          >
             <Bell size={22} />
-            {data.notifications.some((n) => !n.read) && <span className="notification-dot" />}
+            {unread > 0 && (
+              <span className="home-unread" aria-hidden="true">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
           </IconButton>
           <IconButton label="내 프로필" onClick={() => navigate('/profile')}>
             <span className="avatar">{data.profile.name.slice(-2, -1) || '나'}</span>
@@ -214,218 +240,228 @@ function HomeScreen({ data, navigate, toast, refresh }: ScreenProps) {
         </div>
       </header>
       <div className="home-heading">
-        <div className="flex items-center justify-between">
-          <h1 className="page-title">오늘 할 공부</h1>
-          {data.profile.streak > 0 && (
-            <span className="home-streak">
-              <span className="system-emoji" aria-hidden="true">
-                🔥
-              </span>
-              {data.profile.streak}일째
+        <h1>
+          {data.profile.name}님{data.profile.streak > 0 ? `, ${data.profile.streak}일째` : ','}
+          <br />
+          {data.profile.streak > 1
+            ? '꾸준히 이어가고 있어요'
+            : data.profile.streak === 1
+              ? '오늘의 공부를 이어가요'
+              : '오늘의 기억을 쌓아 볼까요?'}
+        </h1>
+        <div className="home-daily-summary">
+          <p>{date}</p>
+          <button
+            className="home-week"
+            onClick={() => navigate('/profile')}
+            aria-label={`이번 주 ${week.filter((d) => d.done).length}일 학습, 기록 보기`}
+          >
+            <span className="home-week-dots" aria-hidden="true">
+              {week.map((day) => (
+                <span
+                  key={day.date}
+                  className={`home-week-dot${day.done ? ' complete' : ''}${day.today ? ' today' : ''}${day.future ? ' future' : ''}`}
+                >
+                  {day.done && <Check size={11} />}
+                </span>
+              ))}
             </span>
-          )}
+            <span>이번 주 {week.filter((d) => d.done).length}일</span>
+          </button>
         </div>
-        <p>{date} · 조금씩, 꾸준히 쌓아가요</p>
       </div>
-      <section className="home-review primary-surface" aria-label="오늘 복습할 카드">
+      <section className="home-review" aria-label="오늘 복습할 카드">
         <div className="home-review-head">
-          <span>
-            <Layers size={16} /> 오늘의 복습 카드
-          </span>
-          <span>
-            {due.length ? `약 ${Math.max(1, Math.ceil(due.length / 2))}분` : '오늘 복습 완료'}
-          </span>
+          <span>오늘 복습할 카드</span>
+          <small>
+            {due.length
+              ? `약 ${Math.max(1, Math.ceil(due.length / 2))}분`
+              : data.cards.some((c) => !c.deleted)
+                ? '복습 완료'
+                : '첫 카드를 만들어 보세요'}
+          </small>
         </div>
         <div className="home-review-body">
           <div className="home-review-count">
             <strong>{due.length}</strong>
             <span>장</span>
           </div>
-          <button
-            className="review-start"
-            onClick={() => navigate('/flashcards' + (due.length ? '?review=1' : ''))}
-          >
-            {due.length ? '복습 시작' : '카드 보기'}
-            <ArrowRight size={16} />
-          </button>
-        </div>
-        <div className="home-review-footer">
-          <div
-            className="mini-progress"
-            role="progressbar"
-            aria-label="오늘의 카드 복습"
-            aria-valuenow={data.stats.todayCards}
-            aria-valuemin={0}
-            aria-valuemax={data.stats.todayCards + due.length || 1}
-            aria-valuetext={`오늘 ${data.stats.todayCards}장 학습, ${due.length}장 남음`}
-          >
-            <span
-              style={{
-                width: `${(data.stats.todayCards / (data.stats.todayCards + due.length || 1)) * 100}%`,
-              }}
-            />
-          </div>
-          <p className="home-review-caption">
-            {data.stats.todayCards
-              ? `오늘 ${data.stats.todayCards}장, 기억에 한 걸음 더 가까워졌어요.`
-              : '잊기 전에 한 번 더, 오늘의 기억을 단단하게.'}
+          <p className="home-review-summary">
+            오늘 {data.stats.todayCards}장 완료
+            {data.stats.yesterdayCards !== undefined && (
+              <>
+                <br />
+                어제 {data.stats.yesterdayCards}장
+              </>
+            )}
           </p>
         </div>
+        <div
+          className="mini-progress"
+          role="progressbar"
+          aria-label="오늘의 카드 복습"
+          aria-valuenow={data.stats.todayCards}
+          aria-valuemin={0}
+          aria-valuemax={data.stats.todayCards + due.length || 1}
+          aria-valuetext={`오늘 ${data.stats.todayCards}장 학습, ${due.length}장 남음`}
+        >
+          <span
+            style={{
+              width: `${(data.stats.todayCards / (data.stats.todayCards + due.length || 1)) * 100}%`,
+            }}
+          />
+        </div>
+        <button
+          className="review-start primary-surface"
+          onClick={() =>
+            navigate(
+              due.length
+                ? '/flashcards?review=1'
+                : data.cards.some((c) => !c.deleted)
+                  ? '/flashcards'
+                  : '/create-card',
+            )
+          }
+        >
+          {due.length
+            ? `${due.length}장 복습 시작`
+            : data.cards.some((c) => !c.deleted)
+              ? '복습 카드 살펴보기'
+              : '첫 복습 카드 만들기'}
+          <ArrowRight size={18} />
+        </button>
       </section>
       <div className="home-body">
         <button className="home-agenda" onClick={() => navigate('/planner')}>
           <CalendarDays size={22} />
           <span className="min-w-0 flex-1">
-            <small>
-              {nextSchedule
-                ? nextSchedule.start <= nowTime
-                  ? '지금 할 공부'
-                  : `${nextSchedule.start} 다음 일정`
-                : '오늘의 시간표'}
-            </small>
+            <small>{agenda.label}</small>
             <strong>
-              {nextSchedule?.title ??
-                (todaySchedule.length
-                  ? `${todaySchedule.filter((s) => s.done).length} / ${todaySchedule.length}개 일정 완료`
-                  : '오늘의 공부 시간을 정해 보세요')}
+              {agenda.next ? (
+                <>
+                  <span className="home-agenda-title">{agenda.next.title}</span>
+                  <span className="home-agenda-duration">· {agenda.duration}분</span>
+                </>
+              ) : agenda.total ? (
+                agenda.done === agenda.total ? (
+                  '오늘의 일정을 모두 마쳤어요'
+                ) : (
+                  `미완료 일정 ${agenda.total - agenda.done}개 확인하기`
+                )
+              ) : (
+                '오늘의 공부 시간을 정해 보세요'
+              )}
             </strong>
           </span>
-          <ChevronRight size={17} className="text-disabled" />
+          {agenda.total > 0 && (
+            <span className="home-agenda-progress">
+              {agenda.done}/{agenda.total} 완료
+            </span>
+          )}
+          <ChevronRight size={16} className="text-disabled" />
         </button>
-        <SectionTitle title="이어서 공부해요" />
-        <ListRow
-          icon={<NotebookPen size={22} />}
-          title="서술형 코칭"
-          description={
-            firstEssay
-              ? `${data.subjects.find((s) => s.id === firstEssay.subjectId)?.name ?? '내 과목'} · 4단계로 생각을 문장으로`
-              : '키워드부터 답안 작성까지'
-          }
-          onClick={() => navigate('/essay')}
-          extra={<span className="row-badge">4단계</span>}
-        />
-        <ListRow
-          icon={<ListChecks size={22} />}
-          title="오답노트"
-          description={
-            wrongCount
-              ? `다시 보면 내 것이 되는 ${wrongCount}개의 문제`
-              : '틀린 문제를 내 지식으로 바꿔요'
-          }
-          onClick={() => navigate('/wrong-notes')}
-        />
-        <ListRow
-          icon={<BookOpen size={22} />}
-          title="문제 풀기"
-          description={
-            data.questions.length
-              ? `${data.subjects[0]?.name ?? '내 자료'} · 근거와 함께 이해하는 문제`
-              : '자료 속 개념을 문제로 확인해요'
-          }
-          onClick={() => navigate('/quiz')}
-        />
-        <div className="home-divider" />
-        <SectionTitle
-          title="최근 일주일의 꾸준함"
-          action={
-            <button onClick={() => navigate('/profile')}>
-              기록 보기 <ChevronRight size={13} className="inline" />
-            </button>
-          }
-        />
-        <div className="week-strip">
-          {Array.from({ length: 7 }, (_, i) =>
-            new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(
-              new Date(Date.now() - (6 - i) * 86400000),
-            ),
-          ).map((d, i) => (
-            <div
-              key={i}
-              className={`day-dot ${weekly[i] > 0 ? 'complete' : ''} ${i === 6 ? 'today' : ''}`}
-            >
-              <small>{d}</small>
-              <span>
-                {weekly[i] > 0 ? (
-                  <Check size={15} />
-                ) : (
-                  new Date(Date.now() - (6 - i) * 86400000).getDate()
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
+        <SectionTitle title="이어서 하기" />
+        {continuations.map((item) => (
+          <ListRow
+            key={`${item.kind}-${item.id}`}
+            icon={item.kind === 'quiz' ? <FileText size={22} /> : <NotebookPen size={22} />}
+            title={item.title}
+            description={`${item.description}${item.kind === 'quiz' ? ` · ${relativeTime(item.updatedAt, homeNow.getTime())} 학습` : ''}`}
+            extra={<span className="home-row-progress">{item.progress}</span>}
+            onClick={() => navigate(item.href)}
+          />
+        ))}
+        {wrong.length > 0 && (
+          <ListRow
+            icon={<ListChecks size={22} />}
+            title={`틀린 문제 ${wrong.length}개 다시 풀기`}
+            description={wrongSubjects.map((s) => `${s.name} ${s.count}`).join(' · ')}
+            onClick={() => navigate('/wrong-notes')}
+          />
+        )}
+        {!continuations.length && !wrong.length && (
+          <p className="home-resume-empty">
+            진행 중인 공부가 없어요.
+            <br />
+            새로운 문제를 풀면 여기서 이어갈 수 있어요.
+          </p>
+        )}
+        <button className="home-all-study" onClick={() => navigate('/study')}>
+          문제 · 서술형 · 오답노트 전체
+          <ChevronRight size={15} />
+        </button>
         {cheer && (
           <>
             <SectionTitle
-              title="나에게 도착한 응원"
-              action={<Heart size={17} className="text-disabled" />}
+              title={`${cheer.senderName || '가족'}의 응원`}
+              action={
+                <time dateTime={cheer.createdAt} className="home-cheer-time">
+                  {relativeTime(cheer.createdAt, homeNow.getTime())}
+                </time>
+              }
             />
             <div className="cheer-panel">
-              <div className="flex items-center gap-2 text-xs text-muted">
-                <span className="avatar !w-6 !h-6 !text-[10px] !bg-white">♥</span>가족의 마음이
-                도착했어요
-              </div>
               <blockquote>{cheer.message}</blockquote>
               <div className="cheer-footer">
                 <span>
                   {cheer.points > 0
-                    ? `${cheer.points.toLocaleString()}P의 응원도 함께`
-                    : '마음으로 응원해요'}
+                    ? `응원 포인트 ${cheer.points.toLocaleString()}P 함께 도착`
+                    : '마음으로 보내온 응원'}
                 </span>
                 <button
-                  disabled={cheer.thanked || thanks}
+                  disabled={cheer.thanked || thanking}
                   onClick={async () => {
-                    setThanks(true);
+                    if (thanking || cheer.thanked) return;
+                    setThanking(true);
                     try {
                       await api(`/cheers/${cheer.id}`, { thanked: true }, 'PATCH');
                       await refresh();
                       toast('고마운 마음을 전했어요');
                     } catch (e) {
                       toast((e as Error).message);
-                      setThanks(false);
+                    } finally {
+                      setThanking(false);
                     }
                   }}
                 >
-                  <Heart size={14} />
-                  {cheer.thanked ? '고마워요 전했어요' : '고마워요'}
+                  <Heart size={16} />
+                  {cheer.thanked ? '마음 전했어요' : thanking ? '전하는 중' : '고마워요'}
                 </button>
               </div>
             </div>
           </>
         )}
         <SectionTitle
-          title="최근 학습 자료"
+          title="최근 자료"
           action={
             <button onClick={() => navigate('/study')}>
-              전체 보기 <ChevronRight size={13} className="inline" />
+              전체 보기
+              <ChevronRight size={13} className="inline" />
             </button>
           }
         />
-        {data.materials.slice(0, 3).map((m) => (
+        {materials.map((m) => (
           <ListRow
             key={m.id}
-            icon={<FileText size={21} />}
+            icon={<FileText size={22} />}
             title={m.title}
-            description={`${data.subjects.find((s) => s.id === m.subjectId)?.name ?? '내 과목'} · 문제 ${data.questions.filter((q) => q.materialId === m.id).length}개`}
-            onClick={() => navigate(`/subjects/${m.subjectId}`)}
+            description={`${materialMeta(data, m)} · ${relativeTime(m.createdAt, homeNow.getTime())}`}
+            onClick={() => navigate(materialHref(m))}
           />
         ))}
-        {data.materials.length === 0 && (
-          <Button variant="secondary" className="w-full" onClick={() => navigate('/study')}>
-            첫 학습 자료 올리기
-          </Button>
-        )}
-        <div className="mt-6 py-5 page-inset rounded-2xl bg-canvas flex items-center gap-3">
-          <span className="w-10 h-10 rounded-2xl primary-surface flex items-center justify-center">
-            <Sparkles size={20} />
-          </span>
-          <div>
-            <p className="text-sm font-semibold">자료 하나가 여러 번의 공부로</p>
-            <p className="text-xs text-muted mt-1">문제부터 서술형, 복습 카드까지 이어져요</p>
+        {!materials.length && (
+          <div className="home-material-empty">
+            <Sparkles size={24} />
+            <h3>자료 하나가 여러 번의 공부로</h3>
+            <p>문제부터 서술형, 복습 카드까지 이어져요</p>
+            <Button variant="secondary" className="w-full" onClick={() => navigate('/study')}>
+              첫 학습 자료 올리기
+              <ArrowRight size={16} />
+            </Button>
           </div>
-        </div>
+        )}
       </div>
-    </>
+    </div>
   );
 }
 function SearchScreen({ data, navigate }: ScreenProps) {

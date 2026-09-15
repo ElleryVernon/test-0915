@@ -27,7 +27,7 @@ export async function bootstrap(user: User): Promise<AppData> {
     db.subject.findMany({where:{userId,deleted:false},include:{_count:{select:{materials:true,questions:true,cards:{where:{deleted:false}}}}},orderBy:{createdAt:'asc'}}),
     db.material.findMany({where:filter,orderBy:{createdAt:'desc'}}),db.question.findMany({where:filter}),db.essay.findMany({where:filter}),
     db.card.findMany({where:filter,orderBy:{createdAt:'asc'}}),db.attempt.findMany({where:{userId},orderBy:{createdAt:'desc'},take:1000}),db.schedule.findMany({where:{userId},orderBy:[{date:'asc'},{start:'asc'}]}),
-    postsFor(user),db.cheer.findMany({where:user.role==='PARENT'?{senderId:user.id}:{recipientId:user.id},orderBy:{createdAt:'desc'},take:100}),
+    postsFor(user),db.cheer.findMany({where:user.role==='PARENT'?{senderId:user.id}:{recipientId:user.id},include:{sender:{select:{nickname:true}}},orderBy:{createdAt:'desc'},take:100}),
     db.notification.findMany({where:{userId:user.id},orderBy:{createdAt:'desc'},take:100}),db.cardReview.findMany({where:{userId,createdAt:{gte:new Date(Date.now()-7*86400_000)}},orderBy:{createdAt:'desc'}}),
   ]);
   const dateKey = (date:Date)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul'}).format(date);
@@ -55,8 +55,8 @@ export async function bootstrap(user: User): Promise<AppData> {
     questions:mayNotes?(parent?questions.filter(question=>wrongIds.has(question.id)):questions):[],essays:parent?[]:essays,cards:parent?[]:cards.map(asCard),
     attempts:mayNotes?attempts.map(attempt=>({...attempt,questionId:attempt.questionId??undefined,essayId:attempt.essayId??undefined,createdAt:attempt.createdAt.toISOString()})):[],
     schedules:mayTime?schedules.map(schedule=>({...schedule,subjectId:schedule.subjectId??undefined})):[],posts,
-    cheers:cheers.map(cheer=>({...cheer,createdAt:cheer.createdAt.toISOString()})),notifications:notifications.map(item=>({...item,createdAt:item.createdAt.toISOString()})),
-    stats:{todayCards:reviews.filter(review=>dateKey(review.createdAt)===today).length,todayQuestions:todayAttempts.filter(attempt=>attempt.questionId).length,accuracy:mayAccuracy&&attempts.length?Math.round(attempts.filter(attempt=>attempt.correct).length/attempts.length*100):0,studyMinutes:mayTime?schedules.filter(schedule=>schedule.date===today&&schedule.done).reduce((sum,schedule)=>{const start=schedule.start.split(':').map(Number);const end=schedule.end.split(':').map(Number);return sum+(end[0]*60+end[1])-(start[0]*60+start[1]);},0):0,weekly:mayTime?weekly:[]},
+    cheers:cheers.map(({sender,...cheer})=>({...cheer,senderName:sender.nickname,createdAt:cheer.createdAt.toISOString()})),notifications:notifications.map(item=>({...item,createdAt:item.createdAt.toISOString()})),
+    stats:{yesterdayCards:mayTime?reviews.filter(review=>dateKey(review.createdAt)===dateKey(new Date(Date.now()-86400_000))).length:0,todayCards:reviews.filter(review=>dateKey(review.createdAt)===today).length,todayQuestions:todayAttempts.filter(attempt=>attempt.questionId).length,accuracy:mayAccuracy&&attempts.length?Math.round(attempts.filter(attempt=>attempt.correct).length/attempts.length*100):0,studyMinutes:mayTime?schedules.filter(schedule=>schedule.date===today&&schedule.done).reduce((sum,schedule)=>{const start=schedule.start.split(':').map(Number);const end=schedule.end.split(':').map(Number);return sum+(end[0]*60+end[1])-(start[0]*60+start[1]);},0):0,weekly:mayTime?weekly:[]},
     aiAvailable:aiAvailable(),demo:process.env.DEMO_MODE==='true',
   };
 }
