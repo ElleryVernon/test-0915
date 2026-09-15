@@ -1,0 +1,18 @@
+{
+  "route": "/study",
+  "width": 390,
+  "height": 844,
+  "documentWidth": 390,
+  "documentHeight": 954,
+  "horizontalOverflow": false,
+  "header": 64,
+  "headerTitle": 32,
+  "headerButton": 32,
+  "smallText": [],
+  "orangeText": [],
+  "options": [
+    "자료 올리기",
+    "과목 추가",
+    "카드 만들기"
+  ]
+}

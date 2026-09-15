@@ -1,0 +1,29 @@
+{
+  "route": "/flashcards?review=1",
+  "width": 360,
+  "height": 800,
+  "documentWidth": 360,
+  "documentHeight": 800,
+  "horizontalOverflow": false,
+  "header": 64,
+  "headerTitle": 32,
+  "headerButton": 32,
+  "smallText": [],
+  "orangeText": [],
+  "ratingHeights": [
+    60,
+    60,
+    60,
+    60
+  ],
+  "topLine": "4px",
+  "topLineColor": "rgb(255, 111, 15)",
+  "cardBackground": "rgb(255, 255, 255)",
+  "answer": "21px",
+  "intervals": [
+    "10분 뒤",
+    "1일 뒤",
+    "3일 뒤",
+    "7일 뒤"
+  ]
+}

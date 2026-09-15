@@ -1,0 +1,17 @@
+{
+  "route": "/flashcards?review=1",
+  "width": 360,
+  "height": 800,
+  "documentWidth": 360,
+  "documentHeight": 800,
+  "horizontalOverflow": false,
+  "header": 64,
+  "headerTitle": 32,
+  "headerButton": 32,
+  "smallText": [],
+  "orangeText": [],
+  "title": "1 / 9 ·  · 약 5분 남음 · 수학II",
+  "meta": "관계 · 원인과 결과 · 보통 상자 · 3번째 복습",
+  "question": "미분 가능하면 반드시 연속일까?",
+  "cta": "rgb(255, 111, 15)"
+}

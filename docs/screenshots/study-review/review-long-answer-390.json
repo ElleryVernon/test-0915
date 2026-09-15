@@ -1,0 +1,16 @@
+{
+  "route": "/flashcards?card=cmu2a5u1p000mbv28dcfu8upm",
+  "width": 390,
+  "height": 844,
+  "documentWidth": 390,
+  "documentHeight": 844,
+  "horizontalOverflow": false,
+  "header": 64,
+  "headerTitle": 32,
+  "headerButton": 32,
+  "smallText": [],
+  "orangeText": [],
+  "more": "설명 더 보기",
+  "explanationShown": false,
+  "answer": "21px"
+}

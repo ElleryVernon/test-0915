@@ -1,0 +1,15 @@
+{
+  "route": "/subjects/cmu2a615p000rbv28ttwhiw42",
+  "width": 360,
+  "height": 800,
+  "documentWidth": 360,
+  "documentHeight": 800,
+  "horizontalOverflow": false,
+  "header": 64,
+  "headerTitle": null,
+  "headerButton": 32,
+  "smallText": [],
+  "orangeText": [],
+  "examName": "중간고사",
+  "examDate": "2026-09-27"
+}

@@ -1,0 +1,29 @@
+{
+  "route": "/flashcards?review=1",
+  "width": 360,
+  "height": 800,
+  "documentWidth": 360,
+  "documentHeight": 800,
+  "horizontalOverflow": false,
+  "header": 64,
+  "headerTitle": null,
+  "headerButton": 32,
+  "smallText": [],
+  "orangeText": [],
+  "headline": "9장 복습 끝 · 다음 복습은 내일 2장이에요",
+  "meta": "2초 · 오늘까지 6일 연속",
+  "counts": [
+    "2 다시",
+    "2 어려움",
+    "3 보통",
+    "2 쉬움"
+  ],
+  "again": [
+    "개념 · 시무 28조를 수용한 왕은? · 다시 · 10분 뒤",
+    "개념 · f(x)=x²의 도함수는? · 다시 · 10분 뒤"
+  ],
+  "cta": [
+    "\"다시\" 2장 한 번 더 보기",
+    "학습으로 돌아가기"
+  ]
+}

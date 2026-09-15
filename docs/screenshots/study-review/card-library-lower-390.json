@@ -1,0 +1,13 @@
+{
+  "route": "/flashcards",
+  "width": 390,
+  "height": 844,
+  "documentWidth": 390,
+  "documentHeight": 1148,
+  "horizontalOverflow": false,
+  "header": 64,
+  "headerTitle": 32,
+  "headerButton": 32,
+  "smallText": [],
+  "orangeText": []
+}

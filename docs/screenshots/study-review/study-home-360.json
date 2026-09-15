@@ -1,0 +1,31 @@
+{
+  "route": "/study",
+  "width": 360,
+  "height": 800,
+  "documentWidth": 360,
+  "documentHeight": 954,
+  "horizontalOverflow": false,
+  "header": 64,
+  "headerTitle": 32,
+  "headerButton": 32,
+  "smallText": [],
+  "orangeText": [],
+  "todayRow": 56,
+  "subjectRows": [
+    64,
+    64,
+    64,
+    64
+  ],
+  "methodRows": [
+    56,
+    56,
+    56,
+    56
+  ],
+  "sectionTitle": "17px",
+  "todayText": "오늘 복습 9장 · 약 5분 · 어제 18장 했어요 · 시작",
+  "ddays": [
+    "중간 D-12"
+  ]
+}

@@ -92,12 +92,17 @@ export async function handleApi(request:Request) {
     if(resource==='subjects') {
       requireRole(user,'STUDENT');
       if(method==='POST') {
-        const input=await body(request,z.object({name:text(60)}));
-        return ok(await db.subject.create({data:{...input,userId:user.id}}),201);
+        const input=await body(request,z.object({name:text(60),examName:z.string().trim().max(20).nullable().optional(),examDate:date.nullable().optional()}));
+        return ok(await db.subject.create({data:{name:input.name,...(input.examDate?{examDate:input.examDate,examName:input.examName||null}:{}),userId:user.id}}),201);
       }
       if(resourceId) {
         await ownedSubject(user,resourceId);
-        if(method==='PATCH')return ok(await db.subject.update({where:{id:resourceId},data:await body(request,z.object({name:text(60)}))}));
+        if(method==='PATCH') {
+          const input=await body(request,z.object({name:text(60).optional(),examName:z.string().trim().max(20).nullable().optional(),examDate:date.nullable().optional()}).refine(value=>Object.values(value).some(field=>field!==undefined),'바꿀 내용을 입력해 주세요.'));
+          // An empty name keeps the date and falls back to "시험" when read; a null date clears both.
+          const exam=input.examDate===null?{examDate:null,examName:null}:{...(input.examDate?{examDate:input.examDate}:{}),...(input.examName!==undefined?{examName:input.examName||null}:{})};
+          return ok(await db.subject.update({where:{id:resourceId},data:{...(input.name?{name:input.name}:{}),...exam}}));
+        }
         if(method==='DELETE')return ok(await db.subject.update({where:{id:resourceId},data:{deleted:true}}));
       }
     }

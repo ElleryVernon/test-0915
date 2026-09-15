@@ -7,8 +7,8 @@ export function profile(user: User): Profile {
   const value = user.privacy as Record<string,unknown>;
   return {id:user.id,name:user.name,nickname:user.nickname,role:user.role,school:user.school,grade:user.grade,streak:user.streak,points:user.points,privacy:{accuracy:value.accuracy===true,time:value.time===true,wrongNotes:value.wrongNotes===true},completedSubjects:user.completedSubjects,srsMode:user.srsMode==='FSRS'?'FSRS':'FIXED',desiredRetention:user.desiredRetention};
 }
-export function asCard(card: {id:string;subjectId:string;front:string;back:string;type:Card['type'];bucket:Card['bucket'];consecutiveEasy:number;nextReviewAt:Date;deleted:boolean;image:string|null;masks:unknown;fsrs?:unknown}):Card {
-  return {...card,nextReviewAt:card.nextReviewAt.toISOString(),image:card.image??undefined,masks:card.masks as Mask[],fsrs:(card.fsrs??null) as Card['fsrs']};
+export function asCard({_count,...card}: {id:string;subjectId:string;front:string;back:string;type:Card['type'];bucket:Card['bucket'];consecutiveEasy:number;nextReviewAt:Date;deleted:boolean;image:string|null;masks:unknown;fsrs?:unknown;_count?:{reviews:number}}):Card {
+  return {...card,nextReviewAt:card.nextReviewAt.toISOString(),image:card.image??undefined,masks:card.masks as Mask[],fsrs:(card.fsrs??null) as Card['fsrs'],...(_count?{reviewCount:_count.reviews}:{})};
 }
 export async function selectedChild(parent: User) {
   const link = await db.parentLink.findFirst({where:{parentId:parent.id,...(parent.selectedChildId?{studentId:parent.selectedChildId}:{})},include:{student:true},orderBy:{createdAt:'asc'}});
@@ -26,7 +26,7 @@ export async function bootstrap(user: User): Promise<AppData> {
   const [subjects,materials,questions,essays,cards,attempts,schedules,posts,cheers,notifications,reviews] = await Promise.all([
     db.subject.findMany({where:{userId,deleted:false},include:{_count:{select:{materials:true,questions:true,cards:{where:{deleted:false}}}}},orderBy:{createdAt:'asc'}}),
     db.material.findMany({where:filter,orderBy:{createdAt:'desc'}}),db.question.findMany({where:filter}),db.essay.findMany({where:filter}),
-    db.card.findMany({where:filter,orderBy:{createdAt:'asc'}}),db.attempt.findMany({where:{userId},orderBy:{createdAt:'desc'},take:1000}),db.schedule.findMany({where:{userId},orderBy:[{date:'asc'},{start:'asc'}]}),
+    db.card.findMany({where:filter,orderBy:{createdAt:'asc'},include:{_count:{select:{reviews:true}}}}),db.attempt.findMany({where:{userId},orderBy:{createdAt:'desc'},take:1000}),db.schedule.findMany({where:{userId},orderBy:[{date:'asc'},{start:'asc'}]}),
     postsFor(user),db.cheer.findMany({where:user.role==='PARENT'?{senderId:user.id}:{recipientId:user.id},include:{sender:{select:{nickname:true}}},orderBy:{createdAt:'desc'},take:100}),
     db.notification.findMany({where:{userId:user.id},orderBy:{createdAt:'desc'},take:100}),db.cardReview.findMany({where:{userId,createdAt:{gte:new Date(Date.now()-7*86400_000)}},orderBy:{createdAt:'desc'}}),
   ]);
@@ -50,7 +50,7 @@ export async function bootstrap(user: User): Promise<AppData> {
   });
   return {
     profile:{...profile(user),...(user.role==='STUDENT'?{streak}:{})}, child:child?{...profile(child),streak:mayTime?streak:0}:undefined,
-    subjects:subjects.map(subject=>({id:subject.id,name:subject.name,icon:subject.icon,semester:subject.semester,color:subject.color,materialCount:subject._count.materials,questionCount:subject._count.questions,cardCount:subject._count.cards})),
+    subjects:subjects.map(subject=>({id:subject.id,name:subject.name,icon:subject.icon,semester:subject.semester,color:subject.color,materialCount:subject._count.materials,questionCount:subject._count.questions,cardCount:subject._count.cards,...(subject.examDate?{examDate:subject.examDate,examName:subject.examName??'시험'}:{})})),
     materials:parent?[]:materials.map(material=>({...material,url:material.url??undefined,createdAt:material.createdAt.toISOString()})),
     questions:mayNotes?(parent?questions.filter(question=>wrongIds.has(question.id)):questions):[],essays:parent?[]:essays,cards:parent?[]:cards.map(asCard),
     attempts:mayNotes?attempts.map(attempt=>({...attempt,questionId:attempt.questionId??undefined,essayId:attempt.essayId??undefined,createdAt:attempt.createdAt.toISOString()})):[],

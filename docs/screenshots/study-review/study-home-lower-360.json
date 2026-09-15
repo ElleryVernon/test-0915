@@ -1,0 +1,13 @@
+{
+  "route": "/study",
+  "width": 360,
+  "height": 800,
+  "documentWidth": 360,
+  "documentHeight": 954,
+  "horizontalOverflow": false,
+  "header": 64,
+  "headerTitle": 32,
+  "headerButton": 32,
+  "smallText": [],
+  "orangeText": []
+}

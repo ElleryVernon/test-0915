@@ -3,25 +3,28 @@ import { useRef, useState } from 'react';
 import {
   Plus,
   ChevronRight,
+  ChevronDown,
   BookOpen,
   Layers,
   PencilLine,
+  ListChecks,
   Check,
   MoreHorizontal,
   FileText,
   Upload,
   Camera,
   Trash2,
-  FolderOpen,
-  GraduationCap,
+  Search,
+  Sparkles,
   Sigma,
   Atom,
   Languages,
   Globe,
 } from '@/components/icons';
 import type { ScreenProps, Material, Subject } from '@/lib/contracts';
-import { Button, EmptyState, IconButton, ScreenHeader, SectionTitle, Sheet } from '@/components/ui';
+import { Button, EmptyState, IconButton, Sheet } from '@/components/ui';
 import { api } from '@/lib/api';
+import { seoulDateKey } from '@/lib/home';
 import {
   acknowledgeAiTask,
   AiTaskFailureError,
@@ -29,13 +32,17 @@ import {
   runAiTask,
   type AiTaskRecord,
 } from '@/lib/ai-task';
+import { dueCards, generatedItemCount, type GenerationMode } from './logic';
 import {
-  dueCards,
-  generatedItemCount,
-  type GenerationMode,
-  wrongEssays,
-  wrongQuestions,
-} from './logic';
+  examCountdown,
+  materialMeta,
+  nextReviewDay,
+  reviewMinutes,
+  studyMethods,
+  subjectInsight,
+  subjectMeta,
+  subjectSummary,
+} from './insights';
 import {
   BusyText,
   Chip,
@@ -47,143 +54,273 @@ import {
   uploadFile,
   useAction,
 } from './shared';
+import { StudyHeader } from './study-header';
 
 export function SubjectGlyph({ name }: { name: string }) {
   return /수학|미적분|대수/.test(name) ? (
-    <Sigma size={23} />
+    <Sigma size={21} />
   ) : /과학|생물|생명|물리|화학/.test(name) ? (
-    <Atom size={23} />
+    <Atom size={21} />
   ) : /영어|국어|문학/.test(name) ? (
-    <Languages size={23} />
+    <Languages size={21} />
   ) : /사회|역사|지리/.test(name) ? (
-    <Globe size={23} />
+    <Globe size={21} />
   ) : (
-    <BookOpen size={23} />
+    <BookOpen size={21} />
   );
 }
+const METHOD_ICONS = { quiz: BookOpen, essay: PencilLine, wrong: ListChecks, cards: Layers };
+const EXAM_NAMES = ['중간고사', '기말고사', '모의고사', '수행평가'];
+const dayLabel = (iso: string) =>
+  new Date(iso).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' });
+
 export function StudyHome(props: ScreenProps) {
   const [add, setAdd] = useState(false);
+  const [create, setCreate] = useState(false);
+  const [semesterOpen, setSemesterOpen] = useState(false);
   const [semester, setSemester] = useState('');
+  const now = Date.now();
   const subjects = props.data.subjects.filter((s) => !semester || s.semester === semester);
   const semesters = [...new Set(props.data.subjects.map((s) => s.semester))];
-  const due = dueCards(props.data.cards).length;
+  const due = dueCards(props.data.cards, now).length;
+  const hasCards = props.data.cards.some((c) => !c.deleted);
+  const next = due ? null : nextReviewDay(props.data.cards, new Date(now));
+  const yesterday = props.data.stats.yesterdayCards;
   return (
     <>
-      <ScreenHeader
+      <StudyHeader
         title="학습"
+        large
         action={
-          <IconButton label="과목 추가" onClick={() => setAdd(true)}>
-            <Plus size={23} />
-          </IconButton>
+          <>
+            <IconButton label="학습 검색" onClick={() => props.navigate('/search')}>
+              <Search size={22} />
+            </IconButton>
+            <IconButton label="만들기" onClick={() => setCreate(true)}>
+              <Plus size={24} />
+            </IconButton>
+          </>
         }
       />
       <div className="page-inset pb-8">
-        <section className="study-recall" aria-label="오늘의 복습">
-          <div>
-            <span className="eyebrow">오늘 다시 떠올릴 기억</span>
-            <h2>
-              {due ? (
-                <>
-                  <strong>{due}</strong>장의 카드가 기다려요
-                </>
-              ) : (
-                '오늘의 복습을 마쳤어요'
-              )}
-            </h2>
-            <p>
-              {due ? '짧게 복습하고 다음 공부를 시작해요.' : '새로운 카드로 기억을 더 쌓아 볼까요?'}
-            </p>
-          </div>
-          <Button onClick={() => props.navigate('/flashcards' + (due ? '?review=1' : ''))}>
-            {due ? '복습 시작' : '카드 보기'}
-            <ChevronRight size={17} />
-          </Button>
-        </section>
-        <nav className="study-shortcuts" aria-label="학습 방법">
-          {[
-            {
-              Icon: BookOpen,
-              label: '문제 풀기',
-              count: `${props.data.questions.length}문제`,
-              path: '/quiz',
-            },
-            {
-              Icon: PencilLine,
-              label: '서술형 코칭',
-              count: `${props.data.essays.length}문제`,
-              path: '/essay',
-            },
-            {
-              Icon: Layers,
-              label: '복습 카드',
-              count: `${props.data.cards.filter((c) => !c.deleted).length}장`,
-              path: '/flashcards',
-            },
-            {
-              Icon: FileText,
-              label: '오답노트',
-              count: `${wrongQuestions(props.data).length + wrongEssays(props.data).length}문제`,
-              path: '/wrong-notes',
-            },
-          ].map(({ Icon, label, count, path }) => (
-            <button key={path} onClick={() => props.navigate(path)}>
-              <Icon size={23} />
-              <strong>{label}</strong>
-              <small>{count}</small>
-            </button>
-          ))}
-        </nav>
-        <SectionTitle
-          title="내 과목"
-          action={
-            semesters.length > 0 && (
-              <select
-                aria-label="학기 선택"
-                value={semester}
-                onChange={(e) => setSemester(e.target.value)}
-                className="library-semester"
-              >
-                <option value="">전체 학기</option>
-                {semesters.map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-            )
+        <button
+          className="study-today"
+          onClick={() =>
+            hasCards ? props.navigate(due ? '/flashcards?review=1' : '/flashcards') : setCreate(true)
           }
-        />
-        <div className="subject-library">
-          {subjects.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => props.navigate(`/subjects/${s.id}`)}
-              className="subject-library-row"
-            >
-              <span className="subject-library-icon">
-                <SubjectGlyph name={s.name} />
-              </span>
-              <span className="row-copy">
-                <span>{s.name}</span>
-                <small>
-                  자료 {s.materialCount}개 · 복습 카드 {s.cardCount}장
-                </small>
-              </span>
-              <ChevronRight size={17} className="text-disabled" />
-            </button>
-          ))}
-          {!subjects.length && (
-            <p className="py-6 text-sm text-muted">이 학기에 공부할 과목을 추가해 보세요.</p>
-          )}
-          <button className="library-add" onClick={() => setAdd(true)}>
-            <Plus size={19} />새 과목 추가
-          </button>
-        </div>
-        <button className="library-add mt-4" onClick={() => props.navigate('/completed-subjects')}>
-          <GraduationCap size={19} />
-          배운 과목 설정
+        >
+          <span className="study-today-copy">
+            <strong>
+              {due
+                ? `오늘 복습 ${due}장`
+                : hasCards
+                  ? '오늘 복습을 마쳤어요'
+                  : '복습 카드가 아직 없어요'}
+            </strong>
+            <small>
+              {due
+                ? `약 ${reviewMinutes(due)}분${yesterday ? ` · 어제 ${yesterday}장 했어요` : ''}`
+                : next
+                  ? `다음 복습은 ${next.when} ${next.count}장`
+                  : hasCards
+                    ? '예정된 복습이 없어요'
+                    : '자료를 올리면 카드가 생겨요'}
+            </small>
+          </span>
+          <span className={`study-today-pill${due ? ' is-primary' : ''}`}>
+            {due ? '시작' : hasCards ? '카드 보기' : '만들기'}
+          </span>
         </button>
+        <div className="study-section-head">
+          <h2>내 과목</h2>
+          {semesters.length > 0 && (
+            <button
+              className="study-chip"
+              aria-haspopup="dialog"
+              onClick={() => setSemesterOpen(true)}
+            >
+              {semester || (semesters.length === 1 ? semesters[0] : '전체 학기')}
+              <ChevronDown size={12} />
+            </button>
+          )}
+        </div>
+        <div className="subject-library">
+          {subjects.map((s) => {
+            const summary = subjectSummary(props.data, s.id, now);
+            const exam = examCountdown(s, new Date(now));
+            return (
+              <button
+                key={s.id}
+                onClick={() => props.navigate(`/subjects/${s.id}`)}
+                className="subject-library-row"
+              >
+                <span className="subject-library-icon">
+                  <SubjectGlyph name={s.name} />
+                </span>
+                <span className="subject-library-copy">
+                  <span className="subject-library-name">
+                    <span>{s.name}</span>
+                    {exam && <span className="study-dday">{exam.short}</span>}
+                  </span>
+                  <small>{subjectMeta(summary)}</small>
+                </span>
+                {summary.due > 0 && (
+                  <span className="subject-library-due">오늘 {summary.due}장</span>
+                )}
+                <ChevronRight size={18} className="shrink-0 text-disabled" />
+              </button>
+            );
+          })}
+          {!subjects.length && (
+            <p className="study-empty-note">이 학기에 공부할 과목을 추가해 보세요.</p>
+          )}
+          <div className="study-add-row">
+            <button onClick={() => setAdd(true)}>
+              <Plus size={16} />
+              과목 추가
+            </button>
+            <button onClick={() => props.navigate('/completed-subjects')}>
+              배운 과목 설정
+              <ChevronRight size={12} />
+            </button>
+          </div>
+        </div>
+        <div className="study-section-head">
+          <h2>학습 방법</h2>
+        </div>
+        <nav className="study-methods" aria-label="학습 방법">
+          {studyMethods(props.data).map((m) => {
+            const Icon = METHOD_ICONS[m.key];
+            return (
+              <button key={m.key} onClick={() => props.navigate(m.path)}>
+                <Icon size={24} />
+                <span>{m.label}</span>
+                <small>{m.meta}</small>
+                <ChevronRight size={18} className="shrink-0 text-disabled" />
+              </button>
+            );
+          })}
+        </nav>
       </div>
       <SubjectEditor open={add} onClose={() => setAdd(false)} props={props} />
+      <CreateSheet
+        open={create}
+        onClose={() => setCreate(false)}
+        props={props}
+        onAddSubject={() => {
+          setCreate(false);
+          setAdd(true);
+        }}
+      />
+      <Sheet open={semesterOpen} onClose={() => setSemesterOpen(false)} title="학기 선택">
+        <div className="study-options">
+          {['', ...semesters].map((value) => (
+            <button
+              key={value || 'all'}
+              aria-pressed={semester === value}
+              onClick={() => {
+                setSemester(value);
+                setSemesterOpen(false);
+              }}
+            >
+              <span>{value || '전체 학기'}</span>
+              {semester === value && <Check size={20} />}
+            </button>
+          ))}
+        </div>
+      </Sheet>
     </>
+  );
+}
+
+function CreateSheet({
+  open,
+  onClose,
+  props,
+  onAddSubject,
+}: {
+  open: boolean;
+  onClose: () => void;
+  props: ScreenProps;
+  onAddSubject: () => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  const subjects = props.data.subjects;
+  const close = () => {
+    setPicking(false);
+    onClose();
+  };
+  const openUpload = (subject: Subject) => {
+    close();
+    props.navigate(`/subjects/${subject.id}?upload=1`);
+  };
+  return (
+    <Sheet
+      open={open}
+      onClose={close}
+      title={picking ? '어느 과목에 올릴까요?' : '무엇을 만들까요?'}
+    >
+      {picking ? (
+        <div className="study-options">
+          {subjects.map((s) => (
+            <button key={s.id} onClick={() => openUpload(s)}>
+              <span>{s.name}</span>
+              <ChevronRight size={18} className="text-disabled" />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="study-create">
+          <button
+            onClick={() =>
+              subjects.length === 1
+                ? openUpload(subjects[0])
+                : subjects.length
+                  ? setPicking(true)
+                  : onAddSubject()
+            }
+          >
+            <span className="study-create-icon">
+              <Upload size={22} />
+            </span>
+            <span className="study-create-copy">
+              <strong>자료 올리기</strong>
+              <small>
+                {subjects.length
+                  ? '필기·PDF·사진에서 문제와 카드를 만들어요'
+                  : '과목을 먼저 만든 뒤 올릴 수 있어요'}
+              </small>
+            </span>
+            <ChevronRight size={18} className="text-disabled" />
+          </button>
+          <button onClick={onAddSubject}>
+            <span className="study-create-icon">
+              <Plus size={22} />
+            </span>
+            <span className="study-create-copy">
+              <strong>과목 추가</strong>
+              <small>시험 날짜를 함께 정하면 D-day 가 보여요</small>
+            </span>
+            <ChevronRight size={18} className="text-disabled" />
+          </button>
+          <button
+            onClick={() => {
+              close();
+              props.navigate('/create-card');
+            }}
+          >
+            <span className="study-create-icon">
+              <Layers size={22} />
+            </span>
+            <span className="study-create-copy">
+              <strong>카드 만들기</strong>
+              <small>개념·관계·비교·가림 카드를 직접 만들어요</small>
+            </span>
+            <ChevronRight size={18} className="text-disabled" />
+          </button>
+        </div>
+      )}
+    </Sheet>
   );
 }
 
@@ -199,8 +336,11 @@ function SubjectEditor({
   subject?: Subject;
 }) {
   const [name, setName] = useState(subject?.name || '');
+  const [examName, setExamName] = useState(subject?.examDate ? subject.examName || '' : '');
+  const [examDate, setExamDate] = useState(subject?.examDate || '');
   const [deleting, setDeleting] = useState(false);
   const action = useAction();
+  const past = !!examDate && examDate < seoulDateKey(new Date());
   return (
     <Sheet open={open} onClose={onClose} title={subject ? '과목 설정' : '어떤 과목을 공부하나요?'}>
       <div className="space-y-5">
@@ -224,20 +364,65 @@ function SubjectEditor({
             ))}
           </div>
         )}
+        <fieldset className="study-exam">
+          <legend>
+            시험 일정 <small>선택</small>
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            {EXAM_NAMES.map((n) => (
+              <Chip key={n} active={examName === n} onClick={() => setExamName(examName === n ? '' : n)}>
+                {n}
+              </Chip>
+            ))}
+          </div>
+          <input
+            className="field"
+            value={examName}
+            maxLength={20}
+            onChange={(e) => setExamName(e.target.value)}
+            placeholder="시험 이름 (비우면 '시험')"
+            aria-label="시험 이름"
+          />
+          <input
+            type="date"
+            className="field"
+            value={examDate}
+            onChange={(e) => setExamDate(e.target.value)}
+            aria-label="시험 날짜"
+          />
+          {past && <p className="study-exam-note">지난 날짜라 D-day 가 보이지 않아요.</p>}
+          {examDate && (
+            <button
+              type="button"
+              className="study-exam-clear"
+              onClick={() => {
+                setExamDate('');
+                setExamName('');
+              }}
+            >
+              시험 일정 지우기
+            </button>
+          )}
+        </fieldset>
         <ErrorNote error={action.error} />
         <Button
           className="w-full"
           disabled={!name.trim() || action.busy}
           onClick={() =>
             action.run(async () => {
+              const exam = examDate
+                ? { examDate, examName: examName.trim() || null }
+                : subject?.examDate
+                  ? { examDate: null }
+                  : {};
               await api(
                 subject ? `/subjects/${subject.id}` : '/subjects',
-                { name: name.trim() },
+                { name: name.trim(), ...exam },
                 subject ? 'PATCH' : 'POST',
               );
               await props.refresh();
               onClose();
-              props.toast(subject ? '과목 이름을 바꿨어요' : '새 과목을 만들었어요');
+              props.toast(subject ? '과목 설정을 저장했어요' : '새 과목을 만들었어요');
             })
           }
         >
@@ -302,7 +487,7 @@ export function SubjectDetail(props: ScreenProps) {
   if (!subject)
     return (
       <>
-        <ScreenHeader title="내 과목" back={() => props.navigate('/study')} />
+        <StudyHeader title="내 과목" back={() => props.navigate('/study')} />
         <EmptyState
           title="과목을 찾을 수 없어요"
           description="삭제되었거나 다른 계정의 과목이에요."
@@ -310,13 +495,16 @@ export function SubjectDetail(props: ScreenProps) {
         />
       </>
     );
+  const now = Date.now();
   const materials = props.data.materials.filter((m) => m.subjectId === subject.id);
   const questions = props.data.questions.filter((q) => q.subjectId === subject.id);
   const cards = props.data.cards.filter((c) => c.subjectId === subject.id && !c.deleted);
+  const summary = subjectSummary(props.data, subject.id, now);
+  const exam = examCountdown(subject, new Date(now));
+  const insight = subjectInsight(summary, exam);
   return (
     <>
-      <ScreenHeader
-        title=""
+      <StudyHeader
         back={() => props.navigate('/study')}
         action={
           <IconButton label="과목 설정" onClick={() => setSettings(true)}>
@@ -324,59 +512,75 @@ export function SubjectDetail(props: ScreenProps) {
           </IconButton>
         }
       />
-      <div className="page-inset pb-8">
-        <p className="eyebrow">
-          {subject.semester} · 자료 {materials.length}
+      <div className={`page-inset subject-detail${tab === '자료' ? ' has-fixed-cta' : ''}`}>
+        <p className="subject-detail-eyebrow">
+          {subject.semester}
+          {exam && <span className="study-dday">{exam.label}</span>}
         </p>
-        <h1 className="mt-1 text-[28px] font-extrabold tracking-[-.04em]">{subject.name}</h1>
-        <div className="mt-5 flex gap-2">
+        <h1 className="subject-detail-title">{subject.name}</h1>
+        <p className="subject-detail-meta">
+          자료 {summary.materials} · 문제 {summary.questions} · 카드 {summary.cards}
+          {summary.due > 0 && (
+            <>
+              {' · '}
+              <b>오늘 복습 {summary.due}장</b>
+            </>
+          )}
+        </p>
+        <div className="subject-tabs">
           {[
             ['자료', materials.length],
             ['문제', questions.length],
             ['카드', cards.length],
           ].map(([label, n]) => (
             <Chip key={label} active={tab === label} onClick={() => setTab(String(label))}>
-              {label} <span className="ml-1 opacity-60">{n}</span>
+              {label}
+              <span className="subject-tab-count">{n}</span>
             </Chip>
           ))}
         </div>
         {tab === '자료' ? (
-          <div className="mt-5">
-            {materials.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => {
-                  setSelected(m);
-                  setDeleteMaterial(false);
-                }}
-                className="material-library-row"
-              >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface">
-                  <MaterialIcon type={m.type} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-bold">{m.title}</span>
-                  <span className="mt-1 block text-[12px] text-muted">
-                    {new Date(m.createdAt).toLocaleDateString('ko-KR', {
-                      month: 'long',
-                      day: 'numeric',
-                    })}{' '}
-                    · {questions.filter((q) => q.materialId === m.id).length}문제
+          <div className="subject-materials">
+            {materials.map((m) => {
+              const meta = materialMeta(props.data, m.id);
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    setSelected(m);
+                    setDeleteMaterial(false);
+                  }}
+                  className="material-library-row"
+                >
+                  <span className="material-library-icon">
+                    <MaterialIcon type={m.type} />
                   </span>
-                </span>
-                <ChevronRight size={18} className="text-disabled" />
-              </button>
-            ))}
+                  <span className="material-library-copy">
+                    <span>{m.title}</span>
+                    <small className={meta.empty ? 'is-next' : undefined}>
+                      {dayLabel(m.createdAt)} · {meta.text}
+                    </small>
+                  </span>
+                  <ChevronRight size={18} className="shrink-0 text-disabled" />
+                </button>
+              );
+            })}
             {!materials.length && (
               <EmptyState
                 title="첫 자료를 올려 주세요"
                 description="수업 필기, 교과서 PDF, 정리한 글에서 학습이 시작돼요."
               />
             )}
-            <Button className="mt-6 w-full" onClick={() => setUpload(true)}>
-              <Plus size={20} />
-              자료 올리기
-            </Button>
+            {insight && (
+              <div className="subject-insight">
+                <Sparkles size={22} />
+                <span className="subject-insight-copy">
+                  <strong>{insight.title}</strong>
+                  <small>{insight.description}</small>
+                </span>
+                <button onClick={() => setGeneration('quiz')}>만들기</button>
+              </div>
+            )}
           </div>
         ) : tab === '문제' ? (
           <div className="mt-6 space-y-4">
@@ -398,7 +602,7 @@ export function SubjectDetail(props: ScreenProps) {
                     <span className="flex-1 text-[15px] font-semibold leading-relaxed">
                       {q.prompt}
                     </span>
-                    <ChevronRight size={18} className="mt-1 shrink-0" />
+                    <ChevronRight size={18} className="mt-1 shrink-0 text-disabled" />
                   </button>
                 ))}
                 <Button
@@ -428,7 +632,7 @@ export function SubjectDetail(props: ScreenProps) {
         ) : (
           <div className="mt-6 space-y-3">
             <p className="text-sm text-muted">
-              복습할 카드 {dueCards(cards).length}장 · 전체 {cards.length}장
+              오늘 복습 {dueCards(cards, now).length}장 · 전체 {cards.length}장
             </p>
             <Button
               className="w-full"
@@ -446,6 +650,14 @@ export function SubjectDetail(props: ScreenProps) {
           </div>
         )}
       </div>
+      {tab === '자료' && (
+        <div className="study-fixed-cta above-nav">
+          <Button className="w-full" onClick={() => setUpload(true)}>
+            <Upload size={18} />
+            자료 올리기
+          </Button>
+        </div>
+      )}
       <SubjectEditor
         open={settings}
         onClose={() => setSettings(false)}

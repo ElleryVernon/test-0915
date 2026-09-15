@@ -24,6 +24,9 @@ export interface Subject {
   materialCount: number;
   questionCount: number;
   cardCount: number;
+  examName?: string;
+  /** YYYY-MM-DD on the Seoul calendar, the same representation as Schedule.date. */
+  examDate?: string;
 }
 export interface Material {
   id: string;
@@ -87,6 +90,8 @@ export interface Card {
   deleted: boolean;
   image?: string;
   masks?: Mask[];
+  /** Completed reviews recorded on the server; absent in review responses. */
+  reviewCount?: number;
 }
 export interface StudyAttempt {
   id: string;
@@ -180,7 +185,7 @@ export interface ScreenProps {
 }
 // All mutation endpoints use { ...payload }, return JSON { data: T } or { error: string }, HTTP 4xx/5xx on failures.
 // GET /api/bootstrap; POST /api/session {role}; POST /api/logout.
-// POST /api/subjects {name}; PATCH /api/subjects/:id {name}; DELETE soft-deletes.
+// POST /api/subjects {name,examName?,examDate?}; PATCH /api/subjects/:id {name?,examName?,examDate?:'YYYY-MM-DD'|null} (examDate null clears the exam); DELETE soft-deletes.
 // POST /api/materials {subjectId,title,content,type,url?}; POST /api/generate {materialId,count:1..10,mode:'quiz'|'essay'|'cards'}.
 // POST /api/quiz/answer {questionId,answer:number} => {correct,explanation,citation}; POST /api/essay/submit {essayId,answer} => {score,matched:string[],missing:string[],feedback}.
 // POST /api/cards {subjectId,front,back,type,image?,masks?}; PATCH /api/cards/:id {deleted?:boolean,front?,back?}; POST /api/cards/review {cardId,rating:'EASY'|'GOOD'|'HARD'|'AGAIN',reviewId:uuid} => Card; POST /api/wrong-notes/cards {questionIds:string[]}.
