@@ -48,7 +48,7 @@
 
 ## 데이터와 적용 범위
 
-- 시험 D-day를 위해 Subject에 nullable `examName`·`examDate`를 추가했다. `examDate`는 일정과 같은 서울 달력 YYYY-MM-DD 문자열이다. 과목 추가·과목 설정 시트에서 이름 칩(중간고사 · 기말고사 · 모의고사 · 수행평가), 직접 입력, 날짜, "시험 일정 지우기"를 제공한다. POST/PATCH `/subjects`는 날짜 형식과 이름 20자를 검증하고, 빈 요청은 400으로 거절한다. 날짜가 null이면 시험 일정을 지우고, 이름 없이 날짜만 있으면 "시험"으로 표시한다. 기존 과목은 값이 없으므로 칩이 보이지 않는다.
+- 시험 D-day를 위해 Subject에 nullable `examName`·`examDate`를 추가했다(마이그레이션 `20260915030000_subject_exam`, README의 `npx prisma migrate deploy`로 적용된다). `examDate`는 일정과 같은 서울 달력 YYYY-MM-DD 문자열이다. 과목 추가·과목 설정 시트에서 이름 칩(중간고사 · 기말고사 · 모의고사 · 수행평가), 직접 입력, 날짜, "시험 일정 지우기"를 제공한다. POST/PATCH `/subjects`는 날짜 형식과 이름 20자를 검증하고, 빈 요청은 400으로 거절한다. 날짜가 null이면 시험 일정을 지우고, 이름 없이 날짜만 있으면 "시험"으로 표시한다. 기존 과목은 값이 없으므로 칩이 보이지 않는다.
 - "N번째 복습"은 서버 CardReview 수(`_count.reviews`)에서 가져오고, 세션 중에는 로컬에서 1씩 더한다. 복습 응답에는 이 수가 없으므로 다음 bootstrap에서 서버 값으로 맞춰진다.
 - 카드에는 자료 ID와 출처가 없다. 그래서 자료 행에 카드 수를 추정하지 않고(문제·서술형 수만 표시), 복습 카드에 출처 줄을 넣지 않았다.
 - 과목 인사이트("시험 N주 전 · 카드 N장 중 N장이 '다시' 상자 / 자료로 문제를 더 만들어 볼까요?")는 그 과목의 숫자가 뒷받침할 때만 보인다. 카드를 단원과 연결할 수 없어서 시안의 단원 추천은 하지 않았다.
@@ -62,7 +62,7 @@
 - 정적 감사 `node scripts/study-review-audit.mjs`: 현재 소스 0건. 양성 대조(0f14f1e 소스 + 44px 헤더 규칙)에서 14건 — 의인화 · 12px 미만 · 뒷면 반전 · 헤더 축소 규칙이 실제로 잡힌다.
 - 집중 테스트 `npx tsx --test tests/study-review.test.ts` 17개 통과. 전체 `npm test` 61개 통과 · 실패 0이고, 기준선(0f14f1e) 테스트 44개 이름이 모두 통과한다(`node scripts/study-review-regression.mjs`).
 - 변이 `node scripts/study-review-mutation.mjs`: 핵심 수정 7개(서울 기준 D-day, 같은 날 돌아오는 카드 제외, 140자 접기, 낡은 서술형 초안, 할 일 없을 때 회색 알약, "바로 가기" 문구, 복습 순서)를 임시 복사본에서 되돌리면 각각 해당 테스트가 이름으로 실패한다. 작업 트리는 바꾸지 않는다.
-- 스키마 `node scripts/study-review-schema.mjs`: 0f14f1e 대비 변경은 Subject의 두 줄뿐이고 로컬 DB와 차이가 없다.
+- 스키마 `node scripts/study-review-schema.mjs`: 0f14f1e 대비 변경은 Subject의 두 줄뿐이다. 새 마이그레이션은 그 두 컬럼만 추가하고, 빈 임시 DB에 마이그레이션만 적용해도 스키마와 차이가 0이다(이 마이그레이션을 뺀 대조군은 차이가 난다). 로컬 DB도 스키마와 같고 마이그레이션 기록이 최신이다.
 - HTTP `npx tsx scripts/study-review-http.ts` 23개와 기존 통합 검사 `npx tsx scripts/integration-check.ts` 45개 통과(검증용 qa- 계정, 끝나면 삭제).
 - `npm run build` 성공.
 - 실제 브라우저 `npx tsx scripts/study-review-capture.ts`: 새 빌드의 로컬 프로덕션 서버, 헤드리스 Chrome, 390×844 · 360×800, 폭마다 새 qa- 계정(끝나면 삭제). 11개 화면 × 2폭에서
