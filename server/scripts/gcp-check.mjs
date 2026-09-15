@@ -21,8 +21,11 @@ const checks = {
     const apis = lines(gcloud('services', 'list', '--enabled', `--project=${PROJECT}`, '--format=value(config.name)'));
     const need = ['sqladmin', 'memorystore', 'run', 'storage', 'secretmanager', 'artifactregistry', 'servicenetworking', 'networkconnectivity', 'cloudtrace', 'monitoring', 'logging', 'telemetry'].map((s) => `${s}.googleapis.com`);
     const missing = need.filter((a) => !apis.includes(a));
-    // The developer's default configuration must remain untouched.
-    const configs = execFileSync('gcloud', ['config', 'configurations', 'list', '--format=value(name,is_active,properties.core.project)'], { encoding: 'utf8' });
+    // The developer's default configuration must remain untouched. That is the persisted state, so the
+    // listing runs without CLOUDSDK_ACTIVE_CONFIG_NAME: a caller's per-process override (the usual way
+    // to run these scripts) would otherwise report `memoryz` as active.
+    const { CLOUDSDK_ACTIVE_CONFIG_NAME: _override, ...persisted } = process.env;
+    const configs = execFileSync('gcloud', ['config', 'configurations', 'list', '--format=value(name,is_active,properties.core.project)'], { encoding: 'utf8', env: persisted });
     const defaultActive = /^default\s+True\s+sinsin-486209$/m.test(configs);
     const ok = state === 'ACTIVE' && billing.includes(BILLING) && /True/.test(billing) && missing.length === 0 && defaultActive;
     return [ok, `PROJECT_READY ${state} apis=${apis.length}`, `PROJECT_NOT_READY state=${state} billing=${billing} missing=${missing} defaultActive=${defaultActive}`];
