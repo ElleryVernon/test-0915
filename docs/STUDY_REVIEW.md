@@ -59,11 +59,13 @@
 
 ## 검증 (2026-09-15, 로컬)
 
+시간표 리뷰 통합(55d4222) 뒤 병합된 트리에서 아래 검사를 모두 다시 돌렸다. 숫자는 그 재검증 값이다.
+
 - 정적 감사 `node scripts/study-review-audit.mjs`: 현재 소스 0건. 양성 대조(0f14f1e 소스 + 44px 헤더 규칙)에서 14건 — 의인화 · 12px 미만 · 뒷면 반전 · 헤더 축소 규칙이 실제로 잡힌다.
-- 집중 테스트 `npx tsx --test tests/study-review.test.ts` 17개 통과. 전체 `npm test` 61개 통과 · 실패 0이고, 기준선(0f14f1e) 테스트 44개 이름이 모두 통과한다(`node scripts/study-review-regression.mjs`).
+- 집중 테스트 `npx tsx --test tests/study-review.test.ts` 17개 통과. 전체 `npm test` 67개 통과 · 실패 0(기준선 44 + 학습 17 + 시간표 6)이고, 기준선(0f14f1e) 테스트 44개 이름이 모두 통과한다(`node scripts/study-review-regression.mjs`).
 - 변이 `node scripts/study-review-mutation.mjs`: 핵심 수정 7개(서울 기준 D-day, 같은 날 돌아오는 카드 제외, 140자 접기, 낡은 서술형 초안, 할 일 없을 때 회색 알약, "바로 가기" 문구, 복습 순서)를 임시 복사본에서 되돌리면 각각 해당 테스트가 이름으로 실패한다. 작업 트리는 바꾸지 않는다.
 - 스키마 `node scripts/study-review-schema.mjs`: 0f14f1e 대비 변경은 Subject의 두 줄뿐이다. 새 마이그레이션은 그 두 컬럼만 추가하고, 빈 임시 DB에 마이그레이션만 적용해도 스키마와 차이가 0이다(이 마이그레이션을 뺀 대조군은 차이가 난다). 로컬 DB도 스키마와 같고 마이그레이션 기록이 최신이다.
-- HTTP `npx tsx scripts/study-review-http.ts` 23개와 기존 통합 검사 `npx tsx scripts/integration-check.ts` 45개 통과(검증용 qa- 계정, 끝나면 삭제).
+- HTTP `npx tsx scripts/study-review-http.ts` 23개와 통합 검사 `npx tsx scripts/integration-check.ts` 48개 통과(시간표 통합으로 3개 추가, 검증용 qa- 계정, 끝나면 삭제). 통합 검사의 시간표 추천은 실제 AI를 부른다. 통합 전 한 번은 AI가 기존 일정과 겹치는 블록을 돌려줘 422로 실패했다(재실행 통과). 시간표 통합은 잘못된 블록만 빼도록 바꿨다.
 - `npm run build` 성공.
 - 실제 브라우저 `npx tsx scripts/study-review-capture.ts`: 새 빌드의 로컬 프로덕션 서버, 헤드리스 Chrome, 390×844 · 360×800, 폭마다 새 qa- 계정(끝나면 삭제). 11개 화면 × 2폭에서
   - 가로 넘침 0, 12px 미만 글자 0, 흰 바탕 주황 글자 0, 콘솔 오류 0.
