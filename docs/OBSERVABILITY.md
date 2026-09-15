@@ -10,7 +10,7 @@ Go 서버는 OpenTelemetry 로 스팬과 지표를, `log/slog` 로 구조화 로
 
 `gcp` 는 Google 이 폐기 예고(2027-01 보관)한 Cloud Trace/Monitoring 전용 익스포터 대신 표준 OTLP 익스포터를 쓴다: TLS, ADC 의 per-RPC 자격 증명(`cloud-platform` 범위), `x-goog-user-project` 헤더, 리소스 속성 `gcp.project_id` + GCP 감지기(Cloud Run 서비스·리비전·리전). 필요한 API 는 `telemetry.googleapis.com`, 서비스 계정 역할은 `roles/telemetry.tracesWriter`·`roles/telemetry.metricsWriter`(leaf-3.1 검사가 확인).
 
-`OTEL_SAMPLE_RATIO`(기본 1.0)는 루트 트레이스의 표본 비율이다. 부모가 있으면 부모의 결정을 따른다(`ParentBased`). PoC 규모(학생 100명)에서는 전부 남겨도 Cloud Trace 무료 한도 안이다.
+`OTEL_SAMPLE_RATIO`(기본 1.0)는 누가 시작했든 남길 트레이스의 비율이다(`telemetry.Sampler`). Cloud Run 앞단은 모든 요청에 `traceparent` 를 붙여 보내는데, 그 sampled 플래그는 이 서비스에 대한 결정이 아니라 인스턴스당 속도 제한(대략 10초에 한 건)이다. 그래서 원격 부모의 "표본 아님"은 결정이 없는 것으로 보고 비율을 적용하고, 원격 "표본"은 그대로 남겨 플랫폼의 요청 스팬과 이어지게 한다. 프로세스 안의 자식 스팬은 부모를 따른다(트레이스가 조각나지 않게). 예전 `ParentBased(ratio)` 는 앞단의 플래그를 그대로 따라서, 연달아 오는 요청(로그인 직후 `/api/me`·`/api/bootstrap`)이 Cloud Trace 에 하나도 남지 않았다(2026-09-16, 요청 로그의 `traceSampled` 로 확인). PoC 규모(학생 100명)에서는 전부 남겨도 Cloud Trace 무료 한도(월 250만 스팬) 안팎이다.
 
 ## 스팬
 

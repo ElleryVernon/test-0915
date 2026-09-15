@@ -112,7 +112,7 @@ func Setup(ctx context.Context, o Options) (*Providers, error) {
 	}
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithResource(res),
-		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(ratio))),
+		sdktrace.WithSampler(Sampler(ratio)),
 		// jitter: none — the OTLP exporters' default retry is already randomized; at most 6 export streams [site server/internal/telemetry/telemetry.go:116]
 		sdktrace.WithBatcher(Redact(spans), sdktrace.WithBatchTimeout(2*time.Second)),
 	)
@@ -121,6 +121,16 @@ func Setup(ctx context.Context, o Options) (*Providers, error) {
 	otel.SetTracerProvider(tp)
 	otel.SetMeterProvider(mp)
 	return &Providers{tracer: tp, meter: mp}, nil
+}
+
+// Sampler keeps ratio of the traces, whoever started them. On Cloud Run every request arrives with
+// a parent: the front end forwards a traceparent whose sampled flag is its own per-instance rate
+// limit (about one request in ten seconds), not a decision about this service. So a remote "not
+// sampled" is no decision and ratio applies; a remote "sampled" is kept, so the platform's request
+// span links to ours. Spans inside the process follow their parent, which keeps traces whole.
+func Sampler(ratio float64) sdktrace.Sampler {
+	root := sdktrace.TraceIDRatioBased(ratio)
+	return sdktrace.ParentBased(root, sdktrace.WithRemoteParentNotSampled(root))
 }
 
 // personalKeys are the request attributes otelhttp records by default that identify a person: the

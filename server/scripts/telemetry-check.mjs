@@ -61,7 +61,11 @@ try {
   const traceId = randomBytes(16).toString('hex');
   const res = await fetch(`${base}/api/bootstrap`, { headers: { cookie, traceparent: `00-${traceId}-${randomBytes(8).toString('hex')}-01` } });
   check(res.status === 200, `bootstrap ${res.status}`);
-  const live = await fetch(`${base}/api/live`, { headers: { 'user-agent': 'telemetry-check learner agent', 'x-forwarded-for': '203.0.113.99' } });
+  // Cloud Run's front end forwards most requests as "not sampled" (its own rate limit); they must still be traced.
+  const forwardedTrace = randomBytes(16).toString('hex');
+  const me = await fetch(`${base}/api/me`, { headers: { cookie, traceparent: `00-${forwardedTrace}-${randomBytes(8).toString('hex')}-00` } });
+  check(me.status === 200, `me ${me.status}`);
+  const live =await fetch(`${base}/api/live`, { headers: { 'user-agent': 'telemetry-check learner agent', 'x-forwarded-for': '203.0.113.99' } });
   check(live.status === 200, `liveness ${live.status}`);
   const stopped = new Promise((r) => server.once('exit', r));
   server.kill('SIGTERM'); // shutdown flushes the batch span processor
@@ -73,6 +77,8 @@ try {
   check(serverSpan, `server span named by route (${spans.map((s) => s.Name).join(', ')})`);
   check(serverSpan.SpanContext.TraceID === traceId && serverSpan.Parent.Remote === true, `the incoming traceparent is continued (${serverSpan.SpanContext.TraceID})`);
   check(serverSpan.Attributes.some((a) => a.Key === 'http.response.status_code' && a.Value.Value === 200), 'server span carries the status code');
+  const forwarded = spans.find((s) => s.Name === 'GET /api/me');
+  check(forwarded && forwarded.SpanContext.TraceID === forwardedTrace && forwarded.Parent.Remote === true, `a request forwarded as not sampled is still traced in its trace (${forwarded?.SpanContext.TraceID ?? 'no span'})`);
   const byID = new Map(spans.map((s) => [s.SpanContext.SpanID, s]));
   const descends = (s) => {
     for (let p = byID.get(s.Parent.SpanID); p; p = byID.get(p.Parent.SpanID)) if (p === serverSpan) return true;
