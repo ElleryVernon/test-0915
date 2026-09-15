@@ -19,6 +19,8 @@ export interface AiTaskRecord<T = unknown> {
   result: T | null;
   error: string | null;
   acknowledged: boolean;
+  /** First time the result was shown to the learner; a seen result never reopens by itself. */
+  seenAt?: number;
   createdAt: number;
   updatedAt: number;
   steps?: AiTaskStep[];
@@ -94,8 +96,12 @@ async function taskKey(userId: string, endpoint: AiEndpoint, payload: Record<str
 }
 async function saveTask<T>(task: AiTaskRecord<T>) {
   const db = await database();
-  await db.put('tasks', task);
-  return task;
+  // Status updates often start from an older in-memory copy; the same request keeps its seen time.
+  const stored = task.seenAt ? undefined : await db.get('tasks', task.key);
+  const next =
+    stored?.seenAt && stored.requestId === task.requestId ? { ...task, seenAt: stored.seenAt } : task;
+  await db.put('tasks', next);
+  return next;
 }
 async function request(path: string, body?: unknown, signal?: AbortSignal) {
   const timeout = AbortSignal.timeout(body === undefined ? 20000 : 150000);
@@ -125,19 +131,29 @@ export async function findAiTask<T = unknown>(
     );
     return task && !task.acknowledged ? (task as AiTaskRecord<T>) : null;
   }
-  const entries = (await db.getAll('tasks')).filter(
-    (task) =>
-      task.userId === lookup.userId &&
-      task.endpoint === lookup.endpoint &&
-      !task.acknowledged &&
-      (!lookup.match ||
-        Object.entries(lookup.match).every(
-          ([key, value]) => canonical(task.payload[key]) === canonical(value),
-        )),
-  );
-  return (
-    (entries.sort((a, b) => b.updatedAt - a.updatedAt)[0] as AiTaskRecord<T> | undefined) ?? null
-  );
+  return (await listAiTasks<T>(lookup))[0] ?? null;
+}
+/** Unacknowledged tasks for one user and endpoint, newest first. */
+export async function listAiTasks<T = unknown>(lookup: AiTaskLookup): Promise<AiTaskRecord<T>[]> {
+  const db = await database();
+  return (await db.getAll('tasks'))
+    .filter(
+      (task) =>
+        task.userId === lookup.userId &&
+        task.endpoint === lookup.endpoint &&
+        !task.acknowledged &&
+        (!lookup.match ||
+          Object.entries(lookup.match).every(
+            ([key, value]) => canonical(task.payload[key]) === canonical(value),
+          )),
+    )
+    .sort((a, b) => b.updatedAt - a.updatedAt) as AiTaskRecord<T>[];
+}
+/** Records the first time a result was shown; later calls keep the original time. */
+export async function markAiTaskSeen(lookup: AiTaskLookup & { payload: Record<string, unknown> }) {
+  const task = await findAiTask(lookup);
+  if (!task || task.seenAt) return task;
+  return saveTask({ ...task, seenAt: Date.now() });
 }
 /** Reads status only. This function never starts or retries a paid request. */
 export async function inspectAiTask<T = unknown>(

@@ -13,7 +13,6 @@ import {
   ChevronDown,
   ChevronRight,
   LoaderCircle,
-  LockKeyhole,
   Plus,
   School,
   Sparkles,
@@ -24,8 +23,9 @@ import {
   acknowledgeAiTask,
   findAiTask,
   inspectAiTask,
+  listAiTasks,
+  markAiTaskSeen,
   runAiTask,
-  type AiTaskRecord,
 } from '@/lib/ai-task';
 import type { AppData, Schedule, ScreenProps } from '@/lib/contracts';
 import { formatMinutes, minutes, scheduleGaps, timeString } from '@/lib/schedule';
@@ -47,47 +47,19 @@ import {
   weekDates,
 } from './helpers';
 
-type Plan = { name: string; reason?: string; blocks: Omit<Schedule, 'id'>[] };
-type PlannerResult = { plans: Plan[]; method?: string; dropped?: number };
-type PlannerTask = AiTaskRecord<PlannerResult>;
-type Gap = { start: string; end: string };
+import {
+  readyToast,
+  recoverPlannerResult,
+  suggestionState,
+  type Plan,
+  type PlannerResult,
+  type PlannerTask,
+} from './planner-suggestion';
 
-export function recoverPlannerResult(
-  result: PlannerResult,
-  taskDate: string,
-  schedules: Schedule[],
-) {
-  const matches = (block: Omit<Schedule, 'id'>) =>
-    schedules.some(
-      (schedule) =>
-        schedule.date.slice(0, 10) === block.date &&
-        schedule.title.trim() === block.title.trim() &&
-        schedule.start === block.start &&
-        schedule.end === block.end &&
-        schedule.kind === block.kind &&
-        (schedule.subjectId || '') === (block.subjectId || ''),
-    );
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(taskDate) ||
-    !Array.isArray(result.plans) ||
-    result.plans.some(
-      (plan) => !Array.isArray(plan.blocks) || plan.blocks.some((block) => block.date !== taskDate),
-    )
-  ) {
-    throw new Error('추천 날짜를 확인할 수 없어요. 이전 요청 상태를 다시 확인해 주세요.');
-  }
-  const savedCounts = result.plans.map((plan) => plan.blocks.filter(matches).length);
-  const selectedIndex = Math.max(0, savedCounts.indexOf(Math.max(0, ...savedCounts)));
-  return {
-    date: taskDate,
-    plans: result.plans.map((plan) => ({
-      ...plan,
-      blocks: plan.blocks.filter((block) => !matches(block)),
-    })),
-    selectedIndex,
-    savedCount: savedCounts[selectedIndex] ?? 0,
-  };
-}
+export { recoverPlannerResult };
+type Gap = { start: string; end: string };
+const clock = (date: Date) =>
+  `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 
 const FAILURE_TITLE = {
   failed: '추천을 만들지 못했어요',
@@ -130,6 +102,12 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   const [aiUnconfirmed, setAiUnconfirmed] = useState(false);
   const [suggestionDate, setSuggestionDate] = useState(day);
   const [savedPlanCount, setSavedPlanCount] = useState(0);
+  // Unacknowledged suggestions on this device, and the day of a request from an earlier visit being polled.
+  const [stored, setStored] = useState<PlannerTask[]>([]);
+  const [resumed, setResumed] = useState<string | null>(null);
+  const resumeController = useRef<AbortController | null>(null);
+  const viewedDay = useRef(day);
+  viewedDay.current = day;
   const aiController = useRef<AbortController | null>(null);
   const nowLine = useRef<HTMLDivElement>(null);
   const scrollToNow = useRef(true);
@@ -142,7 +120,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   }, []);
 
   const isToday = day === today;
-  const nowTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const nowTime = clock(now);
   const daySchedules = useMemo(
     () =>
       data.schedules
@@ -171,8 +149,24 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
     day >= today &&
     daySchedules.length > 0 &&
     scheduleGaps(daySchedules, { min: 180 }).length > 0;
-  const ctaVisible = day >= today && freeMinutes >= 60;
-  const generating = aiBusy && !aiOpen;
+  const suggestionContext = { today, now: nowTime, schedules: data.schedules };
+  // The newest stored suggestion of a day decides that day's button; an unseen one elsewhere gets a notice.
+  const dayTask = stored.find((task) => String(task.payload.date) === day);
+  const dayState = dayTask ? suggestionState(dayTask, suggestionContext).kind : null;
+  const reopenable = dayState === 'ready' || dayState === 'seen' ? dayTask : undefined;
+  const readyElsewhere = stored.find(
+    (task) =>
+      String(task.payload.date) !== day && suggestionState(task, suggestionContext).kind === 'ready',
+  );
+  const freeOn = (date: string) =>
+    plannerRows(
+      data.schedules
+        .filter((s) => s.date.slice(0, 10) === date)
+        .sort((a, b) => a.start.localeCompare(b.start)),
+      { now: date === today ? nowTime : undefined },
+    ).reduce((sum, row) => sum + (row.type === 'gap' ? row.minutes : 0), 0);
+  const ctaVisible = day >= today && (freeMinutes >= 60 || !!reopenable);
+  const generating = (aiBusy && !aiOpen && suggestionDate === day) || resumed === day;
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!generating) return setTick(0);
@@ -338,31 +332,57 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
       setAiError('추천 결과를 아직 기다리고 있어요. 화면을 닫아도 요청은 남아 있어요.');
     }
   }
+  // Entering the planner never opens a sheet or changes the day. Stored suggestions only change the
+  // fill button; a request left running is polled (never sent again) and announced when it lands.
+  const lookup = { userId: data.profile.id, endpoint: '/planner/suggest' as const };
+  async function refreshStored() {
+    setStored(await listAiTasks<PlannerResult>(lookup));
+  }
+  async function resume(task: PlannerTask, signal: AbortSignal) {
+    const date = String(task.payload.date);
+    setResumed(date);
+    try {
+      let latest = await inspectAiTask<PlannerResult>(task, signal);
+      for (let poll = 0; latest?.status === 'RUNNING' && poll < 45 && !signal.aborted; poll++) {
+        await new Promise((resolve) => setTimeout(resolve, 1600));
+        if (signal.aborted) return;
+        latest = await inspectAiTask<PlannerResult>(latest, signal);
+      }
+      if (signal.aborted) return;
+      const at = new Date();
+      const context = { today: dateKey(at), now: clock(at), schedules: schedulesRef.current };
+      const message =
+        latest && suggestionState(latest, context).kind === 'ready'
+          ? readyToast(date, viewedDay.current, context.today)
+          : null;
+      if (message) toast(message);
+      await refreshStored();
+    } catch {
+      /* The next visit polls again. */
+    } finally {
+      if (!signal.aborted) setResumed(null);
+    }
+  }
   useEffect(() => {
     const controller = new AbortController();
-    aiController.current = controller;
+    resumeController.current = controller;
     void (async () => {
-      let found = false;
       try {
-        const task = await findAiTask<PlannerResult>({
-          userId: data.profile.id,
-          endpoint: '/planner/suggest',
-        });
-        if (!task || task.acknowledged || controller.signal.aborted) return;
-        found = true;
-        const taskDate = String(task.payload.date);
-        setSuggestionDate(taskDate);
-        setDay(taskDate);
-        // A request still running shows on the fill button; the sheet opens with its result.
-        setAiBusy(true);
-        await inspectSuggestion(task, controller.signal);
-      } catch (e) {
-        if (!controller.signal.aborted) setAiError((e as Error).message);
-      } finally {
-        if (!controller.signal.aborted) {
-          setAiBusy(false);
-          if (found) setAiOpen(true);
+        const at = new Date();
+        const context = { today: dateKey(at), now: clock(at), schedules: schedulesRef.current };
+        const live: PlannerTask[] = [];
+        for (const task of await listAiTasks<PlannerResult>(lookup)) {
+          if (suggestionState(task, context).kind !== 'stale') live.push(task);
+          // A stale result ends here and never returns; failed or running ones age out with their day.
+          else if (task.status === 'COMPLETED')
+            await acknowledgeAiTask({ ...lookup, payload: task.payload });
         }
+        if (controller.signal.aborted) return;
+        setStored(live);
+        const running = live.find((task) => task.status === 'RUNNING');
+        if (running) await resume(running, controller.signal);
+      } catch {
+        /* The planner works without its stored suggestions. */
       }
     })();
     return () => {
@@ -370,11 +390,35 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
       aiController.current?.abort();
     };
   }, [data.profile.id]);
+  // The first time a result is on screen it becomes "seen"; after that only the button brings it back.
+  useEffect(() => {
+    if (!aiOpen || aiTask?.status !== 'COMPLETED' || !plans.some((plan) => plan.blocks.length))
+      return;
+    void markAiTaskSeen({ ...lookup, payload: aiTask.payload }).then(refreshStored, () => {});
+  }, [aiOpen, aiTask, plans]);
+  /** Opens a stored result from the button or the notice without sending a request. */
+  function reviewStored(task: PlannerTask, gap?: Gap) {
+    if (aiBusy || !task.result) return;
+    const date = String(task.payload.date);
+    setAiContext({ free: freeOn(date), gap });
+    setAiTask(task);
+    setAiUnconfirmed(false);
+    try {
+      showSuggestion(task.result, date);
+    } catch (e) {
+      setPlans([]);
+      setAiError((e as Error).message);
+    }
+    setAiOpen(true);
+  }
   async function suggest(
     options: { gap?: Gap; retryFailed?: boolean; continueRequest?: boolean } = {},
   ) {
     const { gap, retryFailed = false, continueRequest = false } = options;
     if (aiBusy) return;
+    // The learner's own request takes over from a background poll of an earlier one.
+    resumeController.current?.abort();
+    setResumed(null);
     aiController.current?.abort();
     const controller = new AbortController();
     aiController.current = controller;
@@ -405,11 +449,19 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
         match: { date: day },
       });
       if (controller.signal.aborted) return;
-      if (stored && !stored.acknowledged && !retryFailed && !continueRequest) {
+      const stale =
+        stored &&
+        suggestionState(stored, { today, now: clock(new Date()), schedules: schedulesRef.current })
+          .kind === 'stale';
+      // A result that no longer fits ends here; the tap asks for a fresh one.
+      if (stored && stale && stored.status === 'COMPLETED')
+        await acknowledgeAiTask({ ...lookup, payload: stored.payload });
+      if (stored && !stale && !retryFailed && !continueRequest) {
         await inspectSuggestion(stored, controller.signal);
       } else {
         // Continuing or retrying keeps the stored identity so no second task lingers for the day.
-        const request = (continueRequest || retryFailed) && aiTask ? aiTask.payload : payload;
+        const request =
+          (continueRequest || retryFailed) && aiTask && !stale ? aiTask.payload : payload;
         setAiTask(null);
         const result = await runAiTask<PlannerResult>({
           userId: data.profile.id,
@@ -461,6 +513,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
     aiController.current?.abort();
     setAiBusy(false);
     setAiOpen(false);
+    void refreshStored().catch(() => {});
   }
   async function declineSuggestion() {
     if (applying) return;
@@ -499,6 +552,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
       setPlans([]);
       setAiTask(null);
       toast(added ? `${added}개 일정을 시간표에 담았어요` : '저장된 일정을 확인했어요');
+      void refreshStored().catch(() => {});
     } catch (e) {
       try {
         const current = await api<AppData>('/bootstrap');
@@ -619,6 +673,23 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
           ))}
         </div>
 
+        {readyElsewhere && (
+          <button
+            type="button"
+            className="planner-hint planner-ready"
+            data-date={String(readyElsewhere.payload.date)}
+            disabled={aiBusy}
+            onClick={() => reviewStored(readyElsewhere)}
+          >
+            <Sparkles size={16} aria-hidden="true" />
+            <span>{dayLabel(String(readyElsewhere.payload.date))} 추천이 준비됐어요</span>
+            <strong>
+              보기
+              <ChevronRight size={12} aria-hidden="true" />
+            </strong>
+          </button>
+        )}
+
         {progress.count > 0 ? (
           <div className="planner-progress">
             <div className="planner-progress-copy">
@@ -736,7 +807,11 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
                       className={`planner-gap${generating ? ' is-filling' : ''}`}
                       disabled={aiBusy}
                       aria-label={`${row.start}부터 ${row.end}까지 ${formatMinutes(row.minutes)} 비어 있어요. 추천으로 채우기`}
-                      onClick={() => void suggest({ gap: { start: row.start, end: row.end } })}
+                      onClick={() => {
+                        const gap = { start: row.start, end: row.end };
+                        if (reopenable) reviewStored(reopenable, gap);
+                        else void suggest({ gap });
+                      }}
                     >
                       <span>{formatMinutes(row.minutes)} 비어 있어요</span>
                       {generating ? (
@@ -808,7 +883,6 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
                     >
                       <span className="planner-card-title">{schedule.title}</span>
                       <span className="planner-card-meta">
-                        {fixed && <LockKeyhole size={11} aria-hidden="true" />}
                         {meta(schedule).filter(Boolean).join(' · ')}
                         {current ? <span className="sr-only"> · 지금</span> : null}
                       </span>
@@ -855,11 +929,16 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
           <Button
             className={`w-full${generating ? ' is-loading' : ''}`}
             aria-busy={generating}
-            onClick={() => void suggest()}
+            onClick={() => (reopenable ? reviewStored(reopenable) : void suggest())}
             disabled={aiBusy}
           >
             {generating ? (
               working
+            ) : reopenable ? (
+              <>
+                <Sparkles size={18} />
+                {dayState === 'seen' ? '추천 다시 보기' : '추천 보기'}
+              </>
             ) : (
               <>
                 <Sparkles size={18} />빈 {formatMinutes(freeMinutes)} 채우기
@@ -1023,7 +1102,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
               })}
             </div>
             <p className="planner-help text-center planner-plan-note">
-              담은 뒤에도 하나씩 옮기거나 지울 수 있어요 · 화면을 닫아도 요청은 남아요
+              담은 뒤에도 하나씩 옮기거나 지울 수 있어요 · 닫아도 아래 버튼으로 다시 볼 수 있어요
               {planMethod === 'AI+규칙'
                 ? ' · 한 안은 규칙 기반이에요'
                 : planMethod && planMethod !== 'AI'

@@ -1,0 +1,30 @@
+{
+  "width": 390,
+  "documentWidth": 390,
+  "horizontalOverflow": false,
+  "sheet": "일정 추가",
+  "plans": 0,
+  "day": "2026-09-15",
+  "cta": "빈 5시간 45분 채우기",
+  "notice": null,
+  "toast": null,
+  "segment": {
+    "lockIcons": 0,
+    "labels": [
+      "자율 학습",
+      "고정 일정"
+    ],
+    "heights": [
+      44,
+      44
+    ],
+    "fontSizes": [
+      "14px",
+      "14px"
+    ],
+    "icons": [
+      0,
+      0
+    ]
+  }
+}

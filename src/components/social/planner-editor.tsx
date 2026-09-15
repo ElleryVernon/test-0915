@@ -1,6 +1,6 @@
 'use client';
 import { useRef, useState, type FormEvent } from 'react';
-import { ArrowRight, ChevronDown, LockKeyhole, Trash2, TriangleAlert, X } from '@/components/icons';
+import { ArrowRight, ChevronDown, Trash2, TriangleAlert, X } from '@/components/icons';
 import { api } from '@/lib/api';
 import type { AppData, Schedule } from '@/lib/contracts';
 import { conflictFixes, formatMinutes, minutes, overlapMinutes, timeString } from '@/lib/schedule';
@@ -178,7 +178,6 @@ export default function ScheduleEditor({
                 className="segment-option"
                 onClick={() => set({ kind })}
               >
-                {kind === 'FIXED' && <LockKeyhole size={13} aria-hidden="true" />}
                 {kind === 'FIXED' ? '고정 일정' : '자율 학습'}
               </button>
             ))}
