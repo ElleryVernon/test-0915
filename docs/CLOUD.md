@@ -47,7 +47,7 @@ node scripts/deploy.mjs alerts && node scripts/deploy.mjs verify-alerts
 
 ## 관측·알림
 
-OTLP(gcp) → Cloud Trace / Cloud Monitoring, 로그는 JSON(Cloud Logging 키), 요청 로그의 `traceId` 로 트레이스와 상관. 업타임 검사와 정책 6개(업타임 실패, 5xx 2%, p95 1초, 풀 포화, Cloud SQL CPU 80%, Cloud SQL 디스크 85%)는 `scripts/deploy.mjs alerts` 가 REST 로 만든다. 자세한 표는 docs/OBSERVABILITY.md.
+OTLP(gcp) → Cloud Trace / Cloud Monitoring, 로그는 JSON(Cloud Logging 키), 요청 로그의 `traceId` 로 트레이스와 상관. Cloud Run 앞단이 붙이는 `traceparent` 의 표본 플래그는 앞단 자신의 속도 제한이라(플랫폼 요청 로그의 `traceSampled`), 몇 개를 남길지는 서버의 `OTEL_SAMPLE_RATIO` 가 정한다(`telemetry.Sampler`). 업타임 검사와 정책 6개(업타임 실패, 5xx 2%, p95 1초, 풀 포화, Cloud SQL CPU 80%, Cloud SQL 디스크 85%)는 `scripts/deploy.mjs alerts` 가 REST 로 만든다. 자세한 표는 docs/OBSERVABILITY.md.
 
 ## Google 로그인
 
