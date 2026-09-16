@@ -28,6 +28,26 @@ const mainBlob = (path) => {
     return null;
   }
 };
+// The lines the worktree's own change adds (base -> worktree file), without the ones every file
+// repeats (a brace, a blank line). A positional merge can conflict while main already has every line
+// the worktree added — which is what "integrated" means — and main may have taken the change before
+// replacing the file altogether.
+const addedLines = (baseContent, file) => {
+  const b = join(work, 'added-base');
+  const t = join(work, 'added-theirs');
+  writeFileSync(b, baseContent);
+  writeFileSync(t, readFileSync(file));
+  return spawnSync('diff', [b, t], { encoding: 'utf8', maxBuffer: 64 << 20 })
+    .stdout.split('\n')
+    .filter((l) => l.startsWith('> '))
+    .map((l) => l.slice(2).trim())
+    .filter((l) => l.length > 3);
+};
+const carriesAll = (text, added) => {
+  const have = new Set(text.split('\n').map((l) => l.trim()));
+  return added.length > 0 && added.every((l) => have.has(l));
+};
+
 let files = 0;
 let pending = 0;
 let conflicts = 0;
@@ -35,7 +55,15 @@ const lines = [];
 try {
   for (const wt of worktrees) {
     const base = git(['rev-parse', 'HEAD'], wt);
-    const changed = git(['status', '--short', '--untracked-files=all'], wt).split('\n').filter(Boolean).map((l) => l.slice(3).trim());
+    // NUL-separated and untrimmed: trimming the whole output ate the leading space of the first
+    // entry, so its path lost a character and the file was silently taken for one main had deleted.
+    // A rename or copy is followed by its source path, which carries no status prefix of its own.
+    const entries = gitRaw(['status', '--porcelain=v1', '-z', '--untracked-files=all'], wt).toString().split('\0').filter(Boolean);
+    const changed = [];
+    for (let i = 0; i < entries.length; i++) {
+      changed.push(entries[i].slice(3));
+      if (/^[RC]/.test(entries[i])) i++;
+    }
     for (const rel of changed) {
       files++;
       const full = join(wt, rel);
@@ -69,12 +97,34 @@ try {
             writeFileSync(o, gitRaw(['show', `main:${rel}`]));
             writeFileSync(t, readFileSync(full));
             const merged = spawnSync('git', ['merge-file', '--diff-algorithm=histogram', '-p', o, b, t], { encoding: 'utf8' });
-            const added = spawnSync('diff', [o, '-'], { input: merged.stdout, encoding: 'utf8' }).stdout.split('\n').filter((l) => /^[<>]/.test(l)).length;
-            if (merged.status > 0) {
+            // The merge result goes to a file: `diff ours -` reads nothing from a spawnSync pipe and
+            // reports "no differences", which counted every merge as adding nothing.
+            const m = join(work, 'merged');
+            writeFileSync(m, merged.stdout ?? '');
+            const added = spawnSync('diff', [o, m], { encoding: 'utf8' }).stdout.split('\n').filter((l) => /^[<>]/.test(l)).length;
+            const own = addedLines(baseContent, full);
+            if (merged.status === 0 && added === 0) verdict = 'integrated (3-way merge adds nothing)';
+            else if (carriesAll(readFileSync(o, 'utf8'), own)) verdict = `integrated (main has all ${own.length} added lines)`;
+            else if (merged.status > 0) {
               conflicts += merged.status;
               verdict = `pending (${merged.status} conflicts, ${added} lines)`;
-            } else if (added === 0) verdict = 'integrated (3-way merge adds nothing)';
-            else verdict = `pending (${added} lines to add)`;
+            } else verdict = `pending (${added} lines to add)`;
+          } else {
+            // main removed the file. The work still counts as integrated when main took the added
+            // lines before removing it (the Next.js server was replaced by the Go one in server/).
+            const removedAt = git(['log', '--format=%H', '-1', '--diff-filter=D', '--', rel]);
+            let baseContent = '';
+            try {
+              baseContent = gitRaw(['show', `${base}:${rel}`], wt);
+            } catch {}
+            const own = addedLines(baseContent, full);
+            let last = '';
+            if (removedAt) {
+              try {
+                last = gitRaw(['show', `${removedAt}^:${rel}`]).toString();
+              } catch {}
+            }
+            if (last && carriesAll(last, own)) verdict = `integrated (main carried all ${own.length} added lines, then removed the file at ${removedAt.slice(0, 7)})`;
           }
         }
       }
