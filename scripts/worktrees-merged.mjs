@@ -2,7 +2,9 @@
 // commit ahead of main counts as pending, and every modified or untracked file is classified:
 //   integrated  — its content is main's working copy, or a blob main's history carried since the
 //                 worktree's base (it was merged, and main moved on), or a 3-way merge
-//                 (base = worktree HEAD, ours = main, theirs = worktree) changes no line of main;
+//                 (base = worktree HEAD, ours = main, theirs = worktree) changes no line of main,
+//                 or main holds every line the worktree added (the merge only conflicts because
+//                 main moved those lines), or main held them all before it removed the file;
 //   superseded  — a capture artifact (docs/screenshots/**) that main re-captured later (tracked in
 //                 main with a newer modification time);
 //   local       — worktree-only tooling (.claude/**) that never belongs in main;
@@ -14,9 +16,10 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 
 const root = process.cwd();
-const git = (args, cwd = root) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+// Several lookups ask for paths a commit may not have; their stderr is caught with the error, not printed.
+const git = (args, cwd = root) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 // File contents must keep their trailing newline, so they are read without trimming.
-const gitRaw = (args, cwd = root) => execFileSync('git', args, { cwd, maxBuffer: 64 << 20 });
+const gitRaw = (args, cwd = root) => execFileSync('git', args, { cwd, maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'pipe'] });
 const worktrees = git(['worktree', 'list', '--porcelain']).split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice(9)).filter((p) => p !== root);
 const branches = git(['for-each-ref', '--format=%(refname:short) %(ahead-behind:main)', 'refs/heads']).split('\n').filter(Boolean).map((l) => l.split(' '));
 const ahead = branches.filter(([name, a]) => name !== 'main' && Number(a) > 0);
