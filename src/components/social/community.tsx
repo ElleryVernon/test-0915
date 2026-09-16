@@ -1,78 +1,133 @@
 'use client';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bookmark,
   Check,
+  ChevronDown,
   ChevronRight,
+  Copy,
   Heart,
   MessageCircle,
   MoreHorizontal,
   PencilLine,
+  Plus,
   Search,
   Send,
-  UserRound,
   X,
 } from '@/components/icons';
 import { api } from '@/lib/api';
 import type { Comment, Post, ScreenProps } from '@/lib/contracts';
-import { Button, EmptyState, IconButton, ScreenHeader, SectionTitle, Sheet } from '@/components/ui';
-import { relativeTime, selectPosts } from './helpers';
-import SocialHub from './social-hub';
-import { Checkbox, OptionField } from '@/components/ui-choice';
-import { validationMessage } from '@/lib/ui-logic';
-
-const categories = ['전체', '질문', '자유', '수시', '정시', '공부 팁'];
+import type { CommunityBlock } from '@/lib/community-types';
+import { communityGroup, readCommunityDraft } from '@/lib/community-draft';
+import { Button, EmptyState, IconButton, ScreenHeader, Sheet } from '@/components/ui';
+import { OptionField, Segmented } from '@/components/ui-choice';
+import { relativeTime } from './helpers';
+import { useJourneyState } from '../journey';
+import { CommunityHeader, communityBase } from './community-navigation';
+import { CommunityComposer } from './community-composer';
+import { BlockPicker, BlockView, BlockDraftList } from './community-blocks';
+import styles from './community-v3.module.css';
+const names: Record<string, string> = {
+  QUESTION: '문제',
+  CARD: '카드',
+  MATERIAL: '자료',
+  PHOTO: '사진',
+  ESSAY: '서술형',
+  POLL: '투표',
+  SCHEDULE: '시간표',
+  MATH: '수식',
+};
+function attachments(post: Post) {
+  const counts = new Map<string, number>();
+  for (const b of post.blocks || []) counts.set(b.type, (counts.get(b.type) || 0) + 1);
+  return [...counts].map(([type, n]) => `${names[type]} ${n}`).join(' · ');
+}
+function PostRow({ post, onClick }: { post: Post; onClick: () => void }) {
+  const photo = post.blocks?.find((b) => b.type === 'PHOTO');
+  return (
+    <button className={styles.postRow} onClick={onClick}>
+      <span className={styles.postCopy}>
+        <span className={styles.postTitle}>
+          {post.solvedAt && <span className={styles.solved}>해결됨</span>}
+          {post.title}
+        </span>
+        {attachments(post) && <span className={styles.attachmentMeta}>{attachments(post)}</span>}
+        <span className={styles.postMeta}>
+          {[
+            post.author,
+            post.tags?.grade,
+            post.tags?.subjectName,
+            relativeTime(post.createdAt),
+            post.commentCount
+              ? `댓글 ${post.commentCount}`
+              : post.category === '질문' && !post.solvedAt
+                ? '첫 답변을 기다려요'
+                : '',
+            post.likes ? `공감 ${post.likes}` : '',
+            post.editedAt ? '수정됨' : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </span>
+      </span>
+      {photo && (
+        <img className={styles.thumbnail} src={photo.payload.image} alt="첨부 사진 미리보기" />
+      )}
+    </button>
+  );
+}
 export default function Community(props: ScreenProps) {
-  const { data, refresh, toast, path } = props;
+  const { data, path } = props;
   const parent = data.profile.role === 'PARENT';
-  const allowed = parent
-    ? path.startsWith('/parent-boards')
-    : data.profile.role === 'STUDENT' && path.startsWith('/community');
-  const commentedOnly = path.includes('commented=1');
-  const postQuery = `/posts?role=${data.profile.role}${commentedOnly ? '&commented=1' : ''}`;
-  const [category, setCategory] = useState('전체');
-  const [sort, setSort] = useState<'latest' | 'popular'>('latest');
-  const [query, setQuery] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [savedOnly, setSavedOnly] = useState(false);
-  const [mineOnly, setMineOnly] = useState(path.includes('mine=1'));
-  const [posts, setPosts] = useState<Post[]>(data.posts);
+  const base = communityBase(props);
+  const params = new URLSearchParams(path.split('?')[1]);
+  const school = params.get('space') === 'school';
+  const missing = school && !data.profile.school.trim();
+  const mine = params.get('mine') === '1',
+    saved = params.get('saved') === '1',
+    commented = params.get('commented') === '1';
+  const activity = mine || saved || commented;
+  const selectedId = params.get('post');
+  const [group, setGroup] = useJourneyState('community.v3.group', parent ? '공부 이야기' : '질문');
+  const [sort, setSort] = useJourneyState('community.v3.sort', 'latest');
+  const [query, setQuery] = useJourneyState('community.v3.query', '');
+  const [searchOpen, setSearchOpen] = useJourneyState('community.searchOpen', false);
+  const [subject, setSubject] = useJourneyState('community.v3.subject', '');
+  const [unansweredOnly, setUnansweredOnly] = useJourneyState('community.v3.unanswered', false);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [following, setFollowing] = useState<Post[]>([]);
+  const [followingCards, setFollowingCards] = useState<
+    { block: CommunityBlock; authorId: string; author: string }[]
+  >([]);
+  const [detail, setDetail] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [selected, setSelected] = useState<Post | null>(null);
-  const [composing, setComposing] = useState(false);
-  const [hub, setHub] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState({
-    title: '',
-    body: '',
-    category: parent ? '자유' : '질문',
-    anonymous: true,
-  });
   const [error, setError] = useState('');
-  async function reload() {
-    setLoading(true);
-    setLoadError('');
-    try {
-      setPosts(await api<Post[]>(postQuery));
-    } catch (e) {
-      setLoadError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [reloadKey, setReloadKey] = useState(0);
+  const [composing, setComposing] = useState<'new' | 'resume' | null>(null);
+  const [schoolInfo, setSchoolInfo] = useState(false);
+  const draft = readCommunityDraft(data.profile.id);
+  const allowed =
+    (parent && path.startsWith('/parent-boards')) ||
+    (!parent && data.profile.role === 'STUDENT' && path.startsWith('/community'));
+  const postQuery = `/posts?role=${data.profile.role}${school ? '&scope=school' : ''}${mine ? '&mine=1' : ''}${saved ? '&saved=1' : ''}${commented ? '&commented=1' : ''}`;
   useEffect(() => {
     let active = true;
-    if (!allowed) return;
-    api<Post[]>(postQuery)
-      .then((p) => {
-        if (active) {
-          setPosts(p);
-          setLoadError('');
-        }
-      })
+    setLoading(true);
+    setError('');
+    if (!allowed || missing) {
+      setLoading(false);
+      return;
+    }
+    (selectedId
+      ? api<Post>(`/posts/${encodeURIComponent(selectedId)}`).then((p) => {
+          if (active) setDetail(p);
+        })
+      : api<Post[]>(postQuery).then((p) => {
+          if (active) setPosts(p);
+        })
+    )
       .catch((e) => {
-        if (active) setLoadError(e.message);
+        if (active) setError(e.message);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -80,410 +135,412 @@ export default function Community(props: ScreenProps) {
     return () => {
       active = false;
     };
-  }, [postQuery, allowed]);
-  const shown = useMemo(
-    () =>
-      selectPosts(posts, data.profile.role, {
-        category,
-        query,
-        sort,
-        saved: savedOnly,
-        mine: mineOnly ? data.profile.id : undefined,
-      }),
-    [posts, data.profile.role, data.profile.id, category, query, sort, savedOnly, mineOnly],
+  }, [postQuery, selectedId, reloadKey, allowed, missing]);
+  useEffect(() => {
+    let active = true;
+    if (!parent && !activity && !school)
+      api<{ posts: Post[]; cards: { block: CommunityBlock; authorId: string; author: string }[] }>(
+        '/community/following',
+      )
+        .then((p) => {
+          if (active) {
+            setFollowing(p.posts);
+            setFollowingCards(p.cards);
+          }
+        })
+        .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [parent, activity, school, reloadKey]);
+  const subjects = new Set(data.subjects.map((s) => s.name));
+  const unanswered = posts.filter(
+    (p) =>
+      p.category === '질문' &&
+      !p.solvedAt &&
+      !p.commentCount &&
+      subjects.has(p.tags?.subjectName || '') &&
+      Date.now() - Date.parse(p.createdAt) < 86400000,
   );
-  const unanswered = posts
-    .filter((p) => p.role === data.profile.role && p.category === '질문' && p.commentCount === 0)
-    .slice(0, 3);
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    const problem = validationMessage(draft.title, { label: '제목', required: true, maxLength: 120 }) || validationMessage(draft.body, { label: '내용', required: true, minLength: 2, maxLength: 10000 });
-    if (problem) {
-      setError(problem);
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      await api('/posts', { ...draft, title: draft.title.trim(), body: draft.body.trim() });
-      await reload();
-      await refresh();
-      setDraft({ title: '', body: '', category: parent ? '자유' : '질문', anonymous: true });
-      setComposing(false);
-      toast('글을 올렸어요');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const visible = useMemo(
+    () =>
+      posts
+        .filter(
+          (p) =>
+            (activity || communityGroup(p.category) === group) &&
+            (activity || !subject || p.tags?.subjectName === subject) &&
+            (activity || !unansweredOnly || unanswered.some((u) => u.id === p.id)) &&
+            (!query ||
+              `${p.title} ${p.body}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())),
+        )
+        .sort((a, b) =>
+          sort === 'popular'
+            ? b.likes - a.likes
+            : Date.parse(b.createdAt) - Date.parse(a.createdAt),
+        ),
+    [
+      posts,
+      activity,
+      group,
+      subject,
+      unansweredOnly,
+      query,
+      sort,
+      unanswered.map((p) => p.id).join(','),
+    ],
+  );
+  const openPost = (post: Post) => {
+    const p = new URLSearchParams(path.split('?')[1]);
+    p.set('post', post.id);
+    props.navigate(`${base}?${p}`);
+  };
+  const listPath = () => {
+    const p = new URLSearchParams(path.split('?')[1]);
+    p.delete('post');
+    return `${base}${p.size ? '?' + p : ''}`;
+  };
+  const reload = async () => {
+    if (selectedId) setDetail(await api<Post>(`/posts/${selectedId}`));
+    else setReloadKey((k) => k + 1);
+  };
   if (!allowed)
     return (
       <>
         <ScreenHeader title="커뮤니티" />
         <EmptyState
-          title="우리끼리 편하게 이야기해요"
-          description={
-            parent
-              ? '학생 게시판은 학생 계정으로 이용할 수 있어요.'
-              : '학부모 게시판은 학부모 계정으로 이용할 수 있어요.'
-          }
-          action={
-            <Button onClick={() => props.navigate(parent ? '/parent-boards' : '/community')}>
-              내 커뮤니티로 가기
-            </Button>
-          }
+          title="이 계정의 커뮤니티로 이동해 주세요"
+          description="학생과 학부모의 커뮤니티는 따로 운영돼요."
+          action={<Button onClick={() => props.navigate(base)}>내 커뮤니티</Button>}
         />
       </>
     );
-  if (selected)
+  if (selectedId && missing)
     return (
-      <PostDetail
+      <>
+        <ScreenHeader title="학교 커뮤니티" back={() => props.back(base)} />
+        <EmptyState
+          title="학교 정보를 먼저 등록해 주세요"
+          description="이 학교 글을 보려면 해당 학교가 프로필에 등록되어 있어야 해요."
+          action={<Button onClick={() => props.navigate('/profile')}>학교 정보 등록하기</Button>}
+        />
+      </>
+    );
+  if (selectedId)
+    return detail && !loading ? (
+      <CommunityPostDetail
         {...props}
-        post={posts.find((p) => p.id === selected.id) ?? selected}
-        onBack={() => setSelected(null)}
-        onChange={async () => {
-          await reload();
-          await refresh();
-        }}
-        onBlocked={async () => {
-          setSelected(null);
-          await reload();
-          await refresh();
-        }}
+        post={detail}
+        onBack={() => props.back(listPath())}
+        onChange={reload}
+        onRemoved={() => props.navigate(listPath(), { replace: true })}
       />
+    ) : (
+      <>
+        <ScreenHeader title="게시글" back={() => props.back(listPath())} />
+        {error ? (
+          <EmptyState
+            title="글을 열 수 없어요"
+            description={error}
+            action={
+              <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
+                다시 불러오기
+              </Button>
+            }
+          />
+        ) : (
+          <p className="page-inset py-8" role="status">
+            글을 불러오고 있어요…
+          </p>
+        )}
+      </>
     );
   return (
     <>
-      <ScreenHeader
-        title={commentedOnly ? '내가 댓글 남긴 글' : '커뮤니티'}
-        back={commentedOnly ? () => props.navigate('/profile') : undefined}
-        action={
-          <div className="flex">
+      {activity ? (
+        <ScreenHeader
+          title={mine ? '내가 쓴 글' : saved ? '저장한 글' : '내가 댓글 남긴 글'}
+          back={() => props.back(`${base}/me`)}
+          action={
             <IconButton label="게시글 검색" onClick={() => setSearchOpen((v) => !v)}>
-              <Search size={22} />
+              <Search size={20} />
             </IconButton>
-            <IconButton label="쪽지함" onClick={() => setHub(true)}>
-              <Send size={21} />
-            </IconButton>
-          </div>
-        }
-      />
-      <div className="page-inset pb-5">
-        {parent ? (
-          <div className="mb-5 flex items-center gap-2">
-            <span className="rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-secondary">
-              {data.child?.grade ? `${data.child.grade} 학부모` : '학부모 공간'}
-            </span>
-            <p className="flex-1 text-[12px] leading-5 text-muted">
-              경험을 나누고
-              <br />
-              도움 되는 정보를 모아요
-            </p>
-          </div>
-        ) : (
-          !commentedOnly &&
-          !searchOpen &&
-          !savedOnly &&
-          !mineOnly &&
-          unanswered.length > 0 && (
-            <section className="mb-6">
-              <SectionTitle
-                title="첫 답변을 기다려요"
-                action={
-                  <span className="text-brand-text text-xs font-semibold">같이 풀어 볼까요?</span>
-                }
+          }
+        />
+      ) : (
+        <CommunityHeader
+          {...props}
+          active={school ? 'school' : 'all'}
+          onSearch={() => setSearchOpen((v) => !v)}
+        />
+      )}
+      {missing ? (
+        <EmptyState
+          title="학교를 먼저 등록해 주세요"
+          description="프로필에 등록한 학교의 커뮤니티를 이용할 수 있어요."
+          action={<Button onClick={() => props.navigate('/profile')}>학교 정보 등록하기</Button>}
+        />
+      ) : (
+        <div className={`page-inset ${styles.feed}`}>
+          {searchOpen && (
+            <div className={styles.search}>
+              <Search size={18} />
+              <input
+                autoFocus
+                aria-label="게시글 검색어"
+                placeholder="제목과 내용에서 찾기"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
               />
-              <div className="flex gap-3 overflow-x-auto page-bleed page-inset pb-1 snap-x">
-                {unanswered.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelected(p)}
-                    className="w-[235px] shrink-0 rounded-[20px] bg-surface p-4 text-left snap-start"
-                  >
-                    <span className="text-[12px] font-semibold text-muted">
-                      질문 · {relativeTime(p.createdAt)}
-                    </span>
-                    <span className="mt-2 block text-[15px] font-bold leading-[1.5] line-clamp-2 min-h-[45px]">
-                      {p.title}
-                    </span>
-                    <span className="mt-3 flex items-center gap-1.5 text-[12px] font-semibold text-muted">
-                      <MessageCircle size={14} /> 첫 답변 남기기 <ChevronRight size={14} />
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )
-        )}
-        {searchOpen && (
-          <div className="relative mb-4">
-            <Search className="absolute left-3.5 top-3.5 text-subtle" size={19} />
-            <input
-              autoFocus
-              aria-label="게시글 검색어"
-              className="field !pl-11 !pr-12"
-              placeholder="궁금한 내용을 찾아보세요"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            {query && (
-              <button
-                onClick={() => setQuery('')}
-                className="absolute right-0.5 top-0.5 size-11 flex items-center justify-center"
-                aria-label="검색어 지우기"
+              <IconButton
+                label="검색 닫기"
+                onClick={() => {
+                  setSearchOpen(false);
+                  setQuery('');
+                }}
               >
                 <X size={18} />
-              </button>
-            )}
-          </div>
-        )}
-        <div className="community-categories page-bleed page-inset" aria-label="게시판 선택">
-          {categories
-            .filter((c) => !parent || c !== '질문')
-            .map((c) => (
+              </IconButton>
+            </div>
+          )}
+          {!activity && (
+            <div className={styles.filters}>
+              <Segmented label="이야기 종류" value={group}
+                options={(parent ? ['공부 이야기', '입시'] : ['질문', '공부 이야기', '입시']).map((g) => ({value: g, label: g}))}
+                onChange={(g) => {setGroup(g); setUnansweredOnly(false);}} />
+              {!parent && (
+                <OptionField
+                  compact
+                  label="과목 필터"
+                  name="feed-subject"
+                  value={subject}
+                  onChange={setSubject}
+                  options={[
+                    { value: '', label: '모든 과목' },
+                    ...data.subjects.map((s) => ({ value: s.name, label: s.name })),
+                  ]}
+                />
+              )}
+            </div>
+          )}
+          <div className="community-feed-toolbar">
+            {school ? (
               <button
-                key={c}
-                aria-pressed={category === c}
-                onClick={() => setCategory(c)}
-                className="community-category"
+                className="community-school-context"
+                aria-haspopup="dialog"
+                onClick={() => setSchoolInfo(true)}
               >
-                {c}
+                <span>{data.profile.school}</span>
+                <ChevronDown size={14} />
               </button>
-            ))}
-        </div>
-        <div className="flex items-center justify-between py-1 border-b border-surface">
-          <div className="flex gap-3 text-[13px]">
-            <button
-              onClick={() => setSavedOnly((v) => !v)}
-              aria-pressed={savedOnly}
-              className={`min-h-11 flex items-center gap-1 ${savedOnly ? 'font-bold text-ink' : 'text-subtle'}`}
-            >
-              <Bookmark size={15} />
-              저장
-            </button>
-            <button
-              onClick={() => setMineOnly((v) => !v)}
-              aria-pressed={mineOnly}
-              className={`min-h-11 px-1 ${mineOnly ? 'font-bold' : 'text-subtle'}`}
-            >
-              내 글
-            </button>
+            ) : (
+              <span className="community-feed-context">{activity ? '내 활동' : '모든 학교'}</span>
+            )}
+            <OptionField
+              compact
+              label="게시글 정렬"
+              name="feed-sort"
+              value={sort}
+              onChange={setSort}
+              options={[
+                { value: 'latest', label: '최신순' },
+                { value: 'popular', label: '공감순' },
+              ]}
+            />
           </div>
-          <OptionField
-            label="게시글 정렬"
-            name="sort"
-            compact
-            value={sort}
-            onChange={(next) => setSort(next as 'latest' | 'popular')}
-            options={[
-              { value: 'latest', label: '최신순' },
-              { value: 'popular', label: '공감순' },
-            ]}
-          />
-        </div>
-        {loadError && (
-          <div role="alert" className="py-6 text-center text-sm">
-            <p className="text-muted">{loadError}</p>
-            <Button variant="ghost" onClick={reload}>
-              다시 불러오기
+          {!!draft && !activity && (
+            <button className={styles.summaryRow} onClick={() => setComposing('resume')}>
+              <span>
+                작성하던 글이 있어요
+                <span className={styles.summaryMeta}>{draft.title || '제목 없는 글'}</span>
+              </span>
+              <span>
+                이어서 쓰기
+                <ChevronRight size={16} />
+              </span>
+            </button>
+          )}
+          {!activity && !!unanswered.length && (
+            <button
+              className={styles.summaryRow}
+              aria-pressed={unansweredOnly}
+              onClick={() => {
+                setGroup('질문');
+                setSubject('');
+                setUnansweredOnly((v) => !v);
+              }}
+            >
+              <span>내 과목 질문 {unanswered.length}개가 답변을 기다려요</span>
+              <span>
+                {unansweredOnly ? '전체 질문' : '보기'}
+                <ChevronRight size={16} />
+              </span>
+            </button>
+          )}
+          {!activity && !school && !!(following.length + followingCards.length) && (
+            <details className={styles.following}>
+              <summary>
+                팔로잉의 글 {following.length}개 · 카드 {followingCards.length}개
+                <ChevronDown size={16} />
+              </summary>
+              {following.slice(0, 5).map((p) => (
+                <PostRow key={p.id} post={p} onClick={() => openPost(p)} />
+              ))}
+              {followingCards.slice(0, 5).map((c) => (
+                <button
+                  key={c.block.id}
+                  className={styles.postRow}
+                  onClick={() =>
+                    props.navigate(`/community/profile?user=${encodeURIComponent(c.authorId)}`)
+                  }
+                >
+                  <span className={styles.postCopy}>
+                    <span className={styles.postTitle}>
+                      {String(c.block.payload.front || '공개 학습 카드')}
+                    </span>
+                    <span className={styles.postMeta}>{c.author} · 공개 카드 보기</span>
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+              ))}
+            </details>
+          )}
+          {error ? (
+            <EmptyState
+              title="글을 불러오지 못했어요"
+              description={error}
+              action={
+                <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
+                  다시 불러오기
+                </Button>
+              }
+            />
+          ) : loading ? (
+            <p role="status" className="py-8 text-muted">
+              이야기를 가져오고 있어요…
+            </p>
+          ) : !visible.length ? (
+            <EmptyState
+              title={
+                query
+                  ? '검색 결과가 없어요'
+                  : activity
+                    ? '아직 모인 글이 없어요'
+                    : group === '질문'
+                      ? '첫 질문을 남겨 보세요'
+                      : '첫 이야기를 들려주세요'
+              }
+              description={
+                subject || query || unansweredOnly
+                  ? '필터를 바꾸거나 검색어를 지워 보세요.'
+                  : '문제나 카드를 붙이면 더 쉽게 이야기할 수 있어요.'
+              }
+              action={
+                subject || query || unansweredOnly ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSubject('');
+                      setQuery('');
+                      setUnansweredOnly(false);
+                    }}
+                  >
+                    필터 초기화
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            visible.map((p) => <PostRow key={p.id} post={p} onClick={() => openPost(p)} />)
+          )}
+          <div className={styles.fab}>
+            <Button onClick={() => setComposing('new')}>
+              <PencilLine size={18} />
+              글쓰기
             </Button>
           </div>
-        )}
-        {loading && !posts.length ? (
-          <div role="status" className="py-14 text-center text-sm text-subtle">
-            이야기를 가져오고 있어요…
-          </div>
-        ) : !shown.length && !loadError ? (
-          <EmptyState
-            title={
-              mineOnly
-                ? '아직 작성한 글이 없어요'
-                : commentedOnly
-                  ? '아직 댓글을 남기지 않았어요'
-                  : savedOnly
-                    ? '다시 보고 싶은 글을 저장해요'
-                    : query
-                      ? '찾는 글이 아직 없어요'
-                      : '첫 이야기를 들려주세요'
-            }
-            description={
-              mineOnly
-                ? '첫 질문이나 공부 이야기를 남겨 보세요.'
-                : commentedOnly
-                  ? '댓글을 남긴 글은 여기에 모여요.'
-                  : savedOnly
-                    ? '글에서 저장 버튼을 누르면 여기에 모여요.'
-                    : query
-                      ? '다른 단어로 검색해 보세요.'
-                      : '작은 질문도 괜찮아요. 함께 이야기해 봐요.'
-            }
-            action={
-              query ? (
-                <Button variant="ghost" onClick={() => setQuery('')}>
-                  검색어 지우기
-                </Button>
-              ) : savedOnly || mineOnly || commentedOnly ? (
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setSavedOnly(false);
-                    setMineOnly(false);
-                    setCategory('전체');
-                    if (commentedOnly) props.navigate(parent ? '/parent-boards' : '/community');
-                  }}
-                >
-                  전체 글 둘러보기
-                </Button>
-              ) : undefined
-            }
-          />
-        ) : (
-          shown.map((post) => (
-            <button key={post.id} onClick={() => setSelected(post)} className="community-post">
-              <span className="community-post-top">
-                <span className="row-badge">{post.category}</span>
-                <span>{relativeTime(post.createdAt)}</span>
-              </span>
-              <span className="community-post-title">{post.title}</span>
-              <span className="community-post-body">{post.body}</span>
-              <span className="community-post-footer">
-                <span className="community-post-author">{post.author}</span>
-                <span className="flex items-center gap-1" aria-label={`공감 ${post.likes}개`}>
-                  <Heart size={14} className={post.liked ? 'text-brand' : 'text-disabled'} />
-                  {post.likes}
-                </span>
-                <span
-                  className="flex items-center gap-1"
-                  aria-label={`댓글 ${post.commentCount}개`}
-                >
-                  <MessageCircle size={14} />
-                  {post.commentCount}
-                </span>
-                {post.saved && <Bookmark size={14} className="ml-auto" />}
-              </span>
-            </button>
-          ))
-        )}
-        <div className="sticky bottom-[92px] mt-6 flex justify-end pointer-events-none">
-          <Button
-            className="!rounded-full pointer-events-auto"
-            onClick={() => {
-              setError('');
-              setComposing(true);
-            }}
-          >
-            <PencilLine size={19} />
-            {parent ? '글쓰기' : '질문하기'}
+        </div>
+      )}
+      {composing && (
+        <CommunityComposer
+          {...props}
+          autoResume={composing === 'resume'}
+          scope={school ? 'school' : 'all'}
+          onClose={() => setComposing(null)}
+          onPublished={(post) => {
+            setReloadKey((k) => k + 1);
+            props.navigate(`${base}?${post.school ? 'space=school&' : ''}post=${encodeURIComponent(post.id)}`);
+          }}
+        />
+      )}
+      <Sheet open={schoolInfo} onClose={() => setSchoolInfo(false)} title="학교 커뮤니티 안내">
+        <div className="layout-section">
+          <h3 className="text-lg font-bold break-words">{data.profile.school}</h3>
+          <p className="text-sm text-muted">
+            프로필에 같은 학교를 등록한 {parent ? '학부모' : '학생'}들과 이야기하는 공간이에요.
+          </p>
+          <Button variant="outline" onClick={() => props.navigate('/profile')}>
+            내 학교 정보 수정
           </Button>
         </div>
-      </div>
-      <Sheet
-        open={composing}
-        fullScreen
-        onClose={() => !busy && setComposing(false)}
-        title={parent ? '이야기 쓰기' : '질문하기'}
-      >
-        <form onSubmit={submit} noValidate className="community-composer">
-          <div className="flex items-center justify-between gap-3">
-            <OptionField
-              label="작성 게시판"
-              name="category"
-              compact
-              value={draft.category}
-              onChange={(category) => setDraft({ ...draft, category })}
-              options={categories.filter((c) => c !== '전체' && (!parent || c !== '질문')).map((c) => ({ value: c, label: c }))}
-            />
-            <Checkbox name="anonymous" checked={draft.anonymous} onChange={(anonymous) => setDraft({ ...draft, anonymous })}>
-              익명으로
-            </Checkbox>
-          </div>
-          <input
-            aria-label="글 제목"
-            autoFocus
-            required
-            maxLength={120}
-            value={draft.title}
-            onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-            placeholder="제목을 적어 주세요"
-            className="compose-title"
-          />
-          <textarea
-            aria-label="글 내용"
-            required
-            minLength={2}
-            maxLength={10000}
-            value={draft.body}
-            onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-            placeholder={
-              parent
-                ? '다른 학부모님께 나누고 싶은 경험이 있나요?'
-                : '어디까지 이해했고, 어떤 부분이 막혔나요? 아는 만큼 적어 주세요.'
-            }
-            className="compose-body"
-          />
-          <p className="text-[12px] leading-5 text-subtle">
-            서로를 존중하는 말로 이야기해요. 익명 글도 신고가 접수되면 운영팀이 작성자를 확인할 수
-            있어요.
-          </p>
-          {error && (
-            <p role="alert" className="text-sm text-danger">
-              {error}
-            </p>
-          )}
-          <div
-            className="flex justify-end -mt-2 text-[11px] tabular-nums text-subtle"
-            aria-live="off"
-          >
-            {draft.body.length.toLocaleString()} / 10,000
-          </div>
-          <Button type="submit" disabled={busy || !draft.title.trim() || !draft.body.trim()}>
-            {busy ? '올리고 있어요…' : '올리기'}
-          </Button>
-        </form>
-      </Sheet>
-      <Sheet open={hub} onClose={() => setHub(false)} title="친구와 쪽지">
-        <SocialHub {...props} initialTab="messages" />
       </Sheet>
     </>
   );
 }
 
-function PostDetail({
+export function CommunityPostDetail({
   post,
   onBack,
   onChange,
-  onBlocked,
+  onRemoved,
+  embedded = false,
   ...props
 }: ScreenProps & {
   post: Post;
   onBack: () => void;
   onChange: () => Promise<void>;
-  onBlocked: () => Promise<void>;
+  onRemoved: () => void;
+  embedded?: boolean;
 }) {
   const { data, toast } = props;
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [commentError, setCommentError] = useState('');
-  const [body, setBody] = useState('');
-  const [reply, setReply] = useState<Comment | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [menu, setMenu] = useState(false);
-  const [report, setReport] = useState(false);
-  const [reason, setReason] = useState('욕설·비방');
-  const [hub, setHub] = useState(false);
-  const [blockConfirm, setBlockConfirm] = useState(false);
-  const [commentReload, setCommentReload] = useState(0);
+  const own = post.isMine || post.authorId === data.profile.id;
+  const base = communityBase(props);
+  const [comments, setComments] = useState<Comment[]>([]),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState('');
+  const [body, setBody] = useJourneyState(`community.comment.${post.id}`, '');
+  const [block, setBlock] = useJourneyState<CommunityBlock | null>(
+    `community.commentBlock.${post.id}`,
+    null,
+  );
+  const [reply, setReply] = useJourneyState<Comment | null>(`community.reply.${post.id}`, null);
+  const [requestId, setRequestId] = useJourneyState(`community.commentRequest.${post.id}`, () =>
+    crypto.randomUUID(),
+  );
+  const [busy, setBusy] = useState(false),
+    [menu, setMenu] = useState(false),
+    [report, setReport] = useState(false),
+    [reason, setReason] = useState('욕설·비방'),
+    [blockConfirm, setBlockConfirm] = useState(false),
+    [remove, setRemove] = useState(false),
+    [editing, setEditing] = useState(false),
+    [picker, setPicker] = useState(false),
+    [accept, setAccept] = useState<Comment | null>(null),
+    [reloadKey, setReloadKey] = useState(0);
+  const [cloneAccepted, setCloneAccepted] = useState(false);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const lock = useRef(false);
   useEffect(() => {
     let active = true;
     setLoading(true);
-    setCommentError('');
     api<Comment[]>(`/posts/${post.id}/comments`)
       .then((c) => {
-        if (active) setComments(c);
+        if (active) {
+          setComments(c);
+          setError('');
+        }
       })
       .catch((e) => {
-        if (active) setCommentError(e.message);
+        if (active) setError(e.message);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -491,75 +548,93 @@ function PostDetail({
     return () => {
       active = false;
     };
-  }, [post.id, commentReload]);
-  async function action(kind: 'like' | 'save') {
-    if (busy) return;
+  }, [post.id, reloadKey]);
+  async function run(action: () => Promise<void>) {
+    if (lock.current) return;
+    lock.current = true;
     setBusy(true);
+    setError('');
     try {
-      await api(`/posts/${post.id}/${kind}`, {});
-      await onChange();
+      await action();
     } catch (e) {
-      toast((e as Error).message);
+      setError((e as Error).message);
     } finally {
+      lock.current = false;
       setBusy(false);
     }
   }
-  async function sendComment(e: FormEvent) {
+  const refreshComments = async () => {
+    setComments(await api<Comment[]>(`/posts/${post.id}/comments`));
+    await onChange();
+  };
+  const profile = (id: string) =>
+    props.navigate(`/community/profile?user=${encodeURIComponent(id)}`);
+  const focusReply = (comment?: Comment) => {
+    setReply(comment || null);
+    setRequestId(crypto.randomUUID());
+    textarea.current?.focus();
+  };
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!body.trim() || busy) return;
-    setBusy(true);
-    setCommentError('');
-    try {
-      await api(`/posts/${post.id}/comments`, { body: body.trim(), parentId: reply?.id });
+    if (!body.trim() && !block) return;
+    await run(async () => {
+      await api(`/posts/${post.id}/comments`, {
+        body: body.trim(),
+        parentId: reply?.id,
+        block,
+        requestId,
+      });
       setBody('');
+      setBlock(null);
       setReply(null);
-      setComments(await api<Comment[]>(`/posts/${post.id}/comments`));
-      await onChange();
-    } catch (e) {
-      setCommentError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+      setRequestId(crypto.randomUUID());
+      toast(reply ? '답글을 남겼어요' : '댓글을 남겼어요');
+      try {
+        await refreshComments();
+      } catch {
+        setError('댓글은 저장됐어요. 다시 불러오면 확인할 수 있어요.');
+      }
+    });
   }
-  async function moderate(kind: 'report' | 'block') {
-    setBusy(true);
-    try {
-      await api(
-        kind === 'report' ? '/reports' : '/blocks',
-        kind === 'report' ? { postId: post.id, reason } : { userId: post.authorId },
-      );
-      setMenu(false);
-      setReport(false);
-      setBlockConfirm(false);
-      toast(
-        kind === 'report' ? '신고를 접수했어요. 운영팀이 확인할게요.' : '이 사용자를 차단했어요',
-      );
-      if (kind === 'block') await onBlocked();
-    } catch (e) {
-      toast((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  const renderComment = (comment: Comment, nested = false) => (
-    <div key={comment.id} className={`flex gap-3 py-3 ${nested ? 'ml-10' : ''}`}>
-      <span className="size-8 shrink-0 rounded-full bg-surface flex items-center justify-center text-xs font-bold">
-        {comment.author.slice(0, 1)}
-      </span>
-      <div className="flex-1 min-w-0">
-        <span className="text-[13px] font-bold">
-          {comment.author}
-          <span className="font-normal text-[11px] text-subtle ml-2">
-            {relativeTime(comment.createdAt)}
-          </span>
-        </span>
-        <p className="text-[15px] leading-6 mt-1 whitespace-pre-wrap break-words">{comment.body}</p>
-        {!nested && (
+  const commentNode = (c: Comment, nested = false) => (
+    <div
+      key={c.id}
+      className={`${styles.comment} ${nested ? styles.reply : ''} ${c.accepted ? styles.acceptedComment : ''}`}
+    >
+      <div className={styles.commentMeta}>
+        {c.authorId && data.profile.role === 'STUDENT' ? (
+          <button onClick={() => profile(c.authorId!)}>
+            {c.author}
+            <ChevronRight size={12} />
+          </button>
+        ) : (
+          <strong>{c.author}</strong>
+        )}
+        <span>{relativeTime(c.createdAt)}</span>
+        {c.accepted && <span className={styles.solved}>채택</span>}
+      </div>
+      <p className={styles.commentBody}>{c.body}</p>
+      {c.block && (
+        <BlockView
+          block={c.block}
+          postId={post.id}
+          data={data}
+          navigate={props.navigate}
+          toast={toast}
+          onChanged={onChange}
+        />
+      )}
+      <div className={styles.commentActions}>
+        {!nested && <button onClick={() => focusReply(c)}>답글 달기</button>}
+        {own && post.category === '질문' && !c.isMine && c.authorId !== data.profile.id && (
           <button
-            onClick={() => setReply(comment)}
-            className="min-h-11 text-xs font-semibold text-muted py-2"
+            disabled={busy || c.accepted}
+            onClick={() => {
+              setAccept(c);
+              setCloneAccepted(false);
+            }}
           >
-            답글 달기
+            {c.accepted ? '채택한 답변' : '이 답변 채택'}
           </button>
         )}
       </div>
@@ -567,147 +642,321 @@ function PostDetail({
   );
   return (
     <>
-      <ScreenHeader
-        title={post.category}
-        back={onBack}
-        action={
-          <IconButton label="게시글 더 보기" onClick={() => setMenu(true)}>
-            <MoreHorizontal size={22} />
-          </IconButton>
-        }
-      />
-      <article className="page-inset pb-5 community-detail">
-        <div className="flex items-center gap-3 mt-3">
-          <span className="flex size-10 items-center justify-center rounded-full bg-surface">
-            <UserRound size={21} />
-          </span>
-          <div>
-            <button
-              disabled={post.anonymous || post.authorId === data.profile.id}
-              onClick={() => setHub(true)}
-              className="text-[14px] font-bold"
-            >
+      {!embedded && (
+        <ScreenHeader
+          title={post.category}
+          back={onBack}
+          action={
+            <IconButton label="게시글 더 보기" onClick={() => setMenu(true)}>
+              <MoreHorizontal size={22} />
+            </IconButton>
+          }
+        />
+      )}
+      <article className={`page-inset ${styles.detail}`}>
+        <div className={styles.detailMeta}>
+          {post.anonymous || data.profile.role === 'PARENT' ? (
+            <span>{post.author}</span>
+          ) : (
+            <button onClick={() => profile(post.authorId)}>
               {post.author}
+              <ChevronRight size={14} />
             </button>
-            <p className="text-xs text-subtle mt-0.5">{relativeTime(post.createdAt)}</p>
-          </div>
+          )}
+          <span>
+            {[
+              post.tags?.grade,
+              post.tags?.subjectName,
+              relativeTime(post.createdAt),
+              post.editedAt ? '수정됨' : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
         </div>
-        <h1 className="mt-6 text-[23px] font-bold tracking-[-0.025em] leading-[1.4] break-words">
-          {post.title}
-        </h1>
-        <p className="mt-4 text-[16px] leading-[1.85] whitespace-pre-wrap break-words">
-          {post.body}
-        </p>
-        <div className="grid grid-cols-2 gap-2 mt-7">
+        <h1 className={styles.detailTitle}>{post.title}</h1>
+        {post.solvedAt && <span className={styles.solved}>해결됨 · 답변 채택 완료</span>}
+        {post.body && <p className={styles.detailBody}>{post.body}</p>}
+        <div className="layout-section">
+          {post.blocks?.map((b) => (
+            <BlockView
+              key={b.id}
+              block={b}
+              postId={post.id}
+              data={data}
+              navigate={props.navigate}
+              toast={toast}
+              onChanged={onChange}
+              onFeedback={() => focusReply()}
+            />
+          ))}
+        </div>
+        <div className={styles.postActions}>
           <button
-            onClick={() => action('like')}
             disabled={busy}
             aria-pressed={post.liked}
-            className={`flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold ${post.liked ? 'bg-ink text-white' : 'bg-surface text-secondary'}`}
+            onClick={() =>
+              run(async () => {
+                await api(`/posts/${post.id}/like`, {});
+                await onChange();
+              })
+            }
           >
             <Heart size={18} />
             공감 {post.likes}
           </button>
+          <button onClick={() => focusReply()}>
+            <MessageCircle size={18} />
+            댓글 {post.commentCount}
+          </button>
           <button
-            onClick={() => action('save')}
             disabled={busy}
             aria-pressed={post.saved}
-            className={`flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold ${post.saved ? 'bg-ink text-white' : 'bg-surface text-secondary'}`}
+            onClick={() =>
+              run(async () => {
+                await api(`/posts/${post.id}/save`, {});
+                await onChange();
+              })
+            }
           >
             <Bookmark size={18} />
-            {post.saved ? '저장했어요' : '저장하기'}
+            {post.saved ? '저장됨' : '저장'}
+          </button>
+          <button
+            onClick={() =>
+              run(async () => {
+                await navigator.clipboard.writeText(
+                  `${post.title}\n${post.body}\n${location.origin}${base}?${post.school ? 'space=school&' : ''}post=${encodeURIComponent(post.id)}`,
+                );
+                toast('글 링크를 복사했어요');
+              })
+            }
+          >
+            <Copy size={18} />
+            복사
           </button>
         </div>
-        {data.profile.role === 'PARENT' && (
-          <p className="rounded-2xl bg-canvas p-4 text-[12px] leading-5 text-muted mt-5">
-            학부모님들이 나눈 경험이에요. 학교마다 기준이 다를 수 있으니 정확한 내용은 학교에 확인해
-            주세요.
-          </p>
-        )}
-        <section className="mt-8">
-          <SectionTitle title={`댓글 ${comments.length}`} />
+        <section className={styles.comments} aria-label="댓글">
+          <div className={styles.sectionHeading}>
+            <h2>댓글 {comments.length}</h2>
+            <Button
+              size="compact"
+              variant="ghost"
+              disabled={loading}
+              onClick={() => setReloadKey((k) => k + 1)}
+            >
+              새로고침
+            </Button>
+          </div>
           {loading ? (
-            <p role="status" className="py-4 text-sm text-subtle">
-              댓글을 가져오고 있어요…
-            </p>
-          ) : commentError && !comments.length ? (
-            <div className="py-4 text-[14px] text-muted">
-              <p role="alert">{commentError}</p>
-              <Button variant="ghost" onClick={() => setCommentReload((v) => v + 1)}>
-                댓글 다시 불러오기
-              </Button>
-            </div>
+            <p role="status">댓글을 가져오고 있어요…</p>
           ) : !comments.length ? (
-            <p className="py-5 text-[14px] text-subtle">아는 만큼만 답해줘도 큰 도움이 돼요.</p>
+            <p className="text-sm text-muted">
+              아는 만큼만 답해도 돼요. 카드나 문제를 붙여도 좋아요.
+            </p>
           ) : (
             comments
               .filter((c) => !c.parentId)
+              .sort(
+                (a, b) =>
+                  Number(
+                    comments.some((c) => c.accepted && (c.id === b.id || c.parentId === b.id)),
+                  ) -
+                  Number(
+                    comments.some((c) => c.accepted && (c.id === a.id || c.parentId === a.id)),
+                  ),
+              )
               .map((c) => (
                 <div key={c.id}>
-                  {renderComment(c)}
-                  {comments.filter((r) => r.parentId === c.id).map((r) => renderComment(r, true))}
+                  {commentNode(c)}
+                  {comments.filter((r) => r.parentId === c.id).map((r) => commentNode(r, true))}
                 </div>
               ))
           )}
         </section>
-        <form onSubmit={sendComment} noValidate className="mt-5 rounded-2xl bg-surface p-3">
-          {reply && (
-            <div className="flex items-center justify-between text-[12px] text-muted mb-2 px-1">
-              {reply.author}님에게 답글
-              <button
-                type="button"
-                aria-label="답글 취소"
-                className="size-11 -my-2 flex items-center justify-center"
-                onClick={() => setReply(null)}
-              >
-                <X size={17} />
-              </button>
-            </div>
-          )}
-          <div className="flex gap-2 items-end">
-            <textarea
-              aria-label={reply ? '답글 내용' : '댓글 내용'}
-              placeholder="아는 만큼만 답해줘도 돼요"
-              rows={2}
-              maxLength={2000}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              className="flex-1 min-w-0 resize-none outline-none bg-transparent p-1 text-[15px] leading-6"
-            />
-            <button
-              aria-label="댓글 보내기"
-              type="submit"
-              disabled={busy || !body.trim()}
-              className="bg-primary text-white size-10 rounded-full flex items-center justify-center disabled:opacity-40 shrink-0"
-            >
-              <Send size={17} />
-            </button>
-          </div>
-        </form>
-        {commentError && comments.length > 0 && (
-          <p role="alert" className="text-sm text-danger mt-2">
-            {commentError}
+        {error && (
+          <p role="alert" className="text-sm text-danger">
+            {error}
           </p>
         )}
       </article>
+      <form
+        onSubmit={submit}
+        className={`${styles.commentComposer} ${embedded ? styles.embeddedComposer : ''}`}
+      >
+        {reply && (
+          <div className={styles.replyTo}>
+            <span>{reply.author}님에게 답글</span>
+            <IconButton
+              label="답글 취소"
+              disabled={busy}
+              onClick={() => {
+                setReply(null);
+                setRequestId(crypto.randomUUID());
+              }}
+            >
+              <X size={16} />
+            </IconButton>
+          </div>
+        )}
+        {block && (
+          <div className={styles.commentAttachment}>
+            <span>{names[block.type]} 첨부 1/1</span>
+            <IconButton
+              label="댓글 첨부 제거"
+              disabled={busy}
+              onClick={() => {
+                setBlock(null);
+                setRequestId(crypto.randomUUID());
+              }}
+            >
+              <X size={16} />
+            </IconButton>
+          </div>
+        )}
+        <div className={styles.commentInput}>
+          <IconButton label="댓글 첨부" disabled={busy || !!block} onClick={() => setPicker(true)}>
+            <Plus size={20} />
+          </IconButton>
+          <textarea
+            ref={textarea}
+            disabled={busy}
+            aria-label={reply ? '답글 내용' : '댓글 내용'}
+            value={body}
+            maxLength={2000}
+            rows={2}
+            placeholder="아는 만큼만 답해도 돼요"
+            onChange={(e) => {
+              setBody(e.target.value);
+              setRequestId(crypto.randomUUID());
+            }}
+          />
+          <IconButton
+            type="submit"
+            label={reply ? '답글 보내기' : '댓글 보내기'}
+            className={styles.send}
+            disabled={busy || (!body.trim() && !block)}
+          >
+            <Send size={18} />
+          </IconButton>
+        </div>
+        {error && (
+          <p role="alert" className="text-xs text-danger">
+            {error}
+          </p>
+        )}
+      </form>
+      <BlockPicker
+        data={data}
+        open={picker}
+        comment
+        remaining={block ? 0 : 1}
+        onClose={() => setPicker(false)}
+        onAdd={(b) => {
+          setBlock(b);
+          setPicker(false);
+          setRequestId(crypto.randomUUID());
+        }}
+      />
+      {editing && (
+        <CommunityComposer
+          {...props}
+          editing={post}
+          onClose={() => setEditing(false)}
+          onPublished={() => {
+            onChange().catch(() => setError('수정한 글을 다시 불러와 주세요.'));
+          }}
+        />
+      )}
+      <Sheet open={!!accept} onClose={() => !busy && setAccept(null)} title="이 답으로 해결됐나요?">
+        <div className="layout-section">
+          <p className="text-sm text-muted">
+            글에 해결됨이 표시되고 이 답변을 먼저 보여 줘요. 답변자에게 50P가 한 번 지급돼요. 나중에
+            다른 답변으로 바꿀 수 있어요.
+          </p>
+          <blockquote className={styles.draftPreview}>{accept?.body}</blockquote>
+          {accept?.block?.type === 'CARD' && (
+            <button
+              className={styles.choiceRow}
+              aria-pressed={cloneAccepted}
+              onClick={() => setCloneAccepted((v) => !v)}
+            >
+              <span>붙어 있는 카드도 내 보관함에 담기</span>
+              {cloneAccepted ? <Check size={18} /> : <Plus size={18} />}
+            </button>
+          )}
+          <Button
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                if (!accept) return;
+                await api(`/posts/${post.id}/accept`, { commentId: accept.id });
+                let resultMessage = '해결된 질문으로 표시했어요';
+                if (cloneAccepted && accept.block) {
+                  try {
+                    await api(`/posts/${post.id}/blocks/${accept.block.id}/clone`, {});
+                  } catch (e) {
+                    resultMessage = `채택은 완료됐어요. 카드 담기: ${(e as Error).message}`;
+                  }
+                }
+                setAccept(null);
+                await refreshComments();
+                toast(resultMessage);
+                props.refresh().catch(() => {});
+              })
+            }
+          >
+            해결됐어요 · 채택
+          </Button>
+          <Button variant="ghost" disabled={busy} onClick={() => setAccept(null)}>
+            아직요
+          </Button>
+          {error && (
+            <p role="alert" className="text-danger">
+              {error}
+            </p>
+          )}
+        </div>
+      </Sheet>
       <Sheet open={menu} onClose={() => setMenu(false)} title="게시글 관리">
-        <div className="flex flex-col gap-2">
-          {post.authorId !== data.profile.id && (
+        <div className="layout-group">
+          {own ? (
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setMenu(false);
+                  setEditing(true);
+                }}
+              >
+                글 수정
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setMenu(false);
+                  setRemove(true);
+                }}
+              >
+                글 삭제
+              </Button>
+            </>
+          ) : (
             <>
               {!post.anonymous && (
                 <Button
                   variant="secondary"
-                  onClick={() => {
-                    setMenu(false);
-                    setHub(true);
-                  }}
+                  onClick={() =>
+                    props.navigate(
+                      `${base}?space=messages&peer=${encodeURIComponent(post.authorId)}`,
+                    )
+                  }
                 >
-                  <Send size={18} />
                   쪽지 보내기
                 </Button>
               )}
               <Button
-                variant="secondary"
+                variant="outline"
                 onClick={() => {
                   setMenu(false);
                   setReport(true);
@@ -726,42 +975,82 @@ function PostDetail({
               </Button>
             </>
           )}
-          <p className="text-sm text-subtle leading-6 mt-3">
-            익명 게시글도 운영팀이 확인할 수 있어요. 차단하면 서로의 글과 쪽지가 보이지 않아요.
-          </p>
         </div>
       </Sheet>
-      <Sheet open={report} onClose={() => setReport(false)} title="신고 이유를 알려주세요">
-        <div className="flex flex-col gap-2">
+      <Sheet open={report} onClose={() => !busy && setReport(false)} title="신고 이유를 알려주세요">
+        <div className="layout-group">
           {['욕설·비방', '광고·홍보', '개인정보 노출', '부적절한 내용', '잘못된 정보'].map((r) => (
             <button
-              className={`rounded-xl p-4 text-left text-[15px] flex justify-between ${reason === r ? 'bg-ink text-white' : 'bg-surface'}`}
-              onClick={() => setReason(r)}
               key={r}
+              className={styles.choiceRow}
+              aria-pressed={reason === r}
+              onClick={() => setReason(r)}
             >
               {r}
-              {reason === r && <Check size={19} />}
+              {reason === r && <Check size={18} />}
             </button>
           ))}
-          <Button className="mt-3" onClick={() => moderate('report')} disabled={busy}>
+          <p className="text-xs text-muted">익명 글도 신고되면 운영팀이 확인해요.</p>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                await api('/reports', { postId: post.id, reason });
+                setReport(false);
+                toast('신고를 접수했어요');
+              })
+            }
+          >
             신고 접수하기
           </Button>
+          {error && <p role="alert">{error}</p>}
         </div>
       </Sheet>
       <Sheet
         open={blockConfirm}
-        onClose={() => setBlockConfirm(false)}
+        onClose={() => !busy && setBlockConfirm(false)}
         title="작성자를 차단할까요?"
       >
-        <p className="text-[15px] text-muted leading-6 mb-5">
-          서로의 게시글과 쪽지가 보이지 않아요. 마이페이지의 친구 관리에서 해제할 수 있어요.
-        </p>
-        <Button className="w-full" onClick={() => moderate('block')} disabled={busy}>
-          차단하기
-        </Button>
+        <div className="layout-section">
+          <p>서로의 글·프로필·쪽지가 보이지 않고 팔로우도 풀려요. 이미 담은 카드는 유지돼요.</p>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                await api('/blocks', { postId: post.id });
+                setBlockConfirm(false);
+                onRemoved();
+                toast('작성자를 차단했어요');
+              })
+            }
+          >
+            차단하기
+          </Button>
+          {error && <p role="alert">{error}</p>}
+        </div>
       </Sheet>
-      <Sheet open={hub} onClose={() => setHub(false)} title={`${post.author}님과 이야기`}>
-        <SocialHub {...props} initialUser={{ id: post.authorId, nickname: post.author }} />
+      <Sheet open={remove} onClose={() => !busy && setRemove(false)} title="이 글을 삭제할까요?">
+        <div className="layout-section">
+          <p>
+            {post.solvedAt
+              ? '채택한 답변이 있어요. 글과 댓글은 더 이상 보이지 않지만, 답변자의 포인트와 이미 담은 카드는 유지돼요.'
+              : '글과 댓글이 목록에서 사라져요. 이미 담은 학습 카드는 유지돼요.'}
+          </p>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                await api(`/posts/${post.id}`, {}, 'DELETE');
+                setRemove(false);
+                onRemoved();
+                toast('글을 삭제했어요');
+              })
+            }
+          >
+            삭제하기
+          </Button>
+          {error && <p role="alert">{error}</p>}
+        </div>
       </Sheet>
     </>
   );

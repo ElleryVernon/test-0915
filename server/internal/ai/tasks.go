@@ -13,19 +13,21 @@ import (
 	"unicode/utf8"
 
 	"memoryz/server/internal/apierr"
+	"memoryz/server/internal/learning"
 	"memoryz/server/internal/planner"
 	"memoryz/server/internal/textmatch"
 )
 
 // Generated items, one type per mode.
 type QuestionItem struct {
-	Prompt      string   `json:"prompt"`
-	Options     []string `json:"options"`
-	Answer      int      `json:"answer"`
-	Explanation string   `json:"explanation"`
-	Citation    string   `json:"citation"`
-	Past        string   `json:"past"`
-	Future      string   `json:"future"`
+	LearningExplanation *learning.Explanation `json:"learningExplanation,omitempty"`
+	Prompt              string                `json:"prompt"`
+	Options             []string              `json:"options"`
+	Answer              int                   `json:"answer"`
+	Explanation         string                `json:"explanation"`
+	Citation            string                `json:"citation"`
+	Past                string                `json:"past"`
+	Future              string                `json:"future"`
 }
 
 type EssayItem struct {
@@ -85,7 +87,7 @@ func object(props map[string]any, required ...string) map[string]any {
 var (
 	questionSchema = object(map[string]any{
 		"prompt": str(5, 2000), "options": arrayOf(str(1, 500), 5, 5), "answer": map[string]any{"type": "integer", "minimum": 0, "maximum": 4},
-		"explanation": str(5, 4000), "citation": str(8, 4000), "past": str(1, 200), "future": str(1, 200),
+		"explanation": str(5, 4000), "citation": str(8, 4000), "past": str(1, 200), "future": str(1, 200), "learningExplanation": learning.GenerationSchema(),
 	}, "prompt", "options", "answer", "explanation", "citation", "past", "future")
 	essaySchema = object(map[string]any{
 		"prompt": str(5, 2000), "keywords": arrayOf(str(1, 100), 4, 4), "distractors": arrayOf(str(1, 100), 4, 4), "modelAnswer": str(20, 4000), "citation": str(8, 4000),
@@ -113,6 +115,7 @@ func generationPrompt(mode Kind, count int, content string, feedback string) str
 	b.WriteString("개를 한국어로 작성하세요. 외부 사실이나 근거 없는 내용을 추가하지 마세요. 항목마다 서로 다른 사실을 다루고, 같은 질문을 되풀이하지 마세요. 모든 citation은 source 안의 완전한 문장 하나(8글자 이상)를 글자 그대로 복사한 것이어야 하며, 바꾸어 쓰거나 줄이면 안 됩니다.\n")
 	switch mode {
 	case KindQuiz:
+		b.WriteString("learningExplanation은 근거 있는 시각 구조가 있을 때만 작성하고, 없으면 null로 둡니다. citation은 source의 연속된 원문 그대로여야 합니다. diagram type은 FLOW(명시된 과정), COMPARE(대상별 비교), CAUSE(명시된 인과), TIMELINE(연대), GRAPH(원문 수식), TREE(명시된 포함 관계) 중 하나입니다. 노드는 2~12개, label/detail/value는 반드시 각 span의 원문 문자열을 그대로 발췌하고, span은 learningExplanation.citation 내 UTF-16 기준 시작/끝(끝 미포함) 위치입니다. id는 유일하고 모든 참조는 실제 노드를 가리켜야 합니다. 화살표 관계와 순서는 원문에 명시된 경우에만 작성합니다. GRAPH는 y=x, y=x^2, y=x^3의 정확한 표본과 점만 지원합니다. optionReasons나 추측한 오답 원인/진단은 만들지 마세요. microChecks는 0~3개의 2지선다 확인 질문이며, 정답 선택지와 explanation은 span의 원문 그대로여야 합니다. 이미 정답을 알려주는 확인 질문은 피하세요. diagram.title은 짧은 한국어입니다. 모든 추가 설명을 source로 검증할 수 없으면 null로 둡니다.\n")
 		b.WriteString("각 항목의 필드: prompt는 한 가지를 묻는 질문 한 문장. options는 정확히 5개의 선택지이며 번호나 기호 없이 내용만 씁니다(서로 다른 내용, 정답 하나만 원문과 일치, 나머지는 그럴듯하지만 틀린 진술). answer는 정답 선택지의 0부터 4 사이 인덱스. explanation은 정답인 이유를 1~3문장으로 쓰고 정답 번호를 다시 적지 않습니다. citation은 정답을 뒷받침하는 원문 문장. past는 이 개념의 선수 학습을 '과목 · 단원' 형식 한 줄로, future는 후속 학습을 같은 형식 한 줄로 씁니다.")
 	case KindEssay:
 		b.WriteString("각 항목의 필드: prompt는 과정이나 이유를 설명하게 하는 서술형 질문 한 문장. keywords는 원인부터 결과까지 올바른 순서의 핵심 키워드 4개이며 각 키워드는 modelAnswer 안에 그대로 등장해야 합니다. distractors는 그럴듯하지만 정답이 아닌 키워드 4개이며, keywords와 distractors 여덟 개는 모두 서로 다른 문자열이어야 합니다(같은 단어를 두 번 쓰지 마세요). modelAnswer는 keywords 4개를 순서대로 포함한 2~4문장의 모범 답안. citation은 모범 답안을 뒷받침하는 원문 문장 하나를 마침표까지 글자 그대로 복사한 것(따옴표나 줄임 없이).")
@@ -239,6 +242,19 @@ func parseItems(raw any, mode Kind, count int, content string) (Items, error) {
 		}
 		if duplicated(parsed.Items, func(q QuestionItem) string { return q.Prompt }) {
 			return Items{}, errDuplicateItems
+		}
+		for i := range parsed.Items {
+			q := &parsed.Items[i]
+			if e := q.LearningExplanation; e != nil {
+				e.Version = 1
+				e.Status = "READY"
+				e.QuestionID = "pending"
+				e.Source = "generated"
+				e.OptionReasons = make([]string, len(q.Options))
+				if !learning.Validate(*e, content, len(q.Options)) {
+					q.LearningExplanation = nil
+				}
+			}
 		}
 		out.Questions = parsed.Items
 	case KindEssay:

@@ -34,6 +34,14 @@ enum ScheduleKind {
 }
 
 model User {
+ communityPosts CommunityPost[]
+ communityComments CommunityComment[]
+ communityActions CommunityAction[]
+ communityRewards CommunityReward[]
+ communityPrivacy CommunityPrivacy?
+ communityFollowEvents CommunityFollowEvent[]
+ communitySavedQuestions CommunitySavedQuestion[]
+ communityCardClones CommunityCardClone[]
   id                String @id @default(cuid())
   name              String
   nickname          String @unique
@@ -80,6 +88,7 @@ model User {
   uploads           Upload[]
   oauthAccounts     OAuthAccount[]
   aiRuns            AiRun[]
+  explanationReports ExplanationReport[]
 }
 
 model Session {
@@ -140,6 +149,7 @@ model Material {
 }
 
 model Question {
+ communitySaved CommunitySavedQuestion?
   id          String @id @default(cuid())
   userId      String
   user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -151,9 +161,11 @@ model Question {
   options     String[]
   answer      Int
   explanation String @db.Text
+  learningExplanation Json?
   citation    String @db.Text
   past        String
   future      String
+  explanationReports ExplanationReport[]
   attempts    Attempt[]
   @@index([subjectId])
   @@index([materialId])
@@ -179,6 +191,19 @@ model Essay {
   @@index([userId, subjectId])
 }
 
+model ExplanationReport {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId String
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  nodeId String @default("")
+  reason String
+  createdAt DateTime @default(now())
+  @@unique([userId, questionId, nodeId, reason])
+  @@index([questionId])
+}
+
 model Attempt {
   id         String @id @default(cuid())
   userId     String
@@ -187,6 +212,13 @@ model Attempt {
   question   Question? @relation(fields: [questionId], references: [id], onDelete: Cascade)
   essayId    String?
   essay      Essay? @relation(fields: [essayId], references: [id], onDelete: Cascade)
+  requestId String?
+  responseMs Int?
+  beatsSeen Int @default(0)
+  explainDepth String?
+  microResult String?
+  divergenceNodeId String?
+  @@unique([userId, requestId])
   answer     String @db.Text
   correct    Boolean
   score      Int
@@ -197,6 +229,9 @@ model Attempt {
 }
 
 model Card {
+ community CommunityCard?
+ communitySourceClones CommunityCardClone[] @relation("communitySourceCard")
+ communityCloneSources CommunityCardClone[] @relation("communityClonedCard")
   id              String @id @default(cuid())
   userId          String
   user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -211,6 +246,10 @@ model Card {
   deleted         Boolean @default(false)
   image           String?
   masks           Json @default("[]")
+  sourceKind String @default("TEXT")
+  diagram Json?
+  maskedNodeIds String[] @default([])
+  sourceDiagramId String?
   sourceQuestionId String?
   materialId      String?
   material        Material? @relation(fields: [materialId], references: [id], onDelete: SetNull)
@@ -219,7 +258,7 @@ model Card {
   reviews         CardReview[]
   @@index([subjectId])
   @@index([materialId])
-  @@unique([userId, sourceQuestionId])
+  @@unique([userId, sourceQuestionId, sourceKind])
   @@index([userId, deleted, nextReviewAt])
 }
 
@@ -253,6 +292,11 @@ model Schedule {
 }
 
 model Post {
+ community CommunityPost?
+ communityActions CommunityAction[]
+ communityRewards CommunityReward[]
+ communitySavedQuestions CommunitySavedQuestion[]
+  school    String @default("")
   id        String @id @default(cuid())
   userId    String
   user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -268,9 +312,11 @@ model Post {
   reports   Report[]
   @@index([userId])
   @@index([role, createdAt])
+  @@index([role, school, createdAt(sort: Desc)])
 }
 
 model Comment {
+ community CommunityComment?
   id        String @id @default(cuid())
   postId    String
   post      Post @relation(fields: [postId], references: [id], onDelete: Cascade)
@@ -465,4 +511,82 @@ model AiRun {
   finishedAt DateTime?
   @@unique([userId, requestId])
   @@index([userId, status, updatedAt])
+}
+
+model CommunityPost {
+  postId String @id
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  blocks Json @default("[]")
+  tags Json @default("{}")
+  sourceRef Json?
+  requestId String?
+  deleted Boolean @default(false)
+  editedAt DateTime? @db.Timestamp(3)
+  solvedAt DateTime? @db.Timestamp(3)
+  acceptedCommentId String?
+  @@unique([userId, requestId])
+}
+model CommunityComment {
+  commentId String @id
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  block Json?
+  requestId String?
+  @@unique([userId, requestId])
+}
+model CommunityAction {
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId String
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  blockId String
+  kind String
+  result Json
+  createdAt DateTime @default(now()) @db.Timestamp(3)
+  @@id([userId, postId, blockId, kind])
+}
+model CommunityReward {
+  postId String
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamp(3)
+  @@id([postId, userId])
+}
+model CommunityPrivacy {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  visibility Json @default("{\"grade\":true,\"subjects\":true,\"followerCount\":false,\"cardsDefault\":false,\"whoCanFollow\":\"SAME_GRADE\"}")
+}
+model CommunityCard {
+  cardId String @id
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  public Boolean @default(false)
+}
+model CommunityFollowEvent {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamp(3)
+  @@index([userId, createdAt], map: "CommunityFollowEvent_user_created_idx")
+}
+model CommunitySavedQuestion {
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId String @id
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  postId String
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+model CommunityCardClone {
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceCardId String
+  sourceCard Card @relation("communitySourceCard", fields: [sourceCardId], references: [id], onDelete: Cascade)
+  cardId String
+  card Card @relation("communityClonedCard", fields: [cardId], references: [id], onDelete: Cascade)
+  @@id([userId, sourceCardId])
 }

@@ -12,7 +12,7 @@ import (
 
 const createCard = `-- name: CreateCard :one
 INSERT INTO "Card" ("id", "userId", "subjectId", "front", "back", "type", "image", "masks")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, "userId", "subjectId", front, back, type, bucket, "consecutiveEasy", "nextReviewAt", deleted, image, masks, "sourceQuestionId", fsrs, "createdAt", "materialId"
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, "userId", "subjectId", front, back, type, bucket, "consecutiveEasy", "nextReviewAt", deleted, image, masks, "sourceQuestionId", fsrs, "createdAt", "materialId", "sourceKind", diagram, "maskedNodeIds", "sourceDiagramId"
 `
 
 type CreateCardParams struct {
@@ -55,6 +55,10 @@ func (q *Queries) CreateCard(ctx context.Context, arg CreateCardParams) (Card, e
 		&i.Fsrs,
 		&i.CreatedAt,
 		&i.MaterialID,
+		&i.SourceKind,
+		&i.Diagram,
+		&i.MaskedNodeIds,
+		&i.SourceDiagramId,
 	)
 	return i, err
 }
@@ -103,7 +107,7 @@ func (q *Queries) GetCardReview(ctx context.Context, id string) (CardReview, err
 }
 
 const getOwnedCard = `-- name: GetOwnedCard :one
-SELECT c.id, c."userId", c."subjectId", c.front, c.back, c.type, c.bucket, c."consecutiveEasy", c."nextReviewAt", c.deleted, c.image, c.masks, c."sourceQuestionId", c.fsrs, c."createdAt", c."materialId" FROM "Card" AS c JOIN "Subject" AS s ON s."id" = c."subjectId"
+SELECT c.id, c."userId", c."subjectId", c.front, c.back, c.type, c.bucket, c."consecutiveEasy", c."nextReviewAt", c.deleted, c.image, c.masks, c."sourceQuestionId", c.fsrs, c."createdAt", c."materialId", c."sourceKind", c.diagram, c."maskedNodeIds", c."sourceDiagramId" FROM "Card" AS c JOIN "Subject" AS s ON s."id" = c."subjectId"
 WHERE c."id" = $1 AND c."userId" = $2 AND s."deleted" = false
 `
 
@@ -132,6 +136,10 @@ func (q *Queries) GetOwnedCard(ctx context.Context, arg GetOwnedCardParams) (Car
 		&i.Fsrs,
 		&i.CreatedAt,
 		&i.MaterialID,
+		&i.SourceKind,
+		&i.Diagram,
+		&i.MaskedNodeIds,
+		&i.SourceDiagramId,
 	)
 	return i, err
 }
@@ -153,7 +161,7 @@ func (q *Queries) GetOwnedImageUpload(ctx context.Context, arg GetOwnedImageUplo
 }
 
 const getOwnedLiveCard = `-- name: GetOwnedLiveCard :one
-SELECT c.id, c."userId", c."subjectId", c.front, c.back, c.type, c.bucket, c."consecutiveEasy", c."nextReviewAt", c.deleted, c.image, c.masks, c."sourceQuestionId", c.fsrs, c."createdAt", c."materialId" FROM "Card" AS c JOIN "Subject" AS s ON s."id" = c."subjectId"
+SELECT c.id, c."userId", c."subjectId", c.front, c.back, c.type, c.bucket, c."consecutiveEasy", c."nextReviewAt", c.deleted, c.image, c.masks, c."sourceQuestionId", c.fsrs, c."createdAt", c."materialId", c."sourceKind", c.diagram, c."maskedNodeIds", c."sourceDiagramId" FROM "Card" AS c JOIN "Subject" AS s ON s."id" = c."subjectId"
 WHERE c."id" = $1 AND c."userId" = $2 AND c."deleted" = false AND s."deleted" = false
 `
 
@@ -182,6 +190,10 @@ func (q *Queries) GetOwnedLiveCard(ctx context.Context, arg GetOwnedLiveCardPara
 		&i.Fsrs,
 		&i.CreatedAt,
 		&i.MaterialID,
+		&i.SourceKind,
+		&i.Diagram,
+		&i.MaskedNodeIds,
+		&i.SourceDiagramId,
 	)
 	return i, err
 }
@@ -219,7 +231,7 @@ func (q *Queries) LastCardReviewAt(ctx context.Context, arg LastCardReviewAtPara
 }
 
 const listWrongQuestions = `-- name: ListWrongQuestions :many
-SELECT q.id, q."userId", q."subjectId", q."materialId", q.prompt, q.options, q.answer, q.explanation, q.citation, q.past, q.future FROM "Question" AS q JOIN "Subject" AS s ON s."id" = q."subjectId"
+SELECT q.id, q."userId", q."subjectId", q."materialId", q.prompt, q.options, q.answer, q.explanation, q.citation, q.past, q.future, q."learningExplanation" FROM "Question" AS q JOIN "Subject" AS s ON s."id" = q."subjectId"
 WHERE q."id" = ANY($1::text[]) AND q."userId" = $2 AND s."deleted" = false
   AND EXISTS (SELECT 1 FROM "Attempt" AS a WHERE a."questionId" = q."id" AND a."userId" = $2 AND a."correct" = false)
 `
@@ -250,6 +262,7 @@ func (q *Queries) ListWrongQuestions(ctx context.Context, arg ListWrongQuestions
 			&i.Citation,
 			&i.Past,
 			&i.Future,
+			&i.LearningExplanation,
 		); err != nil {
 			return nil, err
 		}
@@ -266,7 +279,7 @@ UPDATE "Card" SET
   "deleted" = COALESCE($1::bool, "deleted"),
   "front" = COALESCE($2::text, "front"),
   "back" = COALESCE($3::text, "back")
-WHERE "id" = $4 RETURNING id, "userId", "subjectId", front, back, type, bucket, "consecutiveEasy", "nextReviewAt", deleted, image, masks, "sourceQuestionId", fsrs, "createdAt", "materialId"
+WHERE "id" = $4 RETURNING id, "userId", "subjectId", front, back, type, bucket, "consecutiveEasy", "nextReviewAt", deleted, image, masks, "sourceQuestionId", fsrs, "createdAt", "materialId", "sourceKind", diagram, "maskedNodeIds", "sourceDiagramId"
 `
 
 type UpdateCardFieldsParams struct {
@@ -301,12 +314,16 @@ func (q *Queries) UpdateCardFields(ctx context.Context, arg UpdateCardFieldsPara
 		&i.Fsrs,
 		&i.CreatedAt,
 		&i.MaterialID,
+		&i.SourceKind,
+		&i.Diagram,
+		&i.MaskedNodeIds,
+		&i.SourceDiagramId,
 	)
 	return i, err
 }
 
 const updateCardSchedule = `-- name: UpdateCardSchedule :one
-UPDATE "Card" SET "bucket" = $2, "consecutiveEasy" = $3, "nextReviewAt" = $4, "fsrs" = $5 WHERE "id" = $1 RETURNING id, "userId", "subjectId", front, back, type, bucket, "consecutiveEasy", "nextReviewAt", deleted, image, masks, "sourceQuestionId", fsrs, "createdAt", "materialId"
+UPDATE "Card" SET "bucket" = $2, "consecutiveEasy" = $3, "nextReviewAt" = $4, "fsrs" = $5 WHERE "id" = $1 RETURNING id, "userId", "subjectId", front, back, type, bucket, "consecutiveEasy", "nextReviewAt", deleted, image, masks, "sourceQuestionId", fsrs, "createdAt", "materialId", "sourceKind", diagram, "maskedNodeIds", "sourceDiagramId"
 `
 
 type UpdateCardScheduleParams struct {
@@ -343,6 +360,10 @@ func (q *Queries) UpdateCardSchedule(ctx context.Context, arg UpdateCardSchedule
 		&i.Fsrs,
 		&i.CreatedAt,
 		&i.MaterialID,
+		&i.SourceKind,
+		&i.Diagram,
+		&i.MaskedNodeIds,
+		&i.SourceDiagramId,
 	)
 	return i, err
 }
@@ -350,8 +371,8 @@ func (q *Queries) UpdateCardSchedule(ctx context.Context, arg UpdateCardSchedule
 const upsertWrongNoteCard = `-- name: UpsertWrongNoteCard :one
 INSERT INTO "Card" ("id", "userId", "subjectId", "front", "back", "sourceQuestionId")
 VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT ("userId", "sourceQuestionId") DO UPDATE SET "deleted" = false
-RETURNING id, "userId", "subjectId", front, back, type, bucket, "consecutiveEasy", "nextReviewAt", deleted, image, masks, "sourceQuestionId", fsrs, "createdAt", "materialId"
+ON CONFLICT ("userId", "sourceQuestionId", "sourceKind") DO UPDATE SET "deleted" = false
+RETURNING id, "userId", "subjectId", front, back, type, bucket, "consecutiveEasy", "nextReviewAt", deleted, image, masks, "sourceQuestionId", fsrs, "createdAt", "materialId", "sourceKind", diagram, "maskedNodeIds", "sourceDiagramId"
 `
 
 type UpsertWrongNoteCardParams struct {
@@ -390,6 +411,10 @@ func (q *Queries) UpsertWrongNoteCard(ctx context.Context, arg UpsertWrongNoteCa
 		&i.Fsrs,
 		&i.CreatedAt,
 		&i.MaterialID,
+		&i.SourceKind,
+		&i.Diagram,
+		&i.MaskedNodeIds,
+		&i.SourceDiagramId,
 	)
 	return i, err
 }

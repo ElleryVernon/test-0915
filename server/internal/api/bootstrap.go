@@ -303,14 +303,40 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 			}
 		}
 		if mayNotes {
+			savedQuestions := map[string]string{}
+			if !parent {
+				rows, err := s.pool.Query(ctx, `SELECT "questionId","postId" FROM "CommunitySavedQuestion" WHERE "userId"=$1`, userID)
+				if err != nil {
+					return nil, err
+				}
+				for rows.Next() {
+					var questionID, postID string
+					if err = rows.Scan(&questionID, &postID); err != nil {
+						rows.Close()
+						return nil, err
+					}
+					savedQuestions[questionID] = postID
+				}
+				err = rows.Err()
+				rows.Close()
+				if err != nil {
+					return nil, err
+				}
+			}
 			for _, q := range questions {
 				if parent && !wrongIDs[q.ID] {
 					continue
 				}
-				out.Questions = append(out.Questions, questionOf(q))
+				view := questionOf(q)
+
+				if postID, ok := savedQuestions[q.ID]; ok {
+					view.SavedToNotes = true
+					view.CommunityPostID = postID
+				}
+				out.Questions = append(out.Questions, view)
 			}
 			for _, a := range attempts {
-				out.Attempts = append(out.Attempts, attemptView{ID: a.ID, UserID: a.UserID, QuestionID: a.QuestionID, EssayID: a.EssayID, Answer: a.Answer, Correct: a.Correct, Score: a.Score, CreatedAt: jsonx.Time(a.CreatedAt)})
+				out.Attempts = append(out.Attempts, attemptView{ResponseMs: a.ResponseMs, BeatsSeen: a.BeatsSeen, ExplainDepth: a.ExplainDepth, MicroResult: a.MicroResult, DivergenceNodeID: a.DivergenceNodeId, ID: a.ID, UserID: a.UserID, QuestionID: a.QuestionID, EssayID: a.EssayID, Answer: a.Answer, Correct: a.Correct, Score: a.Score, CreatedAt: jsonx.Time(a.CreatedAt)})
 			}
 		}
 		if !parent {
@@ -320,7 +346,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 			for _, c := range cards {
 				count := c.ReviewCount
 				out.Cards = append(out.Cards, cardOf(store.Card{
-					ID: c.ID, UserID: c.UserID, SubjectID: c.SubjectID, Front: c.Front, Back: c.Back, Type: c.Type, Bucket: c.Bucket, ConsecutiveEasy: c.ConsecutiveEasy,
+					Diagram: c.Diagram, MaskedNodeIds: c.MaskedNodeIds, SourceDiagramId: c.SourceDiagramId, MaterialID: c.MaterialID, ID: c.ID, UserID: c.UserID, SubjectID: c.SubjectID, Front: c.Front, Back: c.Back, Type: c.Type, Bucket: c.Bucket, ConsecutiveEasy: c.ConsecutiveEasy,
 					NextReviewAt: c.NextReviewAt, Deleted: c.Deleted, Image: c.Image, Masks: c.Masks, SourceQuestionID: c.SourceQuestionID, Fsrs: c.Fsrs, CreatedAt: c.CreatedAt,
 				}, &count))
 			}

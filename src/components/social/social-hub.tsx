@@ -3,8 +3,10 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, MessageCircle, Search, Send } from '@/components/icons';
 import { api } from '@/lib/api';
 import type { ScreenProps } from '@/lib/contracts';
-import { Button, EmptyState, IconButton } from '@/components/ui';
+import { Button, EmptyState, IconButton, Sheet } from '@/components/ui';
+import { useJourneyState } from '../journey';
 import { relativeTime } from './helpers';
+import { communityProfileHref } from './community-profile';
 export interface SocialUser {
   id: string;
   nickname: string;
@@ -26,20 +28,30 @@ interface DirectMessage {
 export default function SocialHub({
   data,
   toast,
+  navigate,
   initialUser,
   initialTab = 'followers',
+  onCloseConversation,
 }: ScreenProps & {
   initialUser?: SocialUser;
+  onCloseConversation?: () => void;
   initialTab?: 'followers' | 'following' | 'messages' | 'blocked';
 }) {
   const [social, setSocial] = useState<SocialData | null>(null);
-  const [tab, setTab] = useState(initialTab);
+  const [tab, setTab] = useState(
+    data.profile.role === 'PARENT' && initialTab !== 'blocked' ? 'messages' : initialTab,
+  );
   const [user, setUser] = useState<SocialUser | null>(initialUser ?? null);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [query, setQuery] = useState('');
-  const [body, setBody] = useState('');
+  const [drafts, setDrafts] = useJourneyState<Record<string, string>>('messages.drafts', {});
+  const body = user ? (drafts[user.id] ?? '') : '';
+  const setBody = (value: string) => {
+    if (user) setDrafts((previous) => ({ ...previous, [user.id]: value }));
+  };
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [unfollow, setUnfollow] = useState<SocialUser | null>(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [listReload, setListReload] = useState(0);
   useEffect(() => {
@@ -76,10 +88,15 @@ export default function SocialHub({
       active = false;
     };
   }, [user]);
-  async function follow(target: SocialUser) {
+  async function follow(
+    target: SocialUser,
+    following = !social?.following.some((u) => u.id === target.id),
+  ) {
+    if (busy) return;
     setBusy(true);
     try {
-      await api('/follow', { userId: target.id });
+      await api('/follow', { userId: target.id, following });
+      setUnfollow(null);
       setSocial(await api<SocialData>('/social'));
     } catch (e) {
       toast((e as Error).message);
@@ -88,6 +105,7 @@ export default function SocialHub({
     }
   }
   async function unblock(target: SocialUser) {
+    if (busy) return;
     setBusy(true);
     try {
       await api(`/blocks/${target.id}`, {}, 'DELETE');
@@ -101,15 +119,17 @@ export default function SocialHub({
   }
   async function send(e: FormEvent) {
     e.preventDefault();
-    if (!user || !body.trim()) return;
+    if (busy || !user || !body.trim()) return;
     setBusy(true);
     setError('');
+    let sent = false;
     try {
       await api('/messages', { userId: user.id, body: body.trim() });
+      sent = true;
       setBody('');
       setMessages(await api<DirectMessage[]>(`/messages?userId=${encodeURIComponent(user.id)}`));
     } catch (e) {
-      setError((e as Error).message);
+      setError(sent ? '쪽지는 보냈어요. 대화 목록을 새로고침해 주세요.' : (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -118,10 +138,23 @@ export default function SocialHub({
     return (
       <div className="flex flex-col">
         <div className="flex gap-2 items-center mb-4">
-          <IconButton label="친구 목록으로" onClick={() => setUser(null)}>
+          <IconButton
+            label={onCloseConversation ? '이전 화면으로' : '목록으로'}
+            onClick={onCloseConversation ?? (() => setUser(null))}
+          >
             <ArrowLeft size={20} />
           </IconButton>
-          <span className="font-bold">{user.nickname}</span>
+          {data.profile.role === 'PARENT' ? (
+            <span className="font-bold">{user.nickname}</span>
+          ) : (
+            <button
+              className="min-h-11 min-w-0 truncate font-bold underline underline-offset-4"
+              aria-label={`${user.nickname}님 프로필 보기`}
+              onClick={() => navigate(communityProfileHref(user.id))}
+            >
+              {user.nickname}
+            </button>
+          )}
           <button
             className="ml-auto min-h-11 px-1 text-sm font-semibold text-muted"
             onClick={async () => {
@@ -171,7 +204,11 @@ export default function SocialHub({
             {error}
           </p>
         )}
-        <form onSubmit={send} noValidate className="flex gap-2 items-end border-t border-surface pt-4">
+        <form
+          onSubmit={send}
+          noValidate
+          className="flex gap-2 items-end border-t border-surface pt-4"
+        >
           <textarea
             aria-label="쪽지 내용"
             placeholder="메시지를 입력하세요"
@@ -186,15 +223,20 @@ export default function SocialHub({
             aria-label="쪽지 보내기"
             type="submit"
             disabled={busy || !body.trim()}
-            className="bg-primary text-white size-12 rounded-full flex items-center justify-center shrink-0 disabled:opacity-40"
+            className="bg-ink text-white size-12 rounded-full flex items-center justify-center shrink-0 disabled:opacity-40"
           >
             <Send size={19} />
           </button>
         </form>
       </div>
     );
+  const messageContacts = [
+    ...new Map(
+      [...(social?.following ?? []), ...(social?.followers ?? [])].map((u) => [u.id, u]),
+    ).values(),
+  ];
   const users =
-    (query ? social?.users : tab === 'messages' ? social?.users : social?.[tab])?.filter((u) =>
+    (tab === 'messages' ? messageContacts : social?.[tab])?.filter((u) =>
       u.nickname.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
     ) ?? [];
   return (
@@ -207,27 +249,32 @@ export default function SocialHub({
             ['messages', '쪽지'],
             ['blocked', '차단'],
           ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            aria-pressed={tab === value}
-            onClick={() => {
-              setTab(value);
-              setQuery('');
-            }}
-            className={`flex-1 min-h-11 py-2 rounded-lg text-[13px] font-semibold ${tab === value ? 'bg-white shadow-sm' : 'text-subtle'}`}
-          >
-            {label}
-          </button>
-        ))}
+        )
+          .filter(
+            ([value]) =>
+              data.profile.role !== 'PARENT' || value === 'messages' || value === 'blocked',
+          )
+          .map(([value, label]) => (
+            <button
+              key={value}
+              aria-pressed={tab === value}
+              onClick={() => {
+                setTab(value);
+                setQuery('');
+              }}
+              className={`flex-1 min-h-11 py-2 rounded-lg text-[13px] font-semibold ${tab === value ? 'bg-white shadow-sm' : 'text-subtle'}`}
+            >
+              {label}
+            </button>
+          ))}
       </div>
       {tab !== 'blocked' && (
         <div className="relative mb-3">
           <Search size={18} className="absolute left-3.5 top-3.5 text-subtle" />
           <input
-            aria-label="닉네임 검색"
+            aria-label="목록에서 닉네임 검색"
             className="field !pl-10"
-            placeholder="닉네임으로 친구 찾기"
+            placeholder="이 목록에서 닉네임 검색"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -240,17 +287,25 @@ export default function SocialHub({
       )}
       {!social && error ? (
         <Button variant="secondary" className="w-full" onClick={() => setListReload((v) => v + 1)}>
-          친구 목록 다시 불러오기
+          목록 다시 불러오기
         </Button>
       ) : !social ? (
         <p className="py-10 text-center text-sm text-subtle">목록을 가져오고 있어요…</p>
       ) : !users.length ? (
         <EmptyState
-          title={tab === 'blocked' ? '차단한 사용자가 없어요' : '아직 목록이 비어 있어요'}
+          title={
+            query
+              ? '검색 결과가 없어요'
+              : tab === 'blocked'
+                ? '차단한 사용자가 없어요'
+                : '아직 목록이 비어 있어요'
+          }
           description={
-            tab === 'blocked'
-              ? '차단한 사용자는 여기서 관리할 수 있어요.'
-              : '닉네임으로 친구를 찾아 연결해 보세요.'
+            query
+              ? '이 목록에 있는 닉네임으로 검색해 주세요.'
+              : tab === 'blocked'
+                ? '차단한 사용자는 여기서 관리할 수 있어요.'
+                : '도움이 된 답변이나 카드에서 팔로우하면 여기 모여요.'
           }
         />
       ) : (
@@ -262,14 +317,19 @@ export default function SocialHub({
             <button
               disabled={tab === 'blocked'}
               className="flex-1 min-w-0 min-h-11 text-left text-[15px] font-semibold truncate"
-              onClick={() => setUser(u)}
+              onClick={() =>
+                tab === 'messages' || data.profile.role === 'PARENT'
+                  ? setUser(u)
+                  : navigate(communityProfileHref(u.id))
+              }
             >
               {u.nickname}
             </button>
             {tab === 'blocked' ? (
               <Button
+                size="compact"
                 variant="secondary"
-                className="!min-h-9 !px-3 !text-xs"
+                className="!px-3 !text-xs"
                 disabled={busy}
                 onClick={() => unblock(u)}
               >
@@ -281,21 +341,44 @@ export default function SocialHub({
               </IconButton>
             ) : (
               <Button
-                variant={social.following.some((f) => f.id === u.id) ? 'secondary' : 'primary'}
-                className="!min-h-9 !px-3 !text-xs"
+                variant="outline"
+                size="compact"
                 disabled={busy}
-                onClick={() => follow(u)}
+                onClick={() =>
+                  social.following.some((f) => f.id === u.id)
+                    ? setUnfollow(u)
+                    : void follow(u, true)
+                }
               >
-                {social.following.some((f) => f.id === u.id)
-                  ? '팔로잉'
-                  : social.followers.some((f) => f.id === u.id)
-                    ? '맞팔로우'
-                    : '팔로우'}
+                {social.following.some((f) => f.id === u.id) ? '팔로잉' : '팔로우'}
               </Button>
             )}
           </div>
         ))
       )}
+      <Sheet
+        open={!!unfollow}
+        onClose={() => {
+          if (!busy) setUnfollow(null);
+        }}
+        title="팔로우를 그만할까요?"
+        description="이 사람의 새 글과 공개 카드가 팔로잉에 모이지 않아요. 이미 담은 카드는 유지돼요."
+      >
+        <div className="layout-group">
+          <Button variant="outline" disabled={busy} onClick={() => setUnfollow(null)}>
+            계속 받아보기
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => {
+              if (unfollow) void follow(unfollow, false);
+            }}
+          >
+            {busy ? '변경 중…' : '팔로우 해제'}
+          </Button>
+        </div>
+      </Sheet>
     </div>
   );
 }

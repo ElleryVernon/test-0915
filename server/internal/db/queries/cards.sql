@@ -40,7 +40,7 @@ WHERE q."id" = ANY(@ids::text[]) AND q."userId" = @user_id AND s."deleted" = fal
 -- name: UpsertWrongNoteCard :one
 INSERT INTO "Card" ("id", "userId", "subjectId", "front", "back", "sourceQuestionId")
 VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT ("userId", "sourceQuestionId") DO UPDATE SET "deleted" = false
+ON CONFLICT ("userId", "sourceQuestionId", "sourceKind") DO UPDATE SET "deleted" = false
 RETURNING *;
 
 -- name: GetOwnedImageUpload :one

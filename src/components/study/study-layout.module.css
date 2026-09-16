@@ -1,0 +1,175 @@
+/* Shared learning contract: 8 / 12 / 16 / 24, with 20px panel insets and 44px controls. */
+.stack {
+  composes: layout-section from global;
+}
+.action {
+  composes: control-outline from global;
+}
+.textAction {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-inline);
+  min-height: var(--control-size);
+  padding: var(--space-2) 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.source {
+  display: grid;
+  gap: var(--gap-block);
+  min-width: 0;
+  padding: var(--gap-block);
+  border-radius: var(--radius-panel);
+  background: var(--surface-muted);
+}
+.sourceTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-inline);
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+.sourceQuote {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sourceOpen {
+  composes: control-outline from global;
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+}
+.sourceName {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sourceOpen > span:last-of-type {
+  white-space: nowrap;
+}
+.sourceFile {
+  display: flex;
+  gap: var(--gap-inline);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.noteList {
+  composes: layout-group from global;
+}
+.note {
+  display: grid;
+  gap: var(--gap-block);
+  padding: var(--panel-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: white;
+  min-width: 0;
+}
+.noteHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-related);
+}
+.noteTitle {
+  min-width: 0;
+  flex: 1;
+}
+.noteTitle > p {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 var(--gap-inline);
+}
+.noteTitle h3 {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.6;
+  margin: 0;
+}
+.noteMeta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.noteActions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap-inline);
+}
+.disclosure {
+  composes: control-outline from global;
+}
+.disclosure[aria-expanded='true'] {
+  border-color: var(--text-primary);
+}
+.disclosure[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+.retry {
+  composes: control-outline from global;
+  border-color: var(--surface-muted);
+  background: var(--surface-muted);
+}
+.notePanel {
+  display: grid;
+  gap: var(--gap-section);
+  padding-top: var(--gap-section);
+  border-top: 1px solid var(--border-subtle);
+}
+.notePanel[hidden] {
+  display: none;
+}
+.answerRows {
+  display: grid;
+  gap: var(--gap-related);
+  margin: 0;
+}
+.answerRows > div {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: var(--gap-related);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.answerRows dt {
+  color: var(--text-muted);
+}
+.answerRows dd {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.answerRows > div:first-child dd {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.noteToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-inline);
+  margin-block: var(--gap-block);
+}
+.noteToolbar > span {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+@media (max-width: 359px) {
+  .note {
+    padding: var(--gap-block);
+  }
+  .noteActions {
+    grid-template-columns: 1fr;
+  }
+}

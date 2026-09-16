@@ -11,7 +11,7 @@ import (
 )
 
 const listAttempts = `-- name: ListAttempts :many
-SELECT id, "userId", "questionId", "essayId", answer, correct, score, "createdAt" FROM "Attempt" WHERE "userId" = $1 ORDER BY "createdAt" DESC LIMIT 1000
+SELECT id, "userId", "questionId", "essayId", answer, correct, score, "createdAt", "responseMs", "beatsSeen", "explainDepth", "microResult", "divergenceNodeId", "requestId" FROM "Attempt" WHERE "userId" = $1 ORDER BY "createdAt" DESC LIMIT 1000
 `
 
 func (q *Queries) ListAttempts(ctx context.Context, userid string) ([]Attempt, error) {
@@ -32,6 +32,12 @@ func (q *Queries) ListAttempts(ctx context.Context, userid string) ([]Attempt, e
 			&i.Correct,
 			&i.Score,
 			&i.CreatedAt,
+			&i.ResponseMs,
+			&i.BeatsSeen,
+			&i.ExplainDepth,
+			&i.MicroResult,
+			&i.DivergenceNodeId,
+			&i.RequestID,
 		); err != nil {
 			return nil, err
 		}
@@ -44,7 +50,7 @@ func (q *Queries) ListAttempts(ctx context.Context, userid string) ([]Attempt, e
 }
 
 const listCardsWithReviewCount = `-- name: ListCardsWithReviewCount :many
-SELECT c.id, c."userId", c."subjectId", c.front, c.back, c.type, c.bucket, c."consecutiveEasy", c."nextReviewAt", c.deleted, c.image, c.masks, c."sourceQuestionId", c.fsrs, c."createdAt", c."materialId", (SELECT count(*) FROM "CardReview" AS r WHERE r."cardId" = c."id")::int AS review_count
+SELECT c.id, c."userId", c."subjectId", c.front, c.back, c.type, c.bucket, c."consecutiveEasy", c."nextReviewAt", c.deleted, c.image, c.masks, c."sourceQuestionId", c.fsrs, c."createdAt", c."materialId", c."sourceKind", c.diagram, c."maskedNodeIds", c."sourceDiagramId", (SELECT count(*) FROM "CardReview" AS r WHERE r."cardId" = c."id")::int AS review_count
 FROM "Card" AS c JOIN "Subject" AS s ON s."id" = c."subjectId"
 WHERE c."userId" = $1 AND s."deleted" = false ORDER BY c."createdAt" ASC
 `
@@ -66,6 +72,10 @@ type ListCardsWithReviewCountRow struct {
 	Fsrs             []byte
 	CreatedAt        time.Time
 	MaterialID       *string
+	SourceKind       string
+	Diagram          []byte
+	MaskedNodeIds    []string
+	SourceDiagramId  *string
 	ReviewCount      int32
 }
 
@@ -95,6 +105,10 @@ func (q *Queries) ListCardsWithReviewCount(ctx context.Context, userid string) (
 			&i.Fsrs,
 			&i.CreatedAt,
 			&i.MaterialID,
+			&i.SourceKind,
+			&i.Diagram,
+			&i.MaskedNodeIds,
+			&i.SourceDiagramId,
 			&i.ReviewCount,
 		); err != nil {
 			return nil, err
@@ -325,7 +339,7 @@ func (q *Queries) ListNotifications(ctx context.Context, userid string) ([]Notif
 }
 
 const listQuestions = `-- name: ListQuestions :many
-SELECT q.id, q."userId", q."subjectId", q."materialId", q.prompt, q.options, q.answer, q.explanation, q.citation, q.past, q.future FROM "Question" AS q JOIN "Subject" AS s ON s."id" = q."subjectId" WHERE q."userId" = $1 AND s."deleted" = false
+SELECT q.id, q."userId", q."subjectId", q."materialId", q.prompt, q.options, q.answer, q.explanation, q.citation, q.past, q.future, q."learningExplanation" FROM "Question" AS q JOIN "Subject" AS s ON s."id" = q."subjectId" WHERE q."userId" = $1 AND s."deleted" = false
 `
 
 func (q *Queries) ListQuestions(ctx context.Context, userid string) ([]Question, error) {
@@ -349,6 +363,7 @@ func (q *Queries) ListQuestions(ctx context.Context, userid string) ([]Question,
 			&i.Citation,
 			&i.Past,
 			&i.Future,
+			&i.LearningExplanation,
 		); err != nil {
 			return nil, err
 		}

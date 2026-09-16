@@ -1,3 +1,5 @@
+import type { LearningDiagram, LearningReflection } from './explanation-types';
+import type { CommunityBlock, CommunityTags, CommunitySourceRef } from './community-types';
 export type Role = 'STUDENT' | 'PARENT' | 'ADMIN';
 export type Bucket = 'AGAIN' | 'HARD' | 'GOOD' | 'EASY' | 'MASTERED';
 export type CardType = 'CONCEPT' | 'RELATION' | 'COMPARISON' | 'BLIND';
@@ -75,6 +77,8 @@ export interface MaterialImage {
   context: string;
 }
 export interface Question {
+  savedToNotes?: boolean;
+  communityPostId?: string;
   id: string;
   subjectId: string;
   materialId: string;
@@ -115,6 +119,10 @@ export interface SerializedFsrs {
   last_review?: string;
 }
 export interface Card {
+  diagram?: LearningDiagram;
+  maskedNodeIds?: string[];
+  sourceQuestionId?: string;
+  sourceDiagramId?: string;
   fsrs?: SerializedFsrs | null;
   id: string;
   subjectId: string;
@@ -132,7 +140,7 @@ export interface Card {
   /** The material an AI generation made this card from; null for hand-made and wrong-note cards. */
   materialId?: string | null;
 }
-export interface StudyAttempt {
+export interface StudyAttempt extends LearningReflection {
   id: string;
   questionId?: string;
   essayId?: string;
@@ -152,6 +160,15 @@ export interface Schedule {
   done: boolean;
 }
 export interface Post {
+  blocks?: CommunityBlock[];
+  tags?: CommunityTags;
+  sourceRef?: CommunitySourceRef;
+  isMine?: boolean;
+  solvedAt?: string;
+  acceptedCommentId?: string;
+  status?: string;
+  editedAt?: string;
+  school?: string;
   id: string;
   author: string;
   authorId: string;
@@ -167,6 +184,10 @@ export interface Post {
   createdAt: string;
 }
 export interface Comment {
+  authorId?: string;
+  isMine?: boolean;
+  accepted?: boolean;
+  block?: CommunityBlock;
   id: string;
   postId: string;
   author: string;
@@ -220,11 +241,15 @@ export interface AppData {
  * address without remounting the current screen (screens are keyed by their path): a screen that
  * has consumed a one-shot intent from its query tidies the address this way and keeps its state.
  */
-export type Navigate = (path: string, options?: { replace?: boolean; keepScreen?: boolean }) => void;
+export type Navigate = (
+  path: string,
+  options?: { replace?: boolean; keepScreen?: boolean; restore?: boolean },
+) => void;
 export interface ScreenProps {
   data: AppData;
   refresh: () => Promise<void>;
   navigate: Navigate;
+  back: (fallback?: string) => void;
   toast: (message: string) => void;
   path: string;
 }

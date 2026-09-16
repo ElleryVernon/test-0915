@@ -1,4 +1,6 @@
 'use client';
+import { sessionFetch } from '@/lib/session-boundary';
+
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { BookOpen, ChevronRight, FileText, ImageIcon, LoaderCircle } from '@/components/icons';
 import type { AppData, ScreenProps, Material, MaterialImage } from '@/lib/contracts';
@@ -16,6 +18,7 @@ import { retryAtOf, useRetryCountdown, waitingLabel } from '@/lib/retry-countdow
 import { exclusively, generatedItemCount, type GenerationMode } from './logic';
 import { recoverGenerationTask } from './generation-task';
 import { generationCopy, progressCopy } from '@/lib/ai-progress';
+import layout from './study-layout.module.css';
 import { OptionField, OptionList } from '@/components/ui-choice';
 
 export function params(path: string) {
@@ -129,26 +132,32 @@ export function Citation({
   onOpen?: () => void;
 }) {
   return (
-    <div className="rounded-[20px] bg-surface p-4">
-      <p className="mb-2 flex items-center gap-2 text-[13px] font-bold">
+    <section className={layout.source} aria-label="자료에서 찾은 근거">
+      <p className={layout.sourceTitle}>
         <BookOpen size={16} />
         자료에서 찾은 근거
       </p>
-      <blockquote className="whitespace-pre-wrap break-words text-[14px] leading-[1.7] text-secondary">
-        “{citation}”
-      </blockquote>
-      {material && (
-        <button
-          onClick={onOpen}
-          className="mt-3 flex min-h-10 w-full items-center gap-2 text-left text-[12px] font-semibold text-muted"
-        >
-          <FileText size={15} />
-          <span className="min-w-0 flex-1 truncate">{material.title}</span>
-          <span>원본 보기</span>
-          <ChevronRight size={16} />
-        </button>
-      )}
-    </div>
+      <blockquote className={layout.sourceQuote}>“{citation}”</blockquote>
+      {material &&
+        (onOpen ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            className={layout.sourceOpen}
+            aria-label={`${material.title} 원본 보기`}
+          >
+            <FileText size={16} />
+            <span className={layout.sourceName}>{material.title}</span>
+            <span>원본 보기</span>
+            <ChevronRight size={16} />
+          </button>
+        ) : (
+          <p className={layout.sourceFile}>
+            <FileText size={16} />
+            {material.title}
+          </p>
+        ))}
+    </section>
   );
 }
 export { MaterialViewer } from './material-viewer';
@@ -258,6 +267,7 @@ export function GenerationSheet({
       onClose();
       return;
     }
+    let savedCount = 0;
     try {
       const result = await runAiTask({
         ...lookup,
@@ -266,7 +276,8 @@ export function GenerationSheet({
         signal: lifetime.current?.signal,
       });
       if (lifetime.current?.signal.aborted) return;
-      setCreated(generatedItemCount(result, mode, count));
+      savedCount = generatedItemCount(result, mode, count);
+      setCreated(savedCount);
       setUncertain(false);
     } catch (error) {
       if (error instanceof AiTaskPendingError || error instanceof AiTaskFailureError) {
@@ -278,15 +289,18 @@ export function GenerationSheet({
     await props.refresh();
     if (lifetime.current?.signal.aborted) return;
     await acknowledgeAiTask(lookup);
-    props.toast(`${label} ${count}개를 만들었어요`);
+    props.toast(`${label} ${savedCount}개를 만들었어요`);
     onClose();
   }
   return (
     <Sheet
       open={open}
       onClose={() => {
-        if (action.busy) props.toast('자료를 만들고 있어요. 완료될 때까지 잠시 기다려 주세요.');
-        else onClose();
+        if (action.busy)
+          props.toast(
+            '화면을 닫아도 요청은 보관돼요. 같은 자료에서 다시 열어 결과를 확인할 수 있어요.',
+          );
+        onClose();
       }}
       title={`${label} 만들기`}
     >
@@ -373,7 +387,7 @@ export function GenerationSheet({
         )}
         {uncertain && (
           <p className="rounded-2xl bg-surface p-4 text-sm leading-relaxed">
-            이전 요청을 보관하고 있어요. 같은 요청 번호로 이어서 확인해 중복 생성을 막아요.
+            이전에 시작한 만들기가 있어요. 이어서 진행 상황과 결과를 확인할 수 있어요.
           </p>
         )}
         {!props.data.aiAvailable && (
@@ -475,7 +489,7 @@ export async function uploadFile(file: File) {
   validateUploadSize(prepared);
   const form = new FormData();
   form.append('file', prepared);
-  const response = await fetch('/api/upload', {
+  const response = await sessionFetch('/api/upload', {
     method: 'POST',
     body: form,
     signal: AbortSignal.timeout(AI_CLIENT_DEADLINE_MS),

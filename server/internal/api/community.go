@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -53,19 +54,28 @@ func init() {
 
 // PostView is a post as the community list and the bootstrap payload show it (contracts.ts Post).
 type PostView struct {
-	ID           string     `json:"id"`
-	Author       string     `json:"author"`
-	AuthorID     string     `json:"authorId"`
-	Role         store.Role `json:"role"`
-	Category     string     `json:"category"`
-	Title        string     `json:"title"`
-	Body         string     `json:"body"`
-	Anonymous    bool       `json:"anonymous"`
-	Likes        int64      `json:"likes"`
-	Liked        bool       `json:"liked"`
-	Saved        bool       `json:"saved"`
-	CommentCount int64      `json:"commentCount"`
-	CreatedAt    jsonx.Time `json:"createdAt"`
+	Blocks            []communityBlock `json:"blocks"`
+	Tags              map[string]any   `json:"tags"`
+	SourceRef         map[string]any   `json:"sourceRef,omitempty"`
+	IsMine            bool             `json:"isMine"`
+	EditedAt          *time.Time       `json:"editedAt,omitempty"`
+	SolvedAt          *time.Time       `json:"solvedAt,omitempty"`
+	AcceptedCommentID *string          `json:"acceptedCommentId,omitempty"`
+	Status            string           `json:"status"`
+	School            string           `json:"school"`
+	ID                string           `json:"id"`
+	Author            string           `json:"author"`
+	AuthorID          string           `json:"authorId"`
+	Role              store.Role       `json:"role"`
+	Category          string           `json:"category"`
+	Title             string           `json:"title"`
+	Body              string           `json:"body"`
+	Anonymous         bool             `json:"anonymous"`
+	Likes             int64            `json:"likes"`
+	Liked             bool             `json:"liked"`
+	Saved             bool             `json:"saved"`
+	CommentCount      int64            `json:"commentCount"`
+	CreatedAt         jsonx.Time       `json:"createdAt"`
 }
 
 // postRecord is a Post row as the previous server returned it from create calls.
@@ -94,12 +104,16 @@ type commentRecord struct {
 // commentView is a comment as the thread shows it (contracts.ts Comment): the author's nickname
 // instead of their id, and no parentId key at all on a top-level comment.
 type commentView struct {
-	ID        string     `json:"id"`
-	PostID    string     `json:"postId"`
-	Author    string     `json:"author"`
-	Body      string     `json:"body"`
-	ParentID  *string    `json:"parentId,omitempty"`
-	CreatedAt jsonx.Time `json:"createdAt"`
+	AuthorID  string          `json:"authorId,omitempty"`
+	IsMine    bool            `json:"isMine"`
+	Accepted  bool            `json:"accepted"`
+	Block     *communityBlock `json:"block,omitempty"`
+	ID        string          `json:"id"`
+	PostID    string          `json:"postId"`
+	Author    string          `json:"author"`
+	Body      string          `json:"body"`
+	ParentID  *string         `json:"parentId,omitempty"`
+	CreatedAt jsonx.Time      `json:"createdAt"`
 }
 
 // reportRecord is a Report row.
@@ -130,7 +144,11 @@ func (s *Server) accessiblePost(ctx context.Context, user store.User, postID str
 	if err := auth.RequireRole(user, row.Post.Role); err != nil {
 		return store.Post{}, err
 	}
-	if row.AuthorSuspended || row.Blocked {
+	var deleted bool
+	if e := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM "CommunityPost" WHERE "postId"=$1 AND "deleted")`, postID).Scan(&deleted); e != nil {
+		return store.Post{}, e
+	}
+	if deleted || row.AuthorSuspended || row.Blocked || !postSchoolVisible(row.Post.School, user.School) {
 		return store.Post{}, errPostNotFound
 	}
 	return row.Post, nil
@@ -160,17 +178,32 @@ func (s *Server) peer(ctx context.Context, user store.User, userID string) (stor
 // caller commented on. The bootstrap payload embeds the same list. state is the cache path (hit, miss
 // or shared), reported as X-Cache by GET /api/posts.
 func (s *Server) postsFor(ctx context.Context, user store.User, commented bool) ([]PostView, string, error) {
+	return s.postsForFeed(ctx, user, store.ListPostsParams{Commented: commented})
+}
+
+func postSchoolVisible(postSchool, userSchool string) bool {
+	return postSchool == "" || (strings.TrimSpace(userSchool) != "" && postSchool == strings.TrimSpace(userSchool))
+}
+
+func (s *Server) postsForFeed(ctx context.Context, user store.User, options store.ListPostsParams) ([]PostView, string, error) {
+	options.ViewerID, options.Role = user.ID, user.Role
+	encoded, _ := json.Marshal(options)
 	// The list depends on the viewer (liked, saved, blocks) and on everyone's posts, so its key
 	// carries both the viewer's version and the shared posts version.
-	key := "posts:" + user.ID + ":" + string(user.Role) + ":" + strconv.FormatBool(commented) + ":" + s.version(ctx, user.ID) + ":" + s.version(ctx, "posts")
+	key := "posts-v3:" + string(encoded) + ":" + s.version(ctx, user.ID) + ":" + s.version(ctx, "posts")
 	raw, state, err := s.fill(ctx, "posts", key, postsTTL, func(ctx context.Context) ([]byte, error) {
-		rows, err := s.q.ListPosts(ctx, store.ListPostsParams{ViewerID: user.ID, Role: user.Role, Commented: commented})
+		rows, err := s.q.ListPosts(ctx, options)
 		if err != nil {
 			return nil, err
 		}
 		posts, err := postViews(rows)
 		if err != nil {
 			return nil, err
+		}
+		for i := range posts {
+			if e := s.enrichCommunityPost(ctx, user, &posts[i]); e != nil {
+				return nil, e
+			}
 		}
 		return json.Marshal(posts)
 	})
@@ -188,7 +221,7 @@ func postViews(rows []store.ListPostsRow) ([]PostView, error) {
 	posts := make([]PostView, 0, len(rows))
 	for _, row := range rows {
 		view := PostView{
-			ID: row.Post.ID, Author: row.AuthorNickname, AuthorID: row.Post.UserID, Role: row.Post.Role,
+			School: row.Post.School, ID: row.Post.ID, Author: row.AuthorNickname, AuthorID: row.Post.UserID, Role: row.Post.Role,
 			Category: row.Post.Category, Title: row.Post.Title, Body: row.Post.Body, Anonymous: row.Post.Anonymous,
 			Likes: row.Likes, Liked: row.Liked, Saved: row.Saved, CommentCount: row.CommentCount,
 			CreatedAt: jsonx.Time(row.Post.CreatedAt),
@@ -207,7 +240,19 @@ func (s *Server) listPosts(w http.ResponseWriter, r *http.Request, user store.Us
 	if role := query.Get("role"); role != "" && role != string(user.Role) {
 		return errOtherCommunity
 	}
-	posts, state, err := s.postsFor(r.Context(), user, query.Get("commented") == "1")
+	options := store.ListPostsParams{Commented: query.Get("commented") == "1", Mine: query.Get("mine") == "1", SavedOnly: query.Get("saved") == "1"}
+	options.FollowingOnly = query.Get("following") == "1"
+	options.SubjectID = query.Get("subjectId")
+	options.QuestionID = query.Get("questionId")
+	options.Unanswered = query.Get("unanswered") == "1"
+	options.Activity = options.Commented || options.Mine || options.SavedOnly || options.QuestionID != ""
+	if query.Get("scope") == "school" || options.Activity {
+		options.School = strings.TrimSpace(user.School)
+	}
+	if query.Get("scope") == "school" && options.School == "" {
+		return apierr.New(400, "프로필에 학교를 등록해 주세요.")
+	}
+	posts, state, err := s.postsForFeed(r.Context(), user, options)
 	if err != nil {
 		return err
 	}
@@ -218,31 +263,7 @@ func (s *Server) listPosts(w http.ResponseWriter, r *http.Request, user store.Us
 
 // createPost answers POST /api/posts with the new row; the post lands on the caller's own board.
 func (s *Server) createPost(w http.ResponseWriter, r *http.Request, user store.User) error {
-	var input struct {
-		Title     string `json:"title"`
-		Body      string `json:"body"`
-		Category  string `json:"category"`
-		Anonymous *bool  `json:"anonymous"`
-	}
-	if err := httpx.Decode(r, &input); err != nil {
-		return err
-	}
-	v := &validator{}
-	title := v.text(input.Title, 120)
-	body := v.text(input.Body, 10_000)
-	category := v.text(input.Category, 30)
-	v.check(input.Anonymous != nil, msgInput)
-	if err := v.result(); err != nil {
-		return err
-	}
-	post, err := s.q.CreatePost(r.Context(), store.CreatePostParams{
-		ID: ids.New(), UserID: user.ID, Role: user.Role, Category: category, Title: title, Body: body, Anonymous: *input.Anonymous,
-	})
-	if err != nil {
-		return err
-	}
-	httpx.OK(w, http.StatusCreated, postRecord{ID: post.ID, UserID: post.UserID, Role: post.Role, Category: post.Category, Title: post.Title, Body: post.Body, Anonymous: post.Anonymous, CreatedAt: jsonx.Time(post.CreatedAt)})
-	return nil
+	return s.saveNewCommunityPost(w, r, user)
 }
 
 // togglePostLike answers POST /api/posts/{id}/like with the new state.
@@ -311,7 +332,25 @@ func (s *Server) listComments(w http.ResponseWriter, r *http.Request, user store
 	comments := make([]commentView, 0, len(rows))
 	for _, row := range rows {
 		c := row.Comment
-		comments = append(comments, commentView{ID: c.ID, PostID: c.PostID, Author: row.AuthorNickname, Body: c.Body, ParentID: c.ParentID, CreatedAt: jsonx.Time(c.CreatedAt)})
+		view := commentView{ID: c.ID, PostID: c.PostID, Author: row.AuthorNickname, AuthorID: c.UserID, IsMine: c.UserID == user.ID, Body: c.Body, ParentID: c.ParentID, CreatedAt: jsonx.Time(c.CreatedAt)}
+		if post.Anonymous && c.UserID == post.UserID {
+			view.Author = "익명 · 글쓴이"
+			view.AuthorID = ""
+		}
+		var raw []byte
+		_ = s.pool.QueryRow(ctx, `SELECT "block" FROM "CommunityComment" WHERE "commentId"=$1`, c.ID).Scan(&raw)
+		if len(raw) > 0 && string(raw) != "null" {
+			var b communityBlock
+			if json.Unmarshal(raw, &b) == nil {
+				if b.Type == "QUESTION" || b.Type == "POLL" {
+					b.Stats = s.blockStats(ctx, user.ID, post.ID, b)
+				}
+				b.RefID = ""
+				view.Block = &b
+			}
+		}
+		_ = s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM "CommunityPost" WHERE "postId"=$1 AND "acceptedCommentId"=$2)`, post.ID, c.ID).Scan(&view.Accepted)
+		comments = append(comments, view)
 	}
 	httpx.OK(w, http.StatusOK, comments)
 	return nil
@@ -325,38 +364,106 @@ func (s *Server) createComment(w http.ResponseWriter, r *http.Request, user stor
 	if err != nil {
 		return err
 	}
-	var input struct {
-		Body     string            `json:"body"`
-		ParentID jsonx.Opt[string] `json:"parentId"`
+	var in struct {
+		Body      string            `json:"body"`
+		ParentID  jsonx.Opt[string] `json:"parentId"`
+		Block     *communityBlock   `json:"block"`
+		RequestID string            `json:"requestId"`
 	}
-	if err := httpx.Decode(r, &input); err != nil {
+	if err = httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	v := &validator{}
-	body := v.text(input.Body, 2000)
-	var parentID *string
-	if input.ParentID.Set {
-		// null is not an optional id either; v.id refuses the empty value it leaves behind.
-		id := v.id(input.ParentID.Value)
-		parentID = &id
-	}
-	if err := v.result(); err != nil {
-		return err
-	}
-	if parentID != nil {
-		topLevel, err := s.q.IsTopLevelComment(ctx, store.IsTopLevelCommentParams{ID: *parentID, PostID: post.ID})
-		if err != nil {
+	if in.RequestID != "" && len(in.RequestID) <= 100 {
+		var id, pid, body string
+		var created time.Time
+		err := s.pool.QueryRow(ctx, `SELECT c."id",c."postId",c."body",c."createdAt" FROM "CommunityComment" cc JOIN "Comment" c ON c."id"=cc."commentId" WHERE cc."userId"=$1 AND cc."requestId"=$2`, user.ID, in.RequestID).Scan(&id, &pid, &body, &created)
+		if err == nil {
+			if pid != post.ID {
+				return apierr.New(409, "다른 댓글에 사용된 요청이에요.")
+			}
+			httpx.OK(w, 201, map[string]any{"id": id, "postId": pid, "body": body, "createdAt": created, "isMine": true})
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		if !topLevel {
+	}
+	v := &validator{}
+	body := strings.TrimSpace(in.Body)
+	if in.Block == nil {
+		body = v.text(body, 2000)
+	} else {
+		v.check(len([]rune(body)) <= 2000, msgInput)
+	}
+	v.check(len(in.RequestID) <= 100, msgInput)
+	var parent *string
+	if in.ParentID.Set {
+		id := v.id(in.ParentID.Value)
+		parent = &id
+	}
+	if err = v.result(); err != nil {
+		return err
+	}
+	if parent != nil {
+		ok, e := s.q.IsTopLevelComment(ctx, store.IsTopLevelCommentParams{ID: *parent, PostID: post.ID})
+		if e != nil {
+			return e
+		}
+		if !ok {
 			return errReplyDepth
 		}
 	}
-	comment, err := s.q.CreateComment(ctx, store.CreateCommentParams{ID: ids.New(), PostID: post.ID, UserID: user.ID, Body: body, ParentID: parentID})
+	if in.Block != nil {
+		blocks, e := s.canonicalBlocks(ctx, user, []communityBlock{*in.Block}, true)
+		if e != nil {
+			return e
+		}
+		in.Block = &blocks[0]
+	}
+	var comment store.Comment
+	err = s.locked(ctx, post.UserID, func(tx pgx.Tx, q *store.Queries) error {
+		if in.RequestID != "" {
+			var id string
+			e := tx.QueryRow(ctx, `SELECT "commentId" FROM "CommunityComment" WHERE "userId"=$1 AND "requestId"=$2`, user.ID, in.RequestID).Scan(&id)
+			if e == nil {
+				return tx.QueryRow(ctx, `SELECT "id","postId","userId","body","parentId","createdAt" FROM "Comment" WHERE "id"=$1`, id).Scan(&comment.ID, &comment.PostID, &comment.UserID, &comment.Body, &comment.ParentID, &comment.CreatedAt)
+			}
+			if !errors.Is(e, pgx.ErrNoRows) {
+				return e
+			}
+		}
+		if in.Block != nil {
+			var collision bool
+			e := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM "CommunityPost" cp CROSS JOIN LATERAL jsonb_array_elements(cp."blocks") b WHERE cp."postId"=$1 AND b->>'id'=$2 UNION ALL SELECT 1 FROM "CommunityComment" cc JOIN "Comment" c ON c."id"=cc."commentId" WHERE c."postId"=$1 AND cc."block"->>'id'=$2)`, post.ID, in.Block.ID).Scan(&collision)
+			if e != nil {
+				return e
+			}
+			if collision {
+				return apierr.New(409, "이미 사용된 첨부예요. 다시 선택해 주세요.")
+			}
+		}
+		var count int
+		if e := tx.QueryRow(ctx, `SELECT count(*) FROM "Comment" WHERE "postId"=$1 AND "userId"<>$2`, post.ID, post.UserID).Scan(&count); e != nil {
+			return e
+		}
+		var e error
+		comment, e = q.CreateComment(ctx, store.CreateCommentParams{ID: ids.New(), PostID: post.ID, UserID: user.ID, Body: body, ParentID: parent})
+		if e != nil {
+			return e
+		}
+		_, e = tx.Exec(ctx, `INSERT INTO "CommunityComment"("commentId","userId","block","requestId") VALUES($1,$2,$3,NULLIF($4,''))`, comment.ID, user.ID, jsonBytes(in.Block), in.RequestID)
+		if e != nil {
+			return e
+		}
+		if count == 0 && user.ID != post.UserID {
+			_, e = tx.Exec(ctx, `INSERT INTO "Notification"("id","userId","title","body","href") VALUES($1,$2,'첫 답변이 도착했어요',$3,$4)`, ids.New(), post.UserID, post.Title, communityPostHref(post))
+		}
+		return e
+	})
 	if err != nil {
 		return err
 	}
-	httpx.OK(w, http.StatusCreated, commentRecord{ID: comment.ID, PostID: comment.PostID, UserID: comment.UserID, Body: comment.Body, ParentID: comment.ParentID, CreatedAt: jsonx.Time(comment.CreatedAt)})
+	httpx.OK(w, 201, map[string]any{"id": comment.ID, "postId": comment.PostID, "body": comment.Body, "parentId": comment.ParentID, "createdAt": comment.CreatedAt, "isMine": true})
 	return nil
 }
 
@@ -393,11 +500,19 @@ func (s *Server) createReport(w http.ResponseWriter, r *http.Request, user store
 func (s *Server) createBlock(w http.ResponseWriter, r *http.Request, user store.User) error {
 	var input struct {
 		UserID string `json:"userId"`
+		PostID string `json:"postId"`
 	}
 	if err := httpx.Decode(r, &input); err != nil {
 		return err
 	}
 	v := &validator{}
+	if input.PostID != "" {
+		p, e := s.accessiblePost(r.Context(), user, input.PostID)
+		if e != nil {
+			return e
+		}
+		input.UserID = p.UserID
+	}
 	userID := v.id(input.UserID)
 	if err := v.result(); err != nil {
 		return err
@@ -407,6 +522,9 @@ func (s *Server) createBlock(w http.ResponseWriter, r *http.Request, user store.
 		return err
 	}
 	if err := s.q.CreateBlock(ctx, store.CreateBlockParams{UserID: user.ID, BlockedID: userID}); err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, `DELETE FROM "Follow" WHERE ("followerId"=$1 AND "followingId"=$2) OR ("followerId"=$2 AND "followingId"=$1)`, user.ID, userID); err != nil {
 		return err
 	}
 	httpx.OK(w, http.StatusOK, map[string]bool{"blocked": true})

@@ -26,3 +26,31 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *;
 
 -- name: CreateGeneratedCard :one
 INSERT INTO "Card" ("id", "userId", "subjectId", "front", "back", "type", "materialId") VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *;
+
+-- name: SetQuestionExplanation :exec
+UPDATE "Question" SET "learningExplanation" = $2 WHERE "id" = $1;
+
+-- name: SetAttemptMetadata :exec
+UPDATE "Attempt" SET "responseMs" = $2, "requestId" = $3 WHERE "id" = $1;
+
+-- name: GetAttemptByRequest :one
+SELECT * FROM "Attempt" WHERE "userId" = $1 AND "requestId" = $2;
+
+-- name: GetOwnedAttempt :one
+SELECT * FROM "Attempt" WHERE "id" = $1 AND "userId" = $2 AND "questionId" = $3;
+
+-- name: UpdateReflection :one
+UPDATE "Attempt" SET "beatsSeen" = GREATEST("beatsSeen", @beats_seen), "explainDepth" = @depth,
+ "microResult" = CASE WHEN "microResult" IN ('PASS', 'FAIL') THEN "microResult" ELSE COALESCE(sqlc.narg('micro_result')::text, "microResult") END,
+ "divergenceNodeId" = COALESCE(sqlc.narg('node_id')::text, "divergenceNodeId")
+WHERE "id" = @id AND "userId" = @user_id AND "questionId" = @question_id RETURNING *;
+
+-- name: CreateExplanationReport :exec
+INSERT INTO "ExplanationReport" ("id", "userId", "questionId", "nodeId", "reason") VALUES ($1,$2,$3,$4,$5)
+ON CONFLICT ("userId", "questionId", "nodeId", "reason") DO NOTHING;
+
+-- name: UpsertExplanationCard :one
+INSERT INTO "Card" ("id", "userId", "subjectId", "front", "back", "type", "sourceQuestionId", "materialId", "diagram", "maskedNodeIds", "sourceDiagramId", "sourceKind")
+VALUES ($1,$2,$3,$4,$5,'BLIND',$6,$7,$8,$9,$10,'DIAGRAM')
+ON CONFLICT ("userId", "sourceQuestionId", "sourceKind") DO UPDATE SET "deleted" = false
+RETURNING *;

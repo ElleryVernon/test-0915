@@ -23,6 +23,14 @@ SELECT sqlc.embed(p), u."nickname" AS author_nickname,
   (SELECT count(*) FROM "Comment" AS c WHERE c."postId" = p."id") AS comment_count
 FROM "Post" AS p JOIN "User" AS u ON u."id" = p."userId"
 WHERE p."role" = @role
+  AND NOT EXISTS (SELECT 1 FROM "CommunityPost" cp WHERE cp."postId"=p."id" AND cp."deleted")
+  AND (NOT @following_only::boolean OR (NOT p."anonymous" AND EXISTS (SELECT 1 FROM "Follow" f WHERE f."followerId" = @viewer_id::text AND f."followingId"=p."userId")))
+  AND (@question_id::text = '' OR (p."userId" = @viewer_id::text AND EXISTS(SELECT 1 FROM "CommunityPost" cp WHERE cp."postId"=p."id" AND cp."sourceRef"->>'questionId' = @question_id::text)))
+  AND (@subject_id::text = '' OR EXISTS (SELECT 1 FROM "CommunityPost" cp WHERE cp."postId"=p."id" AND (cp."tags"->>'subjectId' = @subject_id::text OR cp."tags"->>'subjectName' = (SELECT "name" FROM "Subject" WHERE "id" = @subject_id::text AND "userId" = @viewer_id::text AND NOT "deleted"))))
+  AND (NOT @unanswered::boolean OR (p."category"='질문' AND p."createdAt" < now()-interval '24 hours' AND NOT EXISTS(SELECT 1 FROM "Comment" c WHERE c."postId"=p."id") AND EXISTS(SELECT 1 FROM "CommunityPost" cp JOIN "Subject" sub ON sub."userId" = @viewer_id::text AND NOT sub."deleted" AND sub."name"=cp."tags"->>'subjectName' WHERE cp."postId"=p."id")))
+  AND (p."school" = @school::text OR (@activity::boolean AND (p."school" = '' OR p."school" = @school::text)))
+  AND (NOT @mine::boolean OR p."userId" = @viewer_id::text)
+  AND (NOT @saved_only::boolean OR EXISTS (SELECT 1 FROM "PostSave" AS ps WHERE ps."postId" = p."id" AND ps."userId" = @viewer_id::text))
   AND u."suspended" = false
   AND NOT EXISTS (
     SELECT 1 FROM "Block" AS b
@@ -34,8 +42,8 @@ ORDER BY p."createdAt" DESC
 LIMIT 100;
 
 -- name: CreatePost :one
-INSERT INTO "Post" ("id", "userId", "role", "category", "title", "body", "anonymous")
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO "Post" ("id", "userId", "role", "category", "title", "body", "anonymous", "school")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: HasPostLike :one

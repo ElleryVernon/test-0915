@@ -7,6 +7,7 @@ import {
   minutes,
   scheduleGaps,
   STUDY_DAY,
+  timeString,
 } from '@/lib/schedule';
 
 export function dateKey(date = new Date()): string {
@@ -129,7 +130,14 @@ export function defaultSlot(scheduled: Schedule[], after?: string) {
   const from = window
     ? minutes(window.start)
     : Math.max(minutes(STUDY_DAY.start), after ? minutes(after) : 0);
-  return findFreeSlot(scheduled, from, 60) ?? { start: '17:00', end: '18:00' };
+  return (
+    findFreeSlot(scheduled, from, 60) ??
+    findFreeSlot(scheduled, from, 25) ??
+    findFreeSlot(scheduled, from, 5) ?? {
+      start: timeString(Math.min(from, 23 * 60 + 59)),
+      end: '23:59',
+    }
+  );
 }
 
 export type PlannerRow =

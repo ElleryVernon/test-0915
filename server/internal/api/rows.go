@@ -69,6 +69,9 @@ type scheduleRow struct {
 // cardView is asCard(): the row with nextReviewAt as ISO, image omitted when null, masks and fsrs
 // as JSON documents and, when known, the completed review count.
 type cardView struct {
+	Diagram          json.RawMessage `json:"diagram,omitempty"`
+	MaskedNodeIDs    []string        `json:"maskedNodeIds,omitempty"`
+	SourceDiagramID  *string         `json:"sourceDiagramId,omitempty"`
 	ID               string          `json:"id"`
 	UserID           string          `json:"userId"`
 	SubjectID        string          `json:"subjectId"`
@@ -98,6 +101,7 @@ func cardOf(c store.Card, reviewCount *int32) cardView {
 		fsrs = json.RawMessage("null")
 	}
 	return cardView{
+		Diagram: c.Diagram, MaskedNodeIDs: c.MaskedNodeIds, SourceDiagramID: c.SourceDiagramId,
 		ID: c.ID, UserID: c.UserID, SubjectID: c.SubjectID, Front: c.Front, Back: c.Back, Type: string(c.Type), Bucket: string(c.Bucket),
 		ConsecutiveEasy: c.ConsecutiveEasy, NextReviewAt: jsonx.Time(c.NextReviewAt), Deleted: c.Deleted, Image: c.Image, Masks: masks,
 		SourceQuestionID: c.SourceQuestionID, MaterialID: c.MaterialID, Fsrs: fsrs, CreatedAt: jsonx.Time(c.CreatedAt), ReviewCount: reviewCount,
@@ -131,17 +135,19 @@ func cardRowOf(c store.Card) cardRow {
 }
 
 type questionRow struct {
-	ID          string   `json:"id"`
-	UserID      string   `json:"userId"`
-	SubjectID   string   `json:"subjectId"`
-	MaterialID  string   `json:"materialId"`
-	Prompt      string   `json:"prompt"`
-	Options     []string `json:"options"`
-	Answer      int32    `json:"answer"`
-	Explanation string   `json:"explanation"`
-	Citation    string   `json:"citation"`
-	Past        string   `json:"past"`
-	Future      string   `json:"future"`
+	SavedToNotes    bool     `json:"savedToNotes,omitempty"`
+	CommunityPostID string   `json:"communityPostId,omitempty"`
+	ID              string   `json:"id"`
+	UserID          string   `json:"userId"`
+	SubjectID       string   `json:"subjectId"`
+	MaterialID      string   `json:"materialId"`
+	Prompt          string   `json:"prompt"`
+	Options         []string `json:"options"`
+	Answer          int32    `json:"answer"`
+	Explanation     string   `json:"explanation"`
+	Citation        string   `json:"citation"`
+	Past            string   `json:"past"`
+	Future          string   `json:"future"`
 }
 
 func questionOf(q store.Question) questionRow {
@@ -176,14 +182,19 @@ func essayOf(e store.Essay) essayRow {
 }
 
 type attemptView struct {
-	ID         string     `json:"id"`
-	UserID     string     `json:"userId"`
-	QuestionID *string    `json:"questionId,omitempty"`
-	EssayID    *string    `json:"essayId,omitempty"`
-	Answer     string     `json:"answer"`
-	Correct    bool       `json:"correct"`
-	Score      int32      `json:"score"`
-	CreatedAt  jsonx.Time `json:"createdAt"`
+	ResponseMs       *int32     `json:"responseMs,omitempty"`
+	BeatsSeen        int32      `json:"beatsSeen"`
+	ExplainDepth     *string    `json:"explainDepth,omitempty"`
+	MicroResult      *string    `json:"microResult,omitempty"`
+	DivergenceNodeID *string    `json:"divergenceNodeId,omitempty"`
+	ID               string     `json:"id"`
+	UserID           string     `json:"userId"`
+	QuestionID       *string    `json:"questionId,omitempty"`
+	EssayID          *string    `json:"essayId,omitempty"`
+	Answer           string     `json:"answer"`
+	Correct          bool       `json:"correct"`
+	Score            int32      `json:"score"`
+	CreatedAt        jsonx.Time `json:"createdAt"`
 }
 
 // imageMeta is one extracted image as the client sees it (contracts.ts MaterialImage).

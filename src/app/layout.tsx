@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import App from '@/components/app';
 export const metadata: Metadata = {
   title: 'memoryz · 기억이 남는 공부',
   description: '내 자료로 문제, 서술형 코칭, 복습 카드까지. 매일 조금씩, 오래 기억하는 공부.',
@@ -18,7 +19,11 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body>
+        {/* One client shell lives above route caching so Back never restores a second history owner. */}
+        <App />
+        {children}
+      </body>
     </html>
   );
 }

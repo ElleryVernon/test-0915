@@ -7,6 +7,7 @@ package store
 
 import (
 	"context"
+	"time"
 )
 
 const countUserComments = `-- name: CountUserComments :one
@@ -127,6 +128,59 @@ func (q *Queries) ListBlocked(ctx context.Context, userid string) ([]ListBlocked
 	for rows.Next() {
 		var i ListBlockedRow
 		if err := rows.Scan(&i.ID, &i.Nickname); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listConversations = `-- name: ListConversations :many
+SELECT u."id", u."nickname", recent."body", recent."createdAt"
+FROM "User" u
+JOIN LATERAL (
+  SELECT m."body", m."createdAt" FROM "Message" m
+  WHERE (m."senderId" = $1::text AND m."recipientId" = u."id")
+     OR (m."recipientId" = $1::text AND m."senderId" = u."id")
+  ORDER BY m."createdAt" DESC, m."id" DESC LIMIT 1
+) recent ON true
+WHERE u."id" <> $1::text AND u."role" = $2 AND NOT u."suspended"
+  AND NOT EXISTS (SELECT 1 FROM "Block" b
+    WHERE (b."userId" = $1::text AND b."blockedId" = u."id")
+       OR (b."userId" = u."id" AND b."blockedId" = $1::text))
+ORDER BY recent."createdAt" DESC, u."id" LIMIT 100
+`
+
+type ListConversationsParams struct {
+	ViewerID string
+	Role     Role
+}
+
+type ListConversationsRow struct {
+	ID        string
+	Nickname  string
+	Body      string
+	CreatedAt time.Time
+}
+
+func (q *Queries) ListConversations(ctx context.Context, arg ListConversationsParams) ([]ListConversationsRow, error) {
+	rows, err := q.db.Query(ctx, listConversations, arg.ViewerID, arg.Role)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListConversationsRow{}
+	for rows.Next() {
+		var i ListConversationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Nickname,
+			&i.Body,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

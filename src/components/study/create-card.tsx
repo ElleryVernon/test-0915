@@ -13,6 +13,7 @@ import {
 } from '@/components/icons';
 import type { CardType, Mask, ScreenProps } from '@/lib/contracts';
 import { Button, EmptyState, IconButton, ScreenHeader } from '@/components/ui';
+import { useJourneyState } from '../journey';
 import { api } from '@/lib/api';
 import { waitingLabel } from '@/lib/retry-countdown';
 import { detectHighlights, normalizeMask, TYPES } from './logic';
@@ -28,12 +29,12 @@ import {
 } from './shared';
 
 export function CreateCard(props: ScreenProps) {
-  const [type, setType] = useState<CardType>('CONCEPT');
-  const [subject, setSubject] = useState(
+  const [type, setType] = useJourneyState<CardType>('createCard.type', 'CONCEPT');
+  const [subject, setSubject] = useJourneyState('createCard.subject',
     params(props.path).get('subject') || props.data.subjects[0]?.id || '',
   );
-  const [front, setFront] = useState('');
-  const [back, setBack] = useState('');
+  const [front, setFront] = useJourneyState('createCard.front', '');
+  const [back, setBack] = useJourneyState('createCard.back', '');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
   const [masks, setMasks] = useState<Mask[]>([]);
@@ -178,7 +179,7 @@ export function CreateCard(props: ScreenProps) {
   if (!props.data.subjects.length)
     return (
       <>
-        <ScreenHeader title="카드 만들기" back={() => props.navigate('/flashcards')} />
+        <ScreenHeader title="카드 만들기" back={() => props.back('/flashcards')} />
         <EmptyState
           title="카드를 담을 과목이 필요해요"
           description="학습에서 과목을 하나 만든 뒤 카드를 추가해 주세요."
@@ -188,7 +189,7 @@ export function CreateCard(props: ScreenProps) {
     );
   return (
     <>
-      <ScreenHeader title="카드 만들기" back={() => props.navigate('/flashcards')} />
+      <ScreenHeader title="카드 만들기" back={() => props.back('/flashcards')} />
       <div className="page-inset pb-8">
         <section>
           <h2 className="mb-3 text-[13px] font-semibold text-muted">카드 종류</h2>
@@ -441,7 +442,9 @@ export function CreateCard(props: ScreenProps) {
                 });
                 await props.refresh();
                 props.toast('새 카드를 만들었어요');
-                props.navigate(`/flashcards?subject=${subject}`);
+                setFront('');
+                setBack('');
+                props.navigate(`/flashcards?subject=${subject}`, { replace: true });
               })
             }
           >

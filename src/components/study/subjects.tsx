@@ -56,6 +56,7 @@ import {
   uploadFile,
   useAction,
 } from './shared';
+import { useJourneyState } from '../journey';
 import { StudyHeader } from './study-header';
 import { Checkbox } from '@/components/ui-choice';
 import { DateField } from '@/components/ui-date';
@@ -115,7 +116,7 @@ export function StudyHome(props: ScreenProps) {
     }
   }, [add, subjectCount]);
   const [semesterOpen, setSemesterOpen] = useState(false);
-  const [semester, setSemester] = useState('');
+  const [semester, setSemester] = useJourneyState('study.semester', '');
   const now = Date.now();
   const subjects = props.data.subjects.filter((s) => !semester || s.semester === semester);
   const semesters = [...new Set(props.data.subjects.map((s) => s.semester))];
@@ -519,14 +520,14 @@ function SubjectEditor({
 export function SubjectDetail(props: ScreenProps) {
   const subjectId = props.path.split('?')[0].split('/')[2];
   const subject = props.data.subjects.find((s) => s.id === subjectId);
-  const [tab, setTab] = useState('자료');
+  const [tab, setTab] = useJourneyState('subject.tab', '자료');
   const [settings, setSettings] = useState(false);
   const [upload, setUpload] = useState(params(props.path).get('upload') === '1');
-  const [selected, setSelected] = useState<Material | null>(
-    props.data.materials.find(
-      (m) => m.id === params(props.path).get('material') && m.subjectId === subjectId,
-    ) || null,
+  const [selectedId, setSelectedId] = useJourneyState<string | null>(
+    'subject.material', params(props.path).get('material'),
   );
+  const selected = props.data.materials.find((m) => m.id === selectedId && m.subjectId === subjectId) ?? null;
+  const setSelected = (material: Material | null) => setSelectedId(material?.id ?? null);
   const [view, setView] = useState(false);
   const [edit, setEdit] = useState(params(props.path).get('edit') === '1');
   const [generation, setGeneration] = useState<'quiz' | 'essay' | 'cards' | null>(null);
@@ -535,7 +536,7 @@ export function SubjectDetail(props: ScreenProps) {
   if (!subject)
     return (
       <>
-        <StudyHeader title="내 과목" back={() => props.navigate('/study')} />
+        <StudyHeader title="내 과목" back={() => props.back('/study')} />
         <EmptyState
           title="과목을 찾을 수 없어요"
           description="삭제되었거나 다른 계정의 과목이에요."
@@ -553,7 +554,7 @@ export function SubjectDetail(props: ScreenProps) {
   return (
     <>
       <StudyHeader
-        back={() => props.navigate('/study')}
+        back={() => props.back('/study')}
         action={
           <IconButton label="과목 설정" onClick={() => setSettings(true)}>
             <MoreHorizontal size={24} />
@@ -754,23 +755,29 @@ export function SubjectDetail(props: ScreenProps) {
               제목 · 본문 수정
             </Button>
             <div className="grid grid-cols-2 gap-2">
-              <Button onClick={() => props.navigate(`/quiz?material=${selected.id}`)}>
-                문제 풀기
+              <Button onClick={() => questions.some((q) => q.materialId === selected.id)
+                ? props.navigate(`/quiz?material=${selected.id}`) : setGeneration('quiz')}>
+                {questions.some((q) => q.materialId === selected.id) ? '문제 풀기' : '문제 만들기'}
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => props.navigate(`/essay?material=${selected.id}`)}
+                onClick={() => props.data.essays.some((e) => e.materialId === selected.id)
+                  ? props.navigate(`/essay?material=${selected.id}`) : setGeneration('essay')}
               >
-                서술형 코칭
+                {props.data.essays.some((e) => e.materialId === selected.id) ? '서술형 코칭' : '서술형 만들기'}
               </Button>
             </div>
             <div className="space-y-1">
               {(
                 [
                   ['quiz', '문제 더 만들기'],
-                  ['essay', '서술형 만들기'],
+                  ['essay', '서술형 더 만들기'],
                   ['cards', '복습 카드 만들기'],
                 ] as const
+              ).filter(([mode]) =>
+                mode === 'cards' || (mode === 'quiz'
+                  ? questions.some((q) => q.materialId === selected.id)
+                  : props.data.essays.some((e) => e.materialId === selected.id))
               ).map(([mode, label]) => (
                 <button
                   key={mode}

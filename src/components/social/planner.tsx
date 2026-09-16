@@ -11,10 +11,10 @@ import {
 import {
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   LoaderCircle,
   Plus,
-  School,
   Sparkles,
   TriangleAlert,
 } from '@/components/icons';
@@ -30,11 +30,19 @@ import {
 import { retryAtOf, useRetryCountdown, waitingLabel } from '@/lib/retry-countdown';
 import { PLANNER_COPY, progressCopy } from '@/lib/ai-progress';
 import type { AppData, Schedule, ScreenProps } from '@/lib/contracts';
-import { formatMinutes, minutes, scheduleGaps, timeString } from '@/lib/schedule';
+import {
+  formatMinutes,
+  minutes,
+  scheduleGaps,
+  scheduleMatchesDraft,
+  timeString,
+} from '@/lib/schedule';
 import { isDue } from '@/lib/srs';
 import { Button, EmptyState, ErrorNote, IconButton, ScreenHeader, Sheet } from '@/components/ui';
-import ScheduleEditor, { type ScheduleDraft } from './planner-editor';
-import { MonthSheet, SchoolSheet } from './planner-pickers';
+import { useJourneyState } from '../journey';
+import ScheduleEditor, { type ScheduleDraft, type ScheduleReceipt } from './planner-editor';
+import { MonthSheet } from './planner-pickers';
+import { SchoolRegistrationForm } from './school-registration';
 import {
   ceilTime,
   dateKey,
@@ -76,14 +84,42 @@ const blockMinutes = (blocks: Pick<Schedule, 'start' | 'end'>[]) =>
 export default function Planner({ data, refresh, toast }: ScreenProps) {
   const [now, setNow] = useState(() => new Date());
   const today = dateKey(now);
-  const [day, setDay] = useState(today);
-  const [editor, setEditor] = useState<{
-    key: number;
+  const [day, setDay] = useJourneyState('planner.day', today);
+  type EditorDraft = {
     editing: Schedule | null;
     initial: ScheduleDraft;
+    baseline?: ScheduleDraft;
+    receipt?: ScheduleReceipt;
+  };
+  const [drafts, setDrafts] = useJourneyState<Record<string, EditorDraft>>('planner.drafts', {});
+  const [editor, setEditor] = useState<{
+    key: string;
+    receipt?: ScheduleReceipt;
+    editing: Schedule | null;
+    initial: ScheduleDraft;
+    baseline?: ScheduleDraft;
   } | null>(null);
+  useEffect(() => {
+    const completed = Object.entries(drafts)
+      .filter(
+        ([, draft]) =>
+          data.schedules.some(
+            (schedule) =>
+              (!draft.editing || schedule.id === draft.editing.id) &&
+              scheduleMatchesDraft(schedule, draft.initial),
+          ) ||
+          (!!draft.receipt &&
+            !!draft.editing &&
+            !data.schedules.some((schedule) => schedule.id === draft.editing!.id)),
+      )
+      .map(([key]) => key);
+    if (completed.length)
+      setDrafts((current) =>
+        Object.fromEntries(Object.entries(current).filter(([key]) => !completed.includes(key))),
+      );
+  }, [data.schedules, drafts, setDrafts]);
   const [monthOpen, setMonthOpen] = useState(false);
-  const [schoolOpen, setSchoolOpen] = useState(false);
+  const [schoolBusy, setSchoolBusy] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiContext, setAiContext] = useState<{ free: number; gap?: Gap }>({ free: 0 });
@@ -108,6 +144,8 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   const [resumedTask, setResumedTask] = useState<PlannerTask | null>(null);
   const requestStartedAt = useRef<number | null>(null);
   const resumeController = useRef<AbortController | null>(null);
+  const interacting = useRef(false);
+  interacting.current = !!editor || monthOpen;
   const viewedDay = useRef(day);
   viewedDay.current = day;
   const aiController = useRef<AbortController | null>(null);
@@ -131,10 +169,13 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
         .sort((a, b) => a.start.localeCompare(b.start)),
     [data.schedules, day],
   );
-  const rows = plannerRows(daySchedules, { now: isToday ? nowTime : undefined }).filter(
+  const rows = plannerRows(daySchedules, { now: isToday ? nowTime : undefined, minGap: 25 }).filter(
     (row) => row.type !== 'gap' || day >= today,
   );
-  const freeMinutes = rows.reduce((sum, row) => sum + (row.type === 'gap' ? row.minutes : 0), 0);
+  const freeMinutes = rows.reduce(
+    (sum, row) => sum + (row.type === 'gap' && row.minutes >= 60 ? row.minutes : 0),
+    0,
+  );
   const progress = studyProgress(daySchedules);
   const dueBySubject = useMemo(() => {
     const counts = new Map<string, number>();
@@ -145,13 +186,6 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   }, [data.cards, now]);
   const subjectNames = new Map(data.subjects.map((s) => [s.id, s.name]));
   const weekday = new Date(`${day}T12:00:00`).getDay() % 6 !== 0;
-  const hasFixed = daySchedules.some((s) => s.kind === 'FIXED');
-  const schoolHint =
-    weekday &&
-    !hasFixed &&
-    day >= today &&
-    daySchedules.length > 0 &&
-    scheduleGaps(daySchedules, { min: 180 }).length > 0;
   const suggestionContext = { today, now: nowTime, schedules: data.schedules };
   // The newest stored suggestion of a day decides that day's button; an unseen one elsewhere gets a notice.
   const dayTask = stored.find((task) => String(task.payload.date) === day);
@@ -232,20 +266,39 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
       ),
     };
   }
-  const openNew = (gap?: Gap, date = day) =>
-    setEditor({ key: Date.now(), editing: null, initial: draftFor(date, gap) });
+  const openNew = (gap?: Gap, date = day) => {
+    const initial = draftFor(date, gap);
+    const key = `new:${date}:${initial.start}`;
+    setEditor({ key, ...(drafts[key] ?? { editing: null, initial, baseline: initial }) });
+  };
+  const forgetDraft = (key: string) =>
+    setDrafts((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
   const openEdit = (schedule: Schedule) =>
     setEditor({
-      key: Date.now(),
-      editing: schedule,
-      initial: {
-        title: schedule.title,
-        date: schedule.date.slice(0, 10),
-        start: schedule.start,
-        end: schedule.end,
-        kind: schedule.kind,
-        subjectId: schedule.subjectId ?? '',
-      },
+      key: `edit:${schedule.id}`,
+      ...(drafts[`edit:${schedule.id}`] ?? {
+        editing: schedule,
+        baseline: {
+          title: schedule.title,
+          date: schedule.date.slice(0, 10),
+          start: schedule.start,
+          end: schedule.end,
+          kind: schedule.kind,
+          subjectId: schedule.subjectId ?? '',
+        },
+        initial: {
+          title: schedule.title,
+          date: schedule.date.slice(0, 10),
+          start: schedule.start,
+          end: schedule.end,
+          kind: schedule.kind,
+          subjectId: schedule.subjectId ?? '',
+        },
+      }),
     });
   function goToday() {
     scrollToNow.current = true;
@@ -311,7 +364,6 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   function showSuggestion(result: PlannerResult, date: string) {
     const recovered = recoverPlannerResult(result, date, schedulesRef.current);
     setSuggestionDate(recovered.date);
-    setDay(recovered.date);
     setPlans(recovered.plans);
     setPlanMethod(result.method ?? '');
     setPlanDropped(result.dropped ?? 0);
@@ -424,6 +476,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   function reviewStored(task: PlannerTask, gap?: Gap) {
     if (aiBusy || !task.result) return;
     const date = String(task.payload.date);
+    setDay(date);
     setAiContext({ free: freeOn(date), gap });
     setAiTask(task);
     setAiUnconfirmed(false);
@@ -519,7 +572,9 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
     if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));
     if (controller.signal.aborted) return;
     setAiBusy(false);
-    setAiOpen(true);
+    await refreshStored().catch(() => {});
+    if (viewedDay.current === day && !interacting.current) setAiOpen(true);
+    else toast(`${dayLabel(day)} 추천 요청 결과를 확인해 주세요.`);
   }
   async function checkPreviousRequest() {
     if (!aiTask || aiBusy) return;
@@ -663,13 +718,24 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
               {monthLabel}
               <ChevronDown size={12} aria-hidden="true" />
             </button>
-            <IconButton label="일정 추가" disabled={generating} onClick={() => openNew()}>
+            <IconButton label="일정 추가" onClick={() => openNew()}>
               <Plus size={24} />
             </IconButton>
           </div>
         }
       />
       <div className="page-inset planner-screen">
+        <div className="flex items-center justify-between">
+          <IconButton label="이전 주" onClick={() => setDay(shiftDate(day, -7))}>
+            <ChevronLeft size={18} />
+          </IconButton>
+          <span className="text-sm text-muted">
+            {dayLabel(weekDates(day)[0])} – {dayLabel(weekDates(day)[6])}
+          </span>
+          <IconButton label="다음 주" onClick={() => setDay(shiftDate(day, 7))}>
+            <ChevronRight size={18} />
+          </IconButton>
+        </div>
         <div
           ref={strip}
           className="week-strip"
@@ -704,6 +770,40 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
             </button>
           ))}
         </div>
+
+        {Object.keys(drafts).length > 0 && (
+          <section className="planner-drafts" aria-label="작성 중인 일정">
+            <h2>
+              이어서 진행하기 <span>{Object.keys(drafts).length}</span>
+            </h2>
+            {Object.entries(drafts).map(([key, draft]) => (
+              <button
+                key={key}
+                type="button"
+                className="planner-draft-card"
+                onClick={() => setEditor({ key, ...draft })}
+              >
+                <span className="planner-draft-copy">
+                  <span className="planner-draft-state">
+                    {draft.receipt
+                      ? '저장 확인 필요'
+                      : draft.editing
+                        ? '수정 중 · 아직 반영 전'
+                        : '작성 중 · 아직 등록 전'}
+                  </span>
+                  <strong>{draft.initial.title.trim() || '새 일정'}</strong>
+                  <span className="planner-draft-meta">
+                    {dayLabel(draft.initial.date)} · {draft.initial.start}–{draft.initial.end}
+                  </span>
+                </span>
+                <span className="planner-draft-action">
+                  {draft.receipt ? '확인' : '이어쓰기'}
+                  <ChevronRight size={15} aria-hidden="true" />
+                </span>
+              </button>
+            ))}
+          </section>
+        )}
 
         {readyElsewhere && (
           <button
@@ -756,17 +856,6 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
           <p className="planner-progress-empty">자율 학습을 담으면 공부 시간을 함께 세어 드려요</p>
         ) : null}
 
-        {schoolHint && (
-          <button type="button" className="planner-hint" onClick={() => setSchoolOpen(true)}>
-            <School size={16} aria-hidden="true" />
-            <span>학교 시간을 담으면 진짜 빈 시간만 남아요</span>
-            <strong>
-              학교 담기
-              <ChevronRight size={12} aria-hidden="true" />
-            </strong>
-          </button>
-        )}
-
         {!daySchedules.length ? (
           <EmptyState
             title="비어 있는 하루예요"
@@ -779,34 +868,27 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
             }
             action={
               <div className="planner-empty-actions">
-                {weekday && day >= today ? (
-                  <Button onClick={() => setSchoolOpen(true)}>
-                    <School size={18} />
-                    학교 시간부터 담기
-                  </Button>
-                ) : (
-                  day >= today && (
-                    <Button
-                      className={generating ? 'is-loading' : ''}
-                      aria-busy={generating}
-                      onClick={() => void suggest()}
-                      disabled={aiBusy}
-                    >
-                      {generating ? (
-                        working
-                      ) : (
-                        <>
-                          <Sparkles size={18} />
-                          공부 일정 추천받기
-                        </>
-                      )}
-                    </Button>
-                  )
-                )}
-                <Button variant="secondary" disabled={generating} onClick={() => openNew()}>
-                  <Plus size={18} />
-                  직접 추가
+                <Button variant="secondary" onClick={() => openNew()}>
+                  <Plus size={18} /> 일정 추가
                 </Button>
+                {day >= today && (
+                  <Button
+                    variant="ghost"
+                    className={generating ? 'is-loading' : ''}
+                    aria-busy={generating}
+                    onClick={() => void suggest()}
+                    disabled={aiBusy}
+                  >
+                    {generating ? (
+                      working
+                    ) : (
+                      <>
+                        <Sparkles size={18} />
+                        공부 일정 추천받기
+                      </>
+                    )}
+                  </Button>
+                )}
               </div>
             }
           />
@@ -836,27 +918,15 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
                     </span>
                     <button
                       type="button"
-                      className={`planner-gap${generating ? ' is-filling' : ''}`}
-                      disabled={aiBusy}
-                      aria-label={`${row.start}부터 ${row.end}까지 ${formatMinutes(row.minutes)} 비어 있어요. 추천으로 채우기`}
-                      onClick={() => {
-                        const gap = { start: row.start, end: row.end };
-                        if (reopenable) reviewStored(reopenable, gap);
-                        else void suggest({ gap });
-                      }}
+                      className="planner-gap"
+                      aria-label={`${row.start}부터 ${row.end}까지 ${formatMinutes(row.minutes)} 비어 있어요. 일정 추가`}
+                      onClick={() => openNew({ start: row.start, end: row.end })}
                     >
                       <span>{formatMinutes(row.minutes)} 비어 있어요</span>
-                      {generating ? (
-                        <strong>
-                          <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
-                          고르는 중
-                        </strong>
-                      ) : (
-                        <strong>
-                          채우기
-                          <ChevronRight size={12} aria-hidden="true" />
-                        </strong>
-                      )}
+                      <strong>
+                        일정 추가
+                        <Plus size={12} aria-hidden="true" />
+                      </strong>
                     </button>
                   </div>
                 );
@@ -939,12 +1009,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
             })}
             <div className="planner-row">
               <span />
-              <Button
-                variant="secondary"
-                className="planner-add"
-                disabled={generating}
-                onClick={() => openNew()}
-              >
+              <Button variant="secondary" className="planner-add" onClick={() => openNew()}>
                 <Plus size={18} aria-hidden="true" />
                 일정 추가
               </Button>
@@ -973,7 +1038,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
               </>
             ) : (
               <>
-                <Sparkles size={18} />빈 {formatMinutes(freeMinutes)} 채우기
+                <Sparkles size={18} />빈 시간 추천받기
               </>
             )}
           </Button>
@@ -986,9 +1051,54 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
           data={data}
           editing={editor.editing}
           initial={editor.initial}
-          onClose={() => setEditor(null)}
+          hasDraft={!!drafts[editor.key]}
+          schoolBusy={schoolBusy}
+          schoolPanel={
+            <SchoolRegistrationForm
+              data={data}
+              day={day}
+              today={today}
+              onBusyChange={setSchoolBusy}
+              onViewDate={(date) => {
+                setDay(date);
+                setEditor(null);
+              }}
+              onSaved={async (message, date) => {
+                await refresh();
+                setDay(date);
+                setEditor(null);
+                toast(message);
+              }}
+            />
+          }
+          receipt={editor.receipt}
+          onDraft={(initial, receipt) => {
+            // A no-op selection or returning to the original values is not an unfinished task.
+            if (!receipt && editor.baseline && scheduleMatchesDraft(editor.baseline, initial)) {
+              forgetDraft(editor.key);
+              return;
+            }
+            setDrafts((current) => ({
+              ...current,
+              [editor.key]: {
+                editing: editor.editing,
+                initial,
+                receipt,
+                baseline: editor.baseline,
+              },
+            }));
+          }}
+          onDiscard={() => {
+            forgetDraft(editor.key);
+            setEditor(null);
+            toast('초안을 버렸어요');
+          }}
+          onClose={() => {
+            setEditor(null);
+          }}
           onSaved={async (date, message) => {
             await refresh();
+            forgetDraft(editor.key);
             setDay(date);
             setEditor(null);
             toast(message);
@@ -1008,30 +1118,11 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
           }}
         />
       )}
-      {schoolOpen && (
-        <SchoolSheet
-          data={data}
-          day={day}
-          today={today}
-          onClose={() => setSchoolOpen(false)}
-          onSaved={async (message) => {
-            await refresh();
-            setSchoolOpen(false);
-            toast(message);
-          }}
-        />
-      )}
 
       <Sheet
         open={aiOpen}
         onClose={closeSuggestion}
-        title={
-          aiError && !plans.length
-            ? FAILURE_TITLE[failure]
-            : aiContext.free >= 60
-              ? `빈 ${josa(formatMinutes(aiContext.free), '을')} 채워요`
-              : '공부 일정을 추천해요'
-        }
+        title={aiError && !plans.length ? FAILURE_TITLE[failure] : '공부 일정을 골라 보세요'}
         description={
           aiError && !plans.length
             ? dayLabel(suggestionDate)
@@ -1110,7 +1201,9 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
                     <span className="planner-plan-head">
                       <span>
                         <strong>{plan.name}</strong>
-                        {plan.reason && <small>{plan.reason}</small>}
+                        <small>
+                          {plan.blocks.length}개 일정 · 공부 {formatMinutes(total)}
+                        </small>
                       </span>
                       <i>{selectedPlan === i && <Check size={13} />}</i>
                     </span>

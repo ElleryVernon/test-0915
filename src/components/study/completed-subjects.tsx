@@ -59,7 +59,7 @@ export function CompletedSubjects(props: ScreenProps) {
   };
   return (
     <>
-      <ScreenHeader title="배운 과목" back={() => props.navigate('/study')} />
+      <ScreenHeader title="배운 과목" back={() => props.back('/study')} />
       <div className="page-inset curriculum-page">
         <h2 className="text-[22px] leading-[1.35] font-bold tracking-[-.035em]">
           배운 과목만 골라 주세요
@@ -271,7 +271,7 @@ export function CompletedSubjects(props: ScreenProps) {
                 await api('/profile', { completedSubjects: selected }, 'PATCH');
                 await props.refresh();
                 props.toast('배운 과목을 저장했어요');
-                props.navigate('/study');
+                props.back('/study');
               })
             }
           >

@@ -423,7 +423,7 @@ test('every study route renders data or an actionable empty state without unavai
       data,
       path,
       refresh: async () => {},
-      navigate: () => {},
+      navigate: () => {}, back: () => {},
       toast: () => {},
     };
     const html = renderToStaticMarkup(createElement(StudyScreens, props));
@@ -442,7 +442,7 @@ test('every study route renders data or an actionable empty state without unavai
       data,
       path: '/quiz?question=question-1',
       refresh: async () => {},
-      navigate: () => {},
+      navigate: () => {}, back: () => {},
       toast: () => {},
     }),
   );
@@ -454,12 +454,13 @@ test('every study route renders data or an actionable empty state without unavai
       data,
       path: '/essay?essay=essay-1',
       refresh: async () => {},
-      navigate: () => {},
+      navigate: () => {}, back: () => {},
       toast: () => {},
     }),
   );
-  assert.ok(essay.includes('키워드를 모두 맞히면'));
-  assert.equal(essay.includes('<textarea'), false, 'Writing must be gated by prerequisite stages');
+  assert.ok(essay.includes('막혔나요? 키워드부터 연습하기'));
+  assert.equal(essay.includes('키워드를 모두 맞히면'), false);
+  assert.equal(essay.includes('<textarea'), true, 'Writing must be available without mandatory prerequisite games');
   console.log('STUDY_RENDER_VERIFIED');
 });
 

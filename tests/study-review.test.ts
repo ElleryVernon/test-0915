@@ -140,23 +140,47 @@ function fixture(): AppData {
       // Listed second but overdue longer: array order and due order disagree on purpose.
       card('due-good', { nextReviewAt: new Date(now - HOUR).toISOString(), reviewCount: 0 }),
       card('later', { bucket: 'EASY', nextReviewAt: new Date(now + 3 * DAY).toISOString() }),
-      card('mastered', { bucket: 'MASTERED', nextReviewAt: new Date(now + 400 * DAY).toISOString() }),
+      card('mastered', {
+        bucket: 'MASTERED',
+        nextReviewAt: new Date(now + 400 * DAY).toISOString(),
+      }),
       card('gone', { deleted: true }),
     ],
     attempts: [
-      { id: 'a1', questionId: 'q1', correct: false, score: 0, answer: '1', createdAt: new Date(now - DAY).toISOString() },
+      {
+        id: 'a1',
+        questionId: 'q1',
+        correct: false,
+        score: 0,
+        answer: '1',
+        createdAt: new Date(now - DAY).toISOString(),
+      },
     ],
     schedules: [],
     posts: [],
     cheers: [],
     notifications: [],
-    stats: { todayCards: 0, yesterdayCards: 6, todayQuestions: 0, accuracy: 0, studyMinutes: 0, weekly: [] },
+    stats: {
+      todayCards: 0,
+      yesterdayCards: 6,
+      todayQuestions: 0,
+      accuracy: 0,
+      studyMinutes: 0,
+      weekly: [],
+    },
     aiAvailable: false,
     demo: false,
   };
 }
 function render(path: string, data = fixture()) {
-  const props: ScreenProps = { data, path, refresh: async () => {}, navigate: () => {}, toast: () => {} };
+  const props: ScreenProps = {
+    data,
+    path,
+    refresh: async () => {},
+    navigate: () => {},
+    back: () => {},
+    toast: () => {},
+  };
   return renderToStaticMarkup(createElement(StudyScreens, props));
 }
 const text = (html: string) =>
@@ -172,9 +196,20 @@ test('D-day counts Seoul calendar days, hides past exams and shortens only "고�
   const now = new Date('2026-09-14T15:30:00Z');
   assert.equal(seoulDateKey(now), '2026-09-15');
   const exam = examCountdown({ examName: '중간고사', examDate: '2026-09-27' }, now);
-  assert.deepEqual(exam, { days: 12, name: '중간고사', label: '중간고사 D-12', short: '중간 D-12' });
-  assert.equal(examCountdown({ examName: '기말고사', examDate: '2026-09-15' }, now)?.short, '기말 D-day');
-  assert.equal(examCountdown({ examName: '수행평가', examDate: '2026-09-18' }, now)?.short, '수행평가 D-3');
+  assert.deepEqual(exam, {
+    days: 12,
+    name: '중간고사',
+    label: '중간고사 D-12',
+    short: '중간 D-12',
+  });
+  assert.equal(
+    examCountdown({ examName: '기말고사', examDate: '2026-09-15' }, now)?.short,
+    '기말 D-day',
+  );
+  assert.equal(
+    examCountdown({ examName: '수행평가', examDate: '2026-09-18' }, now)?.short,
+    '수행평가 D-3',
+  );
   assert.equal(examCountdown({ examDate: '2026-09-20' }, now)?.label, '시험 D-5');
   assert.equal(examCountdown({ examName: '중간고사', examDate: '2026-09-14' }, now), null);
   assert.equal(examCountdown({ examName: '중간고사' }, now), null);
@@ -186,7 +221,10 @@ test('subject rows count only this subject, live cards and due cards; empty subj
   const bio = subjectSummary(data, 'bio');
   assert.deepEqual(bio, { materials: 2, questions: 3, essays: 1, cards: 4, due: 2, again: 1 });
   assert.equal(subjectMeta(bio), '자료 2 · 문제 3 · 카드 4');
-  assert.equal(subjectMeta(subjectSummary(data, 'eng')), '아직 자료가 없어요 · 올리면 문제·카드가 생겨요');
+  assert.equal(
+    subjectMeta(subjectSummary(data, 'eng')),
+    '아직 자료가 없어요 · 올리면 문제·카드가 생겨요',
+  );
   // A card-only subject keeps its counts instead of claiming it is empty.
   data.cards.push(card('eng-card', { subjectId: 'eng' }));
   assert.equal(subjectMeta(subjectSummary(data, 'eng')), '자료 0 · 문제 0 · 카드 1');
@@ -225,14 +263,26 @@ test('study methods report state, not stock: wrong/new questions, drafts in prog
   const stale = draft(new Date().toISOString(), 'old-revision');
   assert.equal(studyMethods(data, [stale]).find((m) => m.key === 'essay')!.meta, '1문제');
   // Neither is a draft that was submitted afterwards.
-  data.attempts.push({ id: 'a2', essayId: essay.id, correct: false, score: 40, answer: 'x', createdAt: new Date(Date.now() + 1000).toISOString() });
+  data.attempts.push({
+    id: 'a2',
+    essayId: essay.id,
+    correct: false,
+    score: 40,
+    answer: 'x',
+    createdAt: new Date(Date.now() + 1000).toISOString(),
+  });
   const later = Object.fromEntries(studyMethods(data, [fresh]).map((m) => [m.key, m.meta]));
   assert.equal(later.essay, '1문제');
   assert.equal(later.wrong, '2문제');
   const empty = { ...fixture(), questions: [], essays: [], attempts: [], cards: [] };
   assert.deepEqual(
     studyMethods(empty, []).map((m) => m.meta),
-    ['자료로 만들 수 있어요', '자료로 만들 수 있어요', '틀린 문제가 없어요', '첫 카드를 만들어 보세요'],
+    [
+      '자료로 만들 수 있어요',
+      '자료로 만들 수 있어요',
+      '틀린 문제가 없어요',
+      '첫 카드를 만들어 보세요',
+    ],
   );
 });
 
@@ -246,8 +296,14 @@ test('library groups due cards first, then later ones by date with permanent mas
     card('due-old', { nextReviewAt: new Date(now - 2 * DAY).toISOString() }),
   ];
   const { today, later } = libraryGroups(cards, now);
-  assert.deepEqual(today.map((c) => c.id), ['due-old', 'due-new']);
-  assert.deepEqual(later.map((c) => c.id), ['soon', 'late', 'm']);
+  assert.deepEqual(
+    today.map((c) => c.id),
+    ['due-old', 'due-new'],
+  );
+  assert.deepEqual(
+    later.map((c) => c.id),
+    ['soon', 'late', 'm'],
+  );
   assert.deepEqual(whenLabel(today[0], now), { text: '지금', strong: true });
   assert.deepEqual(whenLabel(later[2], now), { text: '암기완료', strong: true });
   assert.deepEqual(whenLabel(later[1], now), { text: '5일 뒤', strong: false });
@@ -255,18 +311,24 @@ test('library groups due cards first, then later ones by date with permanent mas
 
 test('bucket distribution counts every box and shares sum to one', () => {
   const dist = bucketDistribution(fixture().cards.filter((c) => !c.deleted));
-  assert.deepEqual(dist.map((d) => [d.label, d.count]), [
-    ['다시', 1],
-    ['어려움', 0],
-    ['보통', 1],
-    ['쉬움', 1],
-    ['암기완료', 1],
-  ]);
+  assert.deepEqual(
+    dist.map((d) => [d.label, d.count]),
+    [
+      ['다시', 1],
+      ['어려움', 0],
+      ['보통', 1],
+      ['쉬움', 1],
+      ['암기완료', 1],
+    ],
+  );
   assert.equal(Math.round(dist.reduce((sum, d) => sum + d.share, 0) * 1000), 1000);
-  assert.deepEqual(bucketDistribution([]).map((d) => d.share), [0, 0, 0, 0, 0]);
+  assert.deepEqual(
+    bucketDistribution([]).map((d) => d.share),
+    [0, 0, 0, 0, 0],
+  );
 });
 
-test('next review day uses the Seoul calendar and skips due, same-day, deleted and mastered cards', () => {
+test('next review includes same-day learning steps and uses the Seoul calendar', () => {
   // 23:30 in Seoul; a card at 00:30 Seoul the next morning is "내일", not today as UTC dates would say.
   const now = new Date('2026-09-15T14:30:00Z');
   const at = (iso: string, extra: Partial<Card> = {}) => card(iso, { nextReviewAt: iso, ...extra });
@@ -279,9 +341,25 @@ test('next review day uses the Seoul calendar and skips due, same-day, deleted a
     at('2026-09-16T13:00:00Z', { bucket: 'MASTERED' }),
     at('2026-09-19T01:00:00Z'),
   ];
-  assert.deepEqual(nextReviewDay(cards, now), { date: '2026-09-16', count: 2, when: '내일' });
-  assert.deepEqual(nextReviewDay(cards.slice(-1), now), { date: '2026-09-19', count: 1, when: '9월 19일' });
-  assert.equal(nextReviewDay(cards.slice(0, 2), now), null);
+  assert.deepEqual(nextReviewDay(cards, now), { date: '2026-09-15', count: 1, when: '20분 뒤' });
+  assert.deepEqual(nextReviewDay(cards.slice(2), now), {
+    date: '2026-09-16',
+    count: 2,
+    when: '내일',
+  });
+  assert.deepEqual(nextReviewDay(cards.slice(-1), now), {
+    date: '2026-09-19',
+    count: 1,
+    when: '9월 19일',
+  });
+  assert.equal(nextReviewDay(cards.slice(0, 1), now), null);
+  assert.deepEqual(
+    nextReviewDay(
+      [at('2026-09-15T14:40:00Z'), at('2026-09-15T14:40:30Z'), at('2026-09-15T14:50:00Z')],
+      now,
+    ),
+    { date: '2026-09-15', count: 2, when: '10분 뒤' },
+  );
 });
 
 test('session result keeps the latest rating per card and lists "다시" cards', () => {
@@ -292,12 +370,15 @@ test('session result keeps the latest rating per card and lists "다시" cards',
     { cardId: 'a', rating: 'EASY' },
   ]);
   assert.equal(result.total, 3);
-  assert.deepEqual(result.counts.map((c) => [c.label, c.count]), [
-    ['다시', 1],
-    ['어려움', 0],
-    ['보통', 1],
-    ['쉬움', 1],
-  ]);
+  assert.deepEqual(
+    result.counts.map((c) => [c.label, c.count]),
+    [
+      ['다시', 1],
+      ['어려움', 0],
+      ['보통', 1],
+      ['쉬움', 1],
+    ],
+  );
   assert.deepEqual(result.againIds, ['c']);
   assert.equal(sessionDuration(252000), '4분 12초');
   assert.equal(sessionDuration(42400), '42초');
@@ -311,13 +392,24 @@ test('streak through today counts a finished session only when today was not alr
   assert.equal(streakThroughToday(data, 3, now), 5);
   assert.equal(streakThroughToday(data, 0, now), 4);
   assert.equal(streakThroughToday({ ...data, stats: { ...data.stats, todayCards: 2 } }, 3, now), 4);
-  const today = { id: 't', questionId: 'q2', correct: true, score: 100, answer: '1', createdAt: now.toISOString() };
+  const today = {
+    id: 't',
+    questionId: 'q2',
+    correct: true,
+    score: 100,
+    answer: '1',
+    createdAt: now.toISOString(),
+  };
   assert.equal(streakThroughToday({ ...data, attempts: [today] }, 3, now), 4);
   assert.equal(streakThroughToday({ ...data, profile: { ...data.profile, streak: 0 } }, 1, now), 1);
 });
 
 test('answers keep a readable size; a long first paragraph folds the explanation behind "더 보기"', () => {
-  assert.deepEqual(splitBack('짧은 정답\n\n설명 문단'), { answer: '짧은 정답', explanation: '설명 문단', collapsed: false });
+  assert.deepEqual(splitBack('짧은 정답\n\n설명 문단'), {
+    answer: '짧은 정답',
+    explanation: '설명 문단',
+    collapsed: false,
+  });
   const long = '가'.repeat(141);
   assert.equal(splitBack(`${long}\n\n설명`).collapsed, true);
   assert.equal(splitBack(long).collapsed, false, 'nothing to fold without an explanation');
@@ -330,7 +422,17 @@ test('review ordinal uses the server count, then FSRS reps, and stays silent whe
   assert.equal(reviewOrdinal({ reviewCount: 2 }), '3번째 복습');
   assert.equal(
     reviewOrdinal({
-      fsrs: { due: '', stability: 1, difficulty: 1, elapsed_days: 0, scheduled_days: 0, learning_steps: 0, reps: 4, lapses: 0, state: 2 },
+      fsrs: {
+        due: '',
+        stability: 1,
+        difficulty: 1,
+        elapsed_days: 0,
+        scheduled_days: 0,
+        learning_steps: 0,
+        reps: 4,
+        lapses: 0,
+        state: 2,
+      },
     }),
     '5번째 복습',
   );
@@ -339,12 +441,22 @@ test('review ordinal uses the server count, then FSRS reps, and stays silent whe
 
 test('mastery hint is limited to the first three completed sessions per account and survives blocked storage', () => {
   const values = new Map<string, string>();
-  const storage = { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => void values.set(k, v) };
+  const storage = {
+    getItem: (k: string) => values.get(k) ?? null,
+    setItem: (k: string, v: string) => void values.set(k, v),
+  };
   assert.equal(completedReviewSessions('u1', storage), 0);
   for (let i = 0; i < MASTERY_HINT_SESSIONS; i++) recordReviewSession('u1', storage);
   assert.equal(completedReviewSessions('u1', storage), 3);
   assert.equal(completedReviewSessions('u2', storage), 0, 'counts are per account');
-  const blocked = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
+  const blocked = {
+    getItem: () => {
+      throw new Error('blocked');
+    },
+    setItem: () => {
+      throw new Error('blocked');
+    },
+  };
   assert.equal(completedReviewSessions('u1', blocked), 0);
   assert.doesNotThrow(() => recordReviewSession('u1', blocked));
 });
@@ -352,10 +464,19 @@ test('mastery hint is limited to the first three completed sessions per account 
 test('subject insight only speaks from the subject numbers', () => {
   const summary = { materials: 3, questions: 9, essays: 0, cards: 8, due: 4, again: 3 };
   const exam = { days: 21, name: '중간고사', label: '중간고사 D-21', short: '중간 D-21' };
-  assert.deepEqual(subjectInsight(summary, exam), { title: '시험 3주 전 · 카드 8장 중 3장이 "다시" 상자', description: '자료로 문제를 더 만들어 볼까요?' });
+  assert.deepEqual(subjectInsight(summary, exam), {
+    title: '시험 3주 전 · 카드 8장 중 3장이 "다시" 상자',
+    description: '자료로 문제를 더 만들어 볼까요?',
+  });
   assert.equal(subjectInsight({ ...summary, again: 0 }, exam), null);
-  assert.equal(subjectInsight({ ...summary, again: 0, questions: 0 }, { ...exam, days: 5 })?.title, '시험 5일 전 · 아직 문제가 없어요');
-  assert.equal(subjectInsight({ ...summary, again: 0, questions: 0 }, { ...exam, days: 0 })?.title, '시험 당일 · 아직 문제가 없어요');
+  assert.equal(
+    subjectInsight({ ...summary, again: 0, questions: 0 }, { ...exam, days: 5 })?.title,
+    '시험 5일 전 · 아직 문제가 없어요',
+  );
+  assert.equal(
+    subjectInsight({ ...summary, again: 0, questions: 0 }, { ...exam, days: 0 })?.title,
+    '시험 당일 · 아직 문제가 없어요',
+  );
   assert.equal(subjectInsight({ ...summary, materials: 0 }, exam), null);
 });
 
@@ -374,7 +495,10 @@ test('study home is a library: one review row, subject state, methods list; no d
   assert.ok(!t.includes('카드가 기다려요'), 'no personified hero');
   assert.ok(!html.includes('<select'), 'semester is a chip that opens a sheet');
   assert.equal((html.match(/is-primary/g) || []).length, 1, 'one brand action on the screen');
-  assert.ok(/class="study-today-pill is-primary"[^>]*>바로 가기</.test(html), 'the row goes to the card library');
+  assert.ok(
+    /class="study-today-pill is-primary"[^>]*>바로 가기</.test(html),
+    'the row goes to the card library',
+  );
   const none = render('/study', { ...fixture(), cards: [] });
   assert.ok(text(none).includes('복습 카드가 아직 없어요'));
   assert.ok(!none.includes('is-primary'), 'nothing to review is not the main action');
@@ -413,11 +537,17 @@ test('review card front uses a white card, remaining time and subject, and a bra
   assert.ok(t.includes('개념 · 용어와 정의'));
   // The session walks the library's "오늘" list: the card overdue for an hour before the one due a second ago.
   const library = text(render('/flashcards'));
-  assert.ok(library.indexOf('질문 due-good') < library.indexOf('질문 due-again'), 'library lists the longest overdue first');
-  assert.ok(t.includes('질문 due-good') && t.includes('보통 상자 · 첫 복습'), 'the session starts where the list starts');
+  assert.ok(
+    library.indexOf('질문 due-good') < library.indexOf('질문 due-again'),
+    'library lists the longest overdue first',
+  );
+  assert.ok(
+    t.includes('질문 due-good') && t.includes('보통 상자 · 첫 복습'),
+    'the session starts where the list starts',
+  );
   const single = text(render('/flashcards?card=due-again&review=1'));
   assert.ok(single.includes('1 / 1') && single.includes('다시 상자 · 3번째 복습'));
-  assert.ok(t.includes('답이 떠오르면 카드를 탭하세요'));
+  assert.ok(t.includes('먼저 답을 떠올린 뒤 확인해 보세요'));
   assert.ok(/class="btn btn-primary w-full"[^>]*>정답 보기/.test(html));
   assert.ok(!html.includes('primary-surface'), 'no orange inversion');
   console.log('STUDY_REVIEW_VERIFIED');

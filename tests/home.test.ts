@@ -290,7 +290,7 @@ test('empty home renders a real onboarding action without invented progress or c
     createElement(HomeScreen, {
       data,
       path: '/',
-      navigate: () => {},
+      navigate: () => {}, back: () => {},
       toast: () => {},
       refresh: async () => {},
     }),
@@ -311,7 +311,7 @@ test('empty home renders a real onboarding action without invented progress or c
     createElement(HomeScreen, {
       data,
       path: '/',
-      navigate: () => {},
+      navigate: () => {}, back: () => {},
       toast: () => {},
       refresh: async () => {},
     }),
@@ -327,7 +327,7 @@ const render = (data: AppData) =>
     createElement(HomeScreen, {
       data,
       path: '/',
-      navigate: () => {},
+      navigate: () => {}, back: () => {},
       toast: () => {},
       refresh: async () => {},
     }),

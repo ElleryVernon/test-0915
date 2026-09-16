@@ -1,16 +1,7 @@
 'use client';
+import { CommunityAsk } from '../social/community-ask';
 import { useEffect, useState } from 'react';
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  ChevronRight,
-  Eye,
-  GripVertical,
-  LockKeyhole,
-  PencilLine,
-  RotateCcw,
-} from '@/components/icons';
+import { Check, ChevronRight, Eye, PencilLine, RotateCcw } from '@/components/icons';
 import type { Essay, Material, ScreenProps } from '@/lib/contracts';
 import {
   findEssayDraft,
@@ -18,6 +9,7 @@ import {
   removeEssayDraft,
   essayRevision,
 } from '@/lib/study-drafts';
+import { useJourneyLayer, useJourneyState } from '../journey';
 import { Button, EmptyState, IconButton, ScreenHeader } from '@/components/ui';
 import {
   acknowledgeAiTask,
@@ -29,7 +21,15 @@ import {
   type AiTaskRecord,
 } from '@/lib/ai-task';
 import { useRetryCountdown, waitingLabel } from '@/lib/retry-countdown';
-import { exactKeywords, exactOrder, latestAttempts, mix } from './logic';
+import {
+  essaySelection,
+  toggleEssayKeyword,
+  appendEssayOrder,
+  restartEssayOrder,
+  completeEssayOutline,
+  essayPracticeStart,
+} from '@/lib/essay-interaction';
+import { exactKeywords, latestAttempts, mix } from './logic';
 import {
   BusyText,
   Chip,
@@ -46,10 +46,8 @@ import {
 type Feedback = { score: number; matched: string[]; missing: string[]; feedback: string };
 export function EssayScreen(props: ScreenProps) {
   const query = params(props.path);
-  const [subject, setSubject] = useState(query.get('subject') || '');
-  const [selected, setSelected] = useState<Essay | null>(
-    props.data.essays.find((e) => e.id === query.get('essay')) || null,
-  );
+  const [subject, setSubject] = useJourneyState('essay.subject', query.get('subject') || '');
+  const selected = props.data.essays.find((e) => e.id === query.get('essay'));
   const [generate, setGenerate] = useState(false);
   if (selected)
     return (
@@ -58,7 +56,10 @@ export function EssayScreen(props: ScreenProps) {
         essay={selected}
         props={props}
         onBack={() => {
-          setSelected(null);
+          const rest = new URLSearchParams(query);
+          rest.delete('essay');
+          rest.delete('revise');
+          props.back(`/essay${rest.size ? `?${rest}` : ''}`);
         }}
       />
     );
@@ -70,31 +71,30 @@ export function EssayScreen(props: ScreenProps) {
   const latest = latestAttempts(props.data.attempts, 'essayId');
   return (
     <>
-      <ScreenHeader title="서술형 코칭" back={() => props.navigate('/study')} />
+      <ScreenHeader title="서술형 코칭" back={() => props.back('/study')} />
       <div className="page-inset pb-8">
         <h2 className="mt-3 text-[26px] font-extrabold leading-[1.3] tracking-[-.035em]">
           아는 것을
           <br />내 문장으로 꺼내는 연습
         </h2>
         <p className="mt-3 text-[14px] leading-relaxed text-muted">
-          키워드를 고르고, 순서를 연결하면
-          <br />빈 답안도 차근차근 채워져요.
+          바로 써 보고 코칭을 받아 보세요.
+          <br />
+          막힐 때는 키워드와 예시로 연습할 수 있어요.
         </p>
-        <div className="my-6 grid grid-cols-4 gap-2">
-          {['키워드', '순서', '도식 힌트', '실전 서술'].map((label, i) => (
-            <div key={label} className="rounded-2xl bg-surface px-1 py-3 text-center">
-              <span className="text-[20px] font-extrabold">{i + 1}</span>
-              <span className="mt-1 block text-[11px] font-semibold text-muted">{label}</span>
-            </div>
-          ))}
+        <div className="mt-6">
+          <SubjectSelect data={props.data} value={subject} onChange={setSubject} />
         </div>
-        <SubjectSelect data={props.data} value={subject} onChange={setSubject} />
         <div className="mt-4">
           {essays.map((e) => (
             <button
               key={e.id}
               className="flex min-h-[100px] w-full items-center gap-3 py-4 text-left"
-              onClick={() => setSelected(e)}
+              onClick={() => {
+                const next = new URLSearchParams(query);
+                next.set('essay', e.id);
+                props.navigate(`/essay?${next}`);
+              }}
             >
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface">
                 <PencilLine size={22} />
@@ -147,15 +147,30 @@ function EssayExercise({
       ? saved
       : undefined;
   });
-  const [stage, setStage] = useState(draft?.stage || 1);
-  const [selected, setSelected] = useState<string[]>(draft?.selected || []);
+  const initial = essayPracticeStart(
+    draft,
+    params(props.path).get('revise') === '1' ? previous?.answer : undefined,
+  );
+  const [stage, setStage] = useState(initial.stage);
+  const [guided, setGuided] = useState(initial.guided);
+  const [keywordHelp, setKeywordHelp] = useState(false);
+  const choices = mix([...new Set([...essay.keywords, ...essay.distractors])]);
+  const [selected, setSelected] = useState<string[]>(() =>
+    essaySelection(draft?.selected || [], choices, essay.keywords.length),
+  );
   const [checked, setChecked] = useState(false);
-  const [order, setOrder] = useState(draft?.order || mix(essay.keywords));
+  const [order, setOrder] = useState(() =>
+    essaySelection(
+      draft?.stage && draft.stage > 1 ? draft.order : [],
+      essay.keywords,
+      essay.keywords.length,
+    ),
+  );
   const [hint, setHint] = useState(draft?.hint || false);
-  const [answer, setAnswer] = useState(draft?.answer ?? previous?.answer ?? '');
+  const [answer, setAnswer] = useState(initial.answer);
+  const [coaching, setCoaching] = useState(draft?.coaching || '');
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [viewer, setViewer] = useState<{ material: Material; citation?: string } | null>(null);
-  const [dragged, setDragged] = useState<number | null>(null);
   const [task, setTask] = useState<AiTaskRecord | null>(null);
   const action = useAction();
   // A refused or interrupted grading that said when to come back keeps the button waiting.
@@ -163,11 +178,13 @@ function EssayExercise({
   useEffect(() => {
     if (feedback) {
       removeEssayDraft(props.data.profile.id, essay.id);
-    } else if (selected.length || stage > 1 || answer !== (previous?.answer || '')) {
+    } else if (selected.length || guided || answer.trim().length) {
       saveEssayDraft(props.data.profile.id, {
         essayId: essay.id,
         revision: essayRevision(essay),
         stage,
+        guided,
+        coaching,
         selected,
         order,
         hint,
@@ -181,6 +198,8 @@ function EssayExercise({
     props.data.profile.id,
     essay,
     stage,
+    guided,
+    coaching,
     selected,
     order,
     hint,
@@ -224,74 +243,108 @@ function EssayExercise({
     // Recovery only reads a previously submitted answer; it never starts a new evaluation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [essay.id, props.data.profile.id]);
-  const labels = ['키워드 고르기', '순서 연결하기', '도식 힌트', '실전 서술'];
-  const keywords = mix([...essay.keywords, ...essay.distractors]);
+  const labels = ['키워드', '글의 순서', '예시 비교', '답안 작성'];
+  const keywords = choices;
   const material = props.data.materials.find((m) => m.id === essay.materialId);
-  function move(from: number, to: number) {
-    if (to < 0 || to >= order.length) return;
-    setOrder((current) => {
-      const next = [...current];
-      next.splice(to, 0, next.splice(from, 1)[0]);
-      return next;
-    });
-  }
+  const closeGuide = useJourneyLayer(guided && !feedback, () => {
+    if (feedback) return;
+    setGuided(false);
+    setStage(4);
+  });
+  const backToKeywords = useJourneyLayer(guided && stage >= 2 && !feedback, () => {
+    if (feedback) return;
+    setStage(1);
+    setChecked(false);
+  });
+  const backToOrder = useJourneyLayer(guided && stage >= 3 && !feedback, () => {
+    if (feedback) return;
+    setStage(2);
+  });
+  const backToHint = useJourneyLayer(guided && stage >= 4 && !feedback, () => {
+    if (feedback) return;
+    setStage(3);
+  });
+  const previousStage =
+    stage === 4
+      ? backToHint
+      : stage === 3
+        ? backToOrder
+        : stage === 2
+          ? backToKeywords
+          : closeGuide;
   const allKeywords = exactKeywords(selected, essay.keywords);
-  const ordered = exactOrder(order, essay.keywords);
+  const outlineComplete = completeEssayOutline(order, essay.keywords);
+  const unchangedRevision = !!previous && answer.trim() === previous.answer.trim();
+  const pending = action.busy || task?.status === 'RUNNING' || task?.status === 'READY';
   return (
     <>
-      <ScreenHeader title="서술형 코칭" back={onBack} />
+      <ScreenHeader title="서술형 코칭" back={guided && !feedback ? previousStage : onBack} />
       <div className="page-inset pb-8">
-        <div className="essay-steps" aria-label="서술형 4단계">
-          {labels.map((label, i) => (
-            <div
-              key={label}
-              className={`essay-step ${stage === i + 1 ? 'current' : ''}`}
-              aria-current={stage === i + 1 ? 'step' : undefined}
-            >
+        {guided && !feedback && (
+          <div className="essay-steps" aria-label="선택한 연습 도움 단계">
+            {labels.map((label, i) => (
               <div
-                className={`mb-2 h-1 rounded-full ${stage >= i + 1 ? 'bg-brand' : 'bg-surface'}`}
-              />
-              <span
-                className={`text-[12px] font-semibold ${stage === i + 1 ? 'text-ink' : 'text-muted'}`}
+                key={label}
+                className={`essay-step ${stage === i + 1 ? 'current' : ''}`}
+                aria-current={stage === i + 1 ? 'step' : undefined}
               >
-                {i + 1}. {label}
-              </span>
-            </div>
-          ))}
-        </div>
+                <div
+                  className={`mb-2 h-1 rounded-full ${stage >= i + 1 ? 'bg-brand' : 'bg-surface'}`}
+                />
+                <span
+                  className={`text-[12px] font-semibold ${stage === i + 1 ? 'text-ink' : 'text-muted'}`}
+                >
+                  {i + 1}. {label}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {!feedback && (
           <>
             <span className="text-[13px] font-semibold text-muted">
-              {stage}단계 · {labels[stage - 1]}
+              {guided ? `연습 도움 · ${labels[stage - 1]}` : '서술형 연습'}
             </span>
             <h1 className="mt-2 whitespace-pre-line text-[25px] font-extrabold leading-[1.35] tracking-[-.035em]">
               {stage === 1
-                ? '설명에 필요한 키워드를\n모두 골라 주세요'
+                ? `설명에 필요한 키워드\n${essay.keywords.length}개를 골라 주세요`
                 : stage === 2
-                  ? '이야기의 흐름대로\n순서를 연결해요'
+                  ? '설명할 순서대로\n생각을 정리해 보세요'
                   : stage === 3
-                    ? '머릿속에 흐름을\n그려 볼까요?'
-                    : '이제 내 문장으로\n설명해 주세요'}
+                    ? '예시와 비교하며\n생각을 다듬어 보세요'
+                    : params(props.path).get('revise') === '1' || coaching
+                      ? '내 답안을\n더 명확하게 다듬어 보세요'
+                      : '내 문장으로\n설명해 보세요'}
             </h1>
             <p className="essay-prompt">{essay.prompt}</p>
           </>
         )}
-        {stage === 1 && (
+        {stage === 1 && !feedback && (
           <>
-            <p className="mt-5 text-[13px] text-muted">
-              관련 키워드 {essay.keywords.length}개와 관계없는 키워드가 섞여 있어요.
+            <div className="essay-selection-summary" aria-live="polite">
+              <span>
+                {keywords.length}개 중 {essay.keywords.length}개 선택
+              </span>
+              <strong>
+                {selected.length} / {essay.keywords.length}
+              </strong>
+            </div>
+            <p id="keyword-instruction" className="text-[13px] leading-relaxed text-muted">
+              {selected.length === essay.keywords.length
+                ? '다 골랐어요. 바꾸려면 선택한 단어를 먼저 눌러 해제하세요.'
+                : '질문을 설명하는 데 꼭 필요한 단어만 골라 주세요.'}
             </p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               {keywords.map((word) => (
                 <button
                   key={word}
                   aria-pressed={selected.includes(word)}
+                  disabled={!selected.includes(word) && selected.length >= essay.keywords.length}
+                  aria-describedby="keyword-instruction"
                   onClick={() => {
                     setChecked(false);
                     setSelected((current) =>
-                      current.includes(word)
-                        ? current.filter((k) => k !== word)
-                        : [...current, word],
+                      toggleEssayKeyword(current, word, choices, essay.keywords.length),
                     );
                   }}
                   className="keyword-option"
@@ -305,20 +358,17 @@ function EssayExercise({
               {checked && !allKeywords && (
                 <p role="alert" className="rounded-2xl bg-surface p-4 text-[14px] leading-relaxed">
                   {selected.some((k) => !essay.keywords.includes(k))
-                    ? '설명과 관계없는 키워드가 있어요. 각 단어가 질문과 어떻게 연결되는지 생각해 보세요.'
+                    ? '이 답안의 핵심 키워드와 다른 선택이 있어요. 근거에서 어떤 작용을 설명하는지 확인해 보세요.'
                     : `필요한 키워드가 더 있어요. ${essay.keywords.length}개를 모두 골라 주세요.`}
                 </p>
               )}
-              <p className="flex items-center justify-center gap-1.5 text-[12px] text-muted">
-                <LockKeyhole size={14} />
-                키워드를 모두 맞히면 다음 단계가 열려요
-              </p>
               <Button
                 className="w-full"
-                disabled={!selected.length}
+                disabled={selected.length !== essay.keywords.length}
                 onClick={() => {
                   setChecked(true);
                   if (allKeywords) {
+                    setChecked(false);
                     setStage(2);
                     window.scrollTo({ top: 0 });
                   }
@@ -326,59 +376,116 @@ function EssayExercise({
               >
                 키워드 확인하기
               </Button>
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => setKeywordHelp((shown) => !shown)}
+              >
+                {keywordHelp ? '핵심 키워드와 근거 접기' : '핵심 키워드와 근거 보기'}
+              </Button>
+              {keywordHelp && (
+                <div className="rounded-2xl bg-surface p-4 space-y-3">
+                  <p className="text-sm font-semibold">{essay.keywords.join(' · ')}</p>
+                  <p className="text-sm leading-relaxed">{essay.citation}</p>
+                  <Button
+                    className="w-full"
+                    variant="secondary"
+                    onClick={() => {
+                      setSelected(essay.keywords);
+                      setStage(2);
+                      window.scrollTo({ top: 0 });
+                    }}
+                  >
+                    이 키워드로 생각 정리하기
+                  </Button>
+                </div>
+              )}
             </div>
           </>
         )}
-        {stage === 2 && (
+        {stage === 2 && !feedback && (
           <>
-            <p className="my-5 text-[13px] leading-relaxed text-muted">
-              위아래 화살표나 드래그로 옮겨 주세요.
-              <br />
-              흐름이 맞는 위치는 진하게 표시돼요.
+            <p className="mt-4 text-sm leading-relaxed text-muted">
+              글에서 설명할 순서대로 골라 주세요. 문장으로 관계를 설명하면 되므로 정해진 단어 순서를
+              맞힐 필요는 없어요.
             </p>
-            <div className="space-y-2">
-              {order.map((word, i) => (
-                <div
+            <div className="essay-selection-summary" aria-live="polite">
+              <span>
+                {order.length < essay.keywords.length
+                  ? `${order.length + 1}번째에 올 키워드를 골라 주세요`
+                  : '순서를 모두 채웠어요'}
+              </span>
+              <strong>
+                {order.length} / {essay.keywords.length}
+              </strong>
+            </div>
+            <ol className="essay-order" aria-label="내가 정한 키워드 순서">
+              {essay.keywords.map((_, index) => {
+                const word = order[index];
+                return (
+                  <li key={index} className={index === order.length ? 'is-next' : ''}>
+                    <span className="essay-order-number">{index + 1}</span>
+                    {word ? (
+                      <button
+                        onClick={() => {
+                          setOrder(restartEssayOrder(order, index));
+                        }}
+                        aria-label={`${index + 1}번째 ${word}, 여기부터 다시 고르기`}
+                      >
+                        <strong>{word}</strong>
+                        <span>여기부터 다시</span>
+                      </button>
+                    ) : (
+                      <span className="essay-order-empty">
+                        {index === order.length
+                          ? '아래에서 선택해 주세요'
+                          : '아직 선택하지 않았어요'}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+            <div
+              className="mt-4 grid grid-cols-2 gap-2"
+              role="group"
+              aria-label="다음 순서에 놓을 키워드"
+            >
+              {mix(essay.keywords).map((word) => (
+                <button
                   key={word}
-                  draggable
-                  onDragStart={() => setDragged(i)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => {
-                    if (dragged !== null) move(dragged, i);
-                    setDragged(null);
+                  className="keyword-option"
+                  disabled={order.includes(word)}
+                  aria-pressed={order.includes(word)}
+                  onClick={() => {
+                    setOrder((current) => appendEssayOrder(current, word, essay.keywords));
                   }}
-                  className={`flex min-h-16 items-center gap-3 rounded-2xl px-3 py-2 ${word === essay.keywords[i] ? 'bg-ink text-white' : 'bg-surface'}`}
                 >
-                  <GripVertical size={18} className="shrink-0 opacity-50" />
-                  <span className="text-[13px] font-bold opacity-60">{i + 1}</span>
-                  <span className="min-w-0 flex-1 text-[15px] font-semibold">{word}</span>
-                  <div className="flex">
-                    <IconButton
-                      label={`${word} 위로`}
-                      disabled={i === 0}
-                      onClick={() => move(i, i - 1)}
-                    >
-                      <ArrowUp size={17} />
-                    </IconButton>
-                    <IconButton
-                      label={`${word} 아래로`}
-                      disabled={i === order.length - 1}
-                      onClick={() => move(i, i + 1)}
-                    >
-                      <ArrowDown size={17} />
-                    </IconButton>
-                  </div>
-                </div>
+                  {word}
+                </button>
               ))}
             </div>
-            <p className="my-5 text-center text-sm text-muted">
-              {ordered
-                ? '흐름이 자연스럽게 연결되었어요'
-                : '원인에서 결과로, 순서를 한 번 더 생각해 봐요'}
-            </p>
+            <div className="essay-order-tools">
+              <button
+                disabled={!order.length}
+                onClick={() => {
+                  setOrder(order.slice(0, -1));
+                }}
+              >
+                <RotateCcw size={15} /> 마지막 선택 취소
+              </button>
+              <button
+                disabled={!order.length}
+                onClick={() => {
+                  setOrder([]);
+                }}
+              >
+                처음부터
+              </button>
+            </div>
             <Button
               className="w-full"
-              disabled={!ordered}
+              disabled={!outlineComplete}
               onClick={() => {
                 setStage(3);
                 window.scrollTo({ top: 0 });
@@ -386,40 +493,36 @@ function EssayExercise({
             >
               이 흐름으로 이어가기
             </Button>
+            <Button className="mt-2 w-full" variant="ghost" onClick={backToKeywords}>
+              키워드 다시 고르기
+            </Button>
           </>
         )}
-        {stage === 3 && (
+        {stage === 3 && !feedback && (
           <>
-            <div className="mt-6 rounded-[24px] bg-surface p-5">
-              {hint ? (
-                <div className="space-y-1" aria-label="개념의 인과 순서">
-                  {essay.keywords.map((word, i) => (
-                    <div key={word}>
-                      <div className="flex min-h-14 items-center justify-center rounded-2xl bg-white px-4 text-center text-[16px] font-bold">
-                        {word}
-                      </div>
-                      {i < essay.keywords.length - 1 && (
-                        <div className="flex h-8 items-center justify-center">
-                          <ArrowDown size={22} className="text-muted" />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex min-h-44 flex-col items-center justify-center gap-4">
-                  <Eye size={30} />
-                  <p className="text-center text-sm leading-relaxed text-muted">
-                    연결한 키워드를 도식으로 볼 수 있어요.
-                    <br />
-                    힌트를 봐도 점수는 줄어들지 않아요.
-                  </p>
-                  <Button variant="secondary" onClick={() => setHint(true)}>
-                    도식 힌트 보기
-                  </Button>
-                </div>
-              )}
+            <div className="mt-5 rounded-2xl bg-surface p-4">
+              <h2 className="text-sm font-bold">내가 정한 글의 순서</h2>
+              <ol className="mt-3 space-y-2">
+                {order.map((word, i) => (
+                  <li key={word} className="text-sm">
+                    {i + 1}. {word}
+                  </li>
+                ))}
+              </ol>
             </div>
+            {hint ? (
+              <div className="mt-4 rounded-2xl bg-surface p-4">
+                <h2 className="text-sm font-bold">예시 답안</h2>
+                <p className="mt-3 text-sm leading-relaxed">{essay.modelAnswer}</p>
+                <p className="mt-3 text-xs leading-relaxed text-muted">
+                  표현과 설명 순서는 달라도 괜찮아요. 핵심 내용과 관계가 드러나도록 써 보세요.
+                </p>
+              </div>
+            ) : (
+              <Button className="mt-4 w-full" variant="secondary" onClick={() => setHint(true)}>
+                <Eye size={17} /> 예시 답안 보기
+              </Button>
+            )}
             <Button
               className="mt-6 w-full"
               onClick={() => {
@@ -427,35 +530,87 @@ function EssayExercise({
                 window.scrollTo({ top: 0 });
               }}
             >
-              {hint ? '이제 직접 서술하기' : '힌트 없이 서술하기'}
+              답안 쓰기
+            </Button>
+            <Button className="mt-2 w-full" variant="ghost" onClick={backToOrder}>
+              순서 다시 정하기
             </Button>
           </>
         )}
         {stage === 4 && !feedback && (
           <>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {essay.keywords.map((k) => (
-                <span
-                  key={k}
-                  className="rounded-lg bg-surface px-2.5 py-1.5 text-xs font-semibold text-muted"
-                >
-                  {k}
-                </span>
-              ))}
-            </div>
+            {guided && (
+              <p className="mt-4 text-sm leading-relaxed text-muted">
+                내 글의 순서 · {order.join(' → ')}
+              </p>
+            )}
+            {!guided && (
+              <p className="mt-3 text-sm leading-relaxed text-muted">
+                {params(props.path).get('revise') === '1' || coaching
+                  ? '지난 답안을 가져왔어요. 빠진 내용이나 설명이 부족한 부분을 고쳐 보세요.'
+                  : '먼저 떠오르는 대로 써 보세요. 막히면 아래에서 키워드와 예시의 도움을 받을 수 있어요.'}
+              </p>
+            )}
+            {coaching && (
+              <details className="mt-4 rounded-2xl bg-surface p-4">
+                <summary className="cursor-pointer text-sm font-semibold">
+                  보완할 내용 다시 보기
+                </summary>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{coaching}</p>
+              </details>
+            )}
             <label className="mt-5 block">
               <span className="sr-only">서술형 답안</span>
               <textarea
-                autoFocus
                 className="field min-h-60 resize-y !bg-canvas text-[16px] leading-[1.8]"
                 maxLength={5000}
                 value={answer}
                 disabled={action.busy || task?.status === 'RUNNING' || task?.status === 'READY'}
                 onChange={(e) => setAnswer(e.target.value)}
-                placeholder="키워드를 연결해 원인부터 결과까지 설명해 주세요."
+                placeholder="왜 그런지, 어떻게 이어지는지 내 말로 설명해 주세요."
               />
             </label>
-            <p className="mt-2 text-right text-xs text-muted">{answer.length} / 5,000자</p>
+            <p className="mt-2 text-right text-xs text-muted">
+              {answer.trim().length < 10 ? '10자 이상 쓰면 코칭을 받을 수 있어요 · ' : ''}
+              {answer.length} / 5,000자
+            </p>
+            {!guided && (
+              <Button
+                className="mt-3 w-full"
+                variant="secondary"
+                disabled={pending}
+                onClick={() => {
+                  setGuided(true);
+                  setStage(1);
+                  window.scrollTo({ top: 0 });
+                }}
+              >
+                막혔나요? 키워드부터 연습하기
+              </Button>
+            )}
+            {previous?.answer && (
+              <details className="mt-4 rounded-2xl bg-surface p-4">
+                <summary className="cursor-pointer text-sm font-semibold">
+                  지난 답안 보기 · {previous.score}점
+                </summary>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">
+                  {previous.answer}
+                </p>
+                <Button
+                  className="mt-3 w-full"
+                  variant="secondary"
+                  disabled={pending || !!answer.trim()}
+                  onClick={() => setAnswer(previous.answer!)}
+                >
+                  지난 답안 가져와 고치기
+                </Button>
+                {!!answer.trim() && (
+                  <p className="mt-2 text-xs text-muted">
+                    작성 중인 내용을 지우지 않도록 가져오기는 빈 답안에서만 가능해요.
+                  </p>
+                )}
+              </details>
+            )}
             <div className="mt-5 space-y-3">
               {!props.data.aiAvailable && (
                 <p className="rounded-2xl bg-surface p-4 text-sm leading-relaxed text-secondary">
@@ -465,8 +620,7 @@ function EssayExercise({
               )}
               {task && (task.status === 'RUNNING' || task.status === 'READY') && !action.busy && (
                 <p className="rounded-2xl bg-surface p-4 text-sm leading-relaxed">
-                  이전 답안과 채점 요청을 보관하고 있어요. 같은 요청 번호로 이어서 확인해 중복
-                  채점을 막아요.
+                  채점이 진행 중이에요. 화면을 나갔다 돌아와도 이어서 확인할 수 있어요.
                 </p>
               )}
               {task && (task.status === 'FAILED' || task.status === 'INTERRUPTED') && (
@@ -476,10 +630,16 @@ function EssayExercise({
                 </p>
               )}
               <ErrorNote error={action.error} />
+              {unchangedRevision && (
+                <p className="text-sm text-muted" role="status">
+                  지난 답안과 같아요. 내용을 고치면 다시 코칭을 받을 수 있어요.
+                </p>
+              )}
               <Button
                 className="w-full"
                 disabled={
                   answer.trim().length < 10 ||
+                  unchangedRevision ||
                   action.busy ||
                   (retryIn > 0 && task?.status !== 'RUNNING' && task?.status !== 'READY')
                 }
@@ -524,9 +684,11 @@ function EssayExercise({
                   '연습 채점 받기'
                 )}
               </Button>
-              <Button className="w-full" variant="ghost" onClick={() => setStage(3)}>
-                도식 힌트 다시 보기
-              </Button>
+              {guided && (
+                <Button className="w-full" variant="ghost" disabled={pending} onClick={backToHint}>
+                  내 글의 순서와 예시 다시 보기
+                </Button>
+              )}
             </div>
           </>
         )}
@@ -539,8 +701,8 @@ function EssayExercise({
               </h1>
               <p className="mt-1 text-sm leading-relaxed text-muted">
                 {feedback.score === 100
-                  ? '완벽하게 설명했어요. 서술형 오답노트에서도 빠졌어요.'
-                  : '조금만 보완하면 더 명확한 설명이 돼요. 답안은 오답노트에 저장했어요.'}
+                  ? '핵심 내용을 잘 설명했어요. 이 답안의 보완을 마쳤어요.'
+                  : '코칭을 참고해 답안을 고쳐 보세요. 보완할 답안은 오답노트의 서술형 탭에 모아 두었어요.'}
               </p>
             </div>
             <div className="rounded-[20px] bg-surface p-4">
@@ -579,16 +741,21 @@ function EssayExercise({
               material={material}
               onOpen={() => setViewer(material ? { material, citation: essay.citation } : null)}
             />
+            <CommunityAsk {...props} essay={essay} kind="ESSAY" />
             <ErrorNote error={action.error} />
             {feedback.score < 100 && (
               <Button
                 className="w-full"
                 onClick={() => {
+                  setCoaching(feedback.feedback);
                   setFeedback(null);
+                  setGuided(false);
+                  setStage(4);
+                  setTask(null);
                   action.setError('');
                 }}
               >
-                한 문장 더 쓰기
+                답안 고쳐 쓰기
               </Button>
             )}
             <Button
@@ -600,8 +767,17 @@ function EssayExercise({
             </Button>
           </div>
         )}
+        {guided && !feedback && (
+          <Button className="mt-4 w-full" variant="ghost" disabled={pending} onClick={closeGuide}>
+            도움 닫고 답안으로 돌아가기
+          </Button>
+        )}
       </div>
-      <MaterialViewer material={viewer?.material ?? null} citation={viewer?.citation} onClose={() => setViewer(null)} />
+      <MaterialViewer
+        material={viewer?.material ?? null}
+        citation={viewer?.citation}
+        onClose={() => setViewer(null)}
+      />
     </>
   );
 }

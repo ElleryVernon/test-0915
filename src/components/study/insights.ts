@@ -32,7 +32,12 @@ export function examCountdown(
   if (!Number.isInteger(days) || days < 0) return null;
   const name = subject.examName?.trim() || '시험';
   const tag = days === 0 ? 'D-day' : `D-${days}`;
-  return { days, name, label: `${name} ${tag}`, short: `${name.replace(/고사$/, '') || name} ${tag}` };
+  return {
+    days,
+    name,
+    label: `${name} ${tag}`,
+    short: `${name.replace(/고사$/, '') || name} ${tag}`,
+  };
 }
 
 export interface SubjectSummary {
@@ -76,13 +81,19 @@ export function subjectInsight(
   if (!summary.materials) return null;
   if (summary.cards && summary.again)
     return {
-      title: [exam ? examLead(exam) : '', `카드 ${summary.cards}장 중 ${summary.again}장이 "다시" 상자`]
+      title: [
+        exam ? examLead(exam) : '',
+        `카드 ${summary.cards}장 중 ${summary.again}장이 "다시" 상자`,
+      ]
         .filter(Boolean)
         .join(' · '),
       description: '자료로 문제를 더 만들어 볼까요?',
     };
   if (exam && exam.days <= 21 && !summary.questions)
-    return { title: `${examLead(exam)} · 아직 문제가 없어요`, description: '자료로 문제를 만들어 볼까요?' };
+    return {
+      title: `${examLead(exam)} · 아직 문제가 없어요`,
+      description: '자료로 문제를 만들어 볼까요?',
+    };
   return null;
 }
 
@@ -143,8 +154,10 @@ export function studyMethods(
       key: 'essay',
       label: '서술형 코칭',
       meta:
-        join(writing ? `작성 중 ${writing}` : '', data.essays.length ? `${data.essays.length}문제` : '') ||
-        '자료로 만들 수 있어요',
+        join(
+          writing ? `작성 중 ${writing}` : '',
+          data.essays.length ? `${data.essays.length}문제` : '',
+        ) || '자료로 만들 수 있어요',
       path: '/essay',
     },
     {
@@ -188,22 +201,37 @@ export function bucketDistribution(cards: Card[]) {
   });
 }
 
-/** The first later Seoul day that has reviews waiting, excluding reviews that return later today. */
+/** Earliest future review: today's learning steps must not disappear behind a later day. */
 export function nextReviewDay(cards: Card[], now: Date) {
+  const upcoming = cards
+    .filter(
+      (card) =>
+        !card.deleted &&
+        !permanentlyMastered(card) &&
+        Number.isFinite(Date.parse(card.nextReviewAt)) &&
+        !isDue(card, now.getTime()),
+    )
+    .sort((a, b) => Date.parse(a.nextReviewAt) - Date.parse(b.nextReviewAt));
+  const first = upcoming[0];
+  if (!first) return null;
   const today = seoulDateKey(now);
-  const counts = new Map<string, number>();
-  for (const card of cards) {
-    if (card.deleted || permanentlyMastered(card) || isDue(card, now.getTime())) continue;
-    const day = seoulDateKey(new Date(card.nextReviewAt));
-    if (day > today) counts.set(day, (counts.get(day) || 0) + 1);
-  }
-  const date = [...counts.keys()].sort()[0];
-  if (!date) return null;
+  const date = seoulDateKey(new Date(first.nextReviewAt));
+  const minute = Math.floor(Date.parse(first.nextReviewAt) / 60000);
+  const count = upcoming.filter((card) =>
+    date === today
+      ? Math.floor(Date.parse(card.nextReviewAt) / 60000) === minute
+      : seoulDateKey(new Date(card.nextReviewAt)) === date,
+  ).length;
   const [, month, day] = date.split('-').map(Number);
   return {
     date,
-    count: counts.get(date)!,
-    when: date === addDays(today, 1) ? '내일' : `${month}월 ${day}일`,
+    count,
+    when:
+      date === today
+        ? `${intervalLabel(first.nextReviewAt, now.getTime())} 뒤`
+        : date === addDays(today, 1)
+          ? '내일'
+          : `${month}월 ${day}일`,
   };
 }
 

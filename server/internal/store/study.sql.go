@@ -12,7 +12,7 @@ import (
 
 const createAttempt = `-- name: CreateAttempt :one
 INSERT INTO "Attempt" ("id", "userId", "questionId", "essayId", "answer", "correct", "score")
-VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, "userId", "questionId", "essayId", answer, correct, score, "createdAt"
+VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, "userId", "questionId", "essayId", answer, correct, score, "createdAt", "responseMs", "beatsSeen", "explainDepth", "microResult", "divergenceNodeId", "requestId"
 `
 
 type CreateAttemptParams struct {
@@ -45,6 +45,12 @@ func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (A
 		&i.Correct,
 		&i.Score,
 		&i.CreatedAt,
+		&i.ResponseMs,
+		&i.BeatsSeen,
+		&i.ExplainDepth,
+		&i.MicroResult,
+		&i.DivergenceNodeId,
+		&i.RequestID,
 	)
 	return i, err
 }
@@ -93,8 +99,32 @@ func (q *Queries) CreateEssay(ctx context.Context, arg CreateEssayParams) (Essay
 	return i, err
 }
 
+const createExplanationReport = `-- name: CreateExplanationReport :exec
+INSERT INTO "ExplanationReport" ("id", "userId", "questionId", "nodeId", "reason") VALUES ($1,$2,$3,$4,$5)
+ON CONFLICT ("userId", "questionId", "nodeId", "reason") DO NOTHING
+`
+
+type CreateExplanationReportParams struct {
+	ID         string
+	UserID     string
+	QuestionID string
+	NodeId     string
+	Reason     string
+}
+
+func (q *Queries) CreateExplanationReport(ctx context.Context, arg CreateExplanationReportParams) error {
+	_, err := q.db.Exec(ctx, createExplanationReport,
+		arg.ID,
+		arg.UserID,
+		arg.QuestionID,
+		arg.NodeId,
+		arg.Reason,
+	)
+	return err
+}
+
 const createGeneratedCard = `-- name: CreateGeneratedCard :one
-INSERT INTO "Card" ("id", "userId", "subjectId", "front", "back", "type", "materialId") VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, "userId", "subjectId", front, back, type, bucket, "consecutiveEasy", "nextReviewAt", deleted, image, masks, "sourceQuestionId", fsrs, "createdAt", "materialId"
+INSERT INTO "Card" ("id", "userId", "subjectId", "front", "back", "type", "materialId") VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, "userId", "subjectId", front, back, type, bucket, "consecutiveEasy", "nextReviewAt", deleted, image, masks, "sourceQuestionId", fsrs, "createdAt", "materialId", "sourceKind", diagram, "maskedNodeIds", "sourceDiagramId"
 `
 
 type CreateGeneratedCardParams struct {
@@ -135,13 +165,17 @@ func (q *Queries) CreateGeneratedCard(ctx context.Context, arg CreateGeneratedCa
 		&i.Fsrs,
 		&i.CreatedAt,
 		&i.MaterialID,
+		&i.SourceKind,
+		&i.Diagram,
+		&i.MaskedNodeIds,
+		&i.SourceDiagramId,
 	)
 	return i, err
 }
 
 const createQuestion = `-- name: CreateQuestion :one
 INSERT INTO "Question" ("id", "userId", "subjectId", "materialId", "prompt", "options", "answer", "explanation", "citation", "past", "future")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, "userId", "subjectId", "materialId", prompt, options, answer, explanation, citation, past, future
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, "userId", "subjectId", "materialId", prompt, options, answer, explanation, citation, past, future, "learningExplanation"
 `
 
 type CreateQuestionParams struct {
@@ -185,6 +219,70 @@ func (q *Queries) CreateQuestion(ctx context.Context, arg CreateQuestionParams) 
 		&i.Citation,
 		&i.Past,
 		&i.Future,
+		&i.LearningExplanation,
+	)
+	return i, err
+}
+
+const getAttemptByRequest = `-- name: GetAttemptByRequest :one
+SELECT id, "userId", "questionId", "essayId", answer, correct, score, "createdAt", "responseMs", "beatsSeen", "explainDepth", "microResult", "divergenceNodeId", "requestId" FROM "Attempt" WHERE "userId" = $1 AND "requestId" = $2
+`
+
+type GetAttemptByRequestParams struct {
+	UserID    string
+	RequestID *string
+}
+
+func (q *Queries) GetAttemptByRequest(ctx context.Context, arg GetAttemptByRequestParams) (Attempt, error) {
+	row := q.db.QueryRow(ctx, getAttemptByRequest, arg.UserID, arg.RequestID)
+	var i Attempt
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.QuestionID,
+		&i.EssayID,
+		&i.Answer,
+		&i.Correct,
+		&i.Score,
+		&i.CreatedAt,
+		&i.ResponseMs,
+		&i.BeatsSeen,
+		&i.ExplainDepth,
+		&i.MicroResult,
+		&i.DivergenceNodeId,
+		&i.RequestID,
+	)
+	return i, err
+}
+
+const getOwnedAttempt = `-- name: GetOwnedAttempt :one
+SELECT id, "userId", "questionId", "essayId", answer, correct, score, "createdAt", "responseMs", "beatsSeen", "explainDepth", "microResult", "divergenceNodeId", "requestId" FROM "Attempt" WHERE "id" = $1 AND "userId" = $2 AND "questionId" = $3
+`
+
+type GetOwnedAttemptParams struct {
+	ID         string
+	UserID     string
+	QuestionID *string
+}
+
+func (q *Queries) GetOwnedAttempt(ctx context.Context, arg GetOwnedAttemptParams) (Attempt, error) {
+	row := q.db.QueryRow(ctx, getOwnedAttempt, arg.ID, arg.UserID, arg.QuestionID)
+	var i Attempt
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.QuestionID,
+		&i.EssayID,
+		&i.Answer,
+		&i.Correct,
+		&i.Score,
+		&i.CreatedAt,
+		&i.ResponseMs,
+		&i.BeatsSeen,
+		&i.ExplainDepth,
+		&i.MicroResult,
+		&i.DivergenceNodeId,
+		&i.RequestID,
 	)
 	return i, err
 }
@@ -217,7 +315,7 @@ func (q *Queries) GetOwnedEssay(ctx context.Context, arg GetOwnedEssayParams) (E
 }
 
 const getOwnedQuestion = `-- name: GetOwnedQuestion :one
-SELECT q.id, q."userId", q."subjectId", q."materialId", q.prompt, q.options, q.answer, q.explanation, q.citation, q.past, q.future FROM "Question" AS q JOIN "Subject" AS s ON s."id" = q."subjectId"
+SELECT q.id, q."userId", q."subjectId", q."materialId", q.prompt, q.options, q.answer, q.explanation, q.citation, q.past, q.future, q."learningExplanation" FROM "Question" AS q JOIN "Subject" AS s ON s."id" = q."subjectId"
 WHERE q."id" = $1 AND q."userId" = $2 AND s."deleted" = false
 `
 
@@ -241,6 +339,7 @@ func (q *Queries) GetOwnedQuestion(ctx context.Context, arg GetOwnedQuestionPara
 		&i.Citation,
 		&i.Past,
 		&i.Future,
+		&i.LearningExplanation,
 	)
 	return i, err
 }
@@ -316,4 +415,139 @@ func (q *Queries) ListLiveSubjects(ctx context.Context, userid string) ([]Subjec
 		return nil, err
 	}
 	return items, nil
+}
+
+const setAttemptMetadata = `-- name: SetAttemptMetadata :exec
+UPDATE "Attempt" SET "responseMs" = $2, "requestId" = $3 WHERE "id" = $1
+`
+
+type SetAttemptMetadataParams struct {
+	ID         string
+	ResponseMs *int32
+	RequestID  *string
+}
+
+func (q *Queries) SetAttemptMetadata(ctx context.Context, arg SetAttemptMetadataParams) error {
+	_, err := q.db.Exec(ctx, setAttemptMetadata, arg.ID, arg.ResponseMs, arg.RequestID)
+	return err
+}
+
+const setQuestionExplanation = `-- name: SetQuestionExplanation :exec
+UPDATE "Question" SET "learningExplanation" = $2 WHERE "id" = $1
+`
+
+type SetQuestionExplanationParams struct {
+	ID                  string
+	LearningExplanation []byte
+}
+
+func (q *Queries) SetQuestionExplanation(ctx context.Context, arg SetQuestionExplanationParams) error {
+	_, err := q.db.Exec(ctx, setQuestionExplanation, arg.ID, arg.LearningExplanation)
+	return err
+}
+
+const updateReflection = `-- name: UpdateReflection :one
+UPDATE "Attempt" SET "beatsSeen" = GREATEST("beatsSeen", $1), "explainDepth" = $2,
+ "microResult" = CASE WHEN "microResult" IN ('PASS', 'FAIL') THEN "microResult" ELSE COALESCE($3::text, "microResult") END,
+ "divergenceNodeId" = COALESCE($4::text, "divergenceNodeId")
+WHERE "id" = $5 AND "userId" = $6 AND "questionId" = $7 RETURNING id, "userId", "questionId", "essayId", answer, correct, score, "createdAt", "responseMs", "beatsSeen", "explainDepth", "microResult", "divergenceNodeId", "requestId"
+`
+
+type UpdateReflectionParams struct {
+	BeatsSeen   int32
+	Depth       *string
+	MicroResult *string
+	NodeID      *string
+	ID          string
+	UserID      string
+	QuestionID  *string
+}
+
+func (q *Queries) UpdateReflection(ctx context.Context, arg UpdateReflectionParams) (Attempt, error) {
+	row := q.db.QueryRow(ctx, updateReflection,
+		arg.BeatsSeen,
+		arg.Depth,
+		arg.MicroResult,
+		arg.NodeID,
+		arg.ID,
+		arg.UserID,
+		arg.QuestionID,
+	)
+	var i Attempt
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.QuestionID,
+		&i.EssayID,
+		&i.Answer,
+		&i.Correct,
+		&i.Score,
+		&i.CreatedAt,
+		&i.ResponseMs,
+		&i.BeatsSeen,
+		&i.ExplainDepth,
+		&i.MicroResult,
+		&i.DivergenceNodeId,
+		&i.RequestID,
+	)
+	return i, err
+}
+
+const upsertExplanationCard = `-- name: UpsertExplanationCard :one
+INSERT INTO "Card" ("id", "userId", "subjectId", "front", "back", "type", "sourceQuestionId", "materialId", "diagram", "maskedNodeIds", "sourceDiagramId", "sourceKind")
+VALUES ($1,$2,$3,$4,$5,'BLIND',$6,$7,$8,$9,$10,'DIAGRAM')
+ON CONFLICT ("userId", "sourceQuestionId", "sourceKind") DO UPDATE SET "deleted" = false
+RETURNING id, "userId", "subjectId", front, back, type, bucket, "consecutiveEasy", "nextReviewAt", deleted, image, masks, "sourceQuestionId", fsrs, "createdAt", "materialId", "sourceKind", diagram, "maskedNodeIds", "sourceDiagramId"
+`
+
+type UpsertExplanationCardParams struct {
+	ID               string
+	UserID           string
+	SubjectID        string
+	Front            string
+	Back             string
+	SourceQuestionID *string
+	MaterialID       *string
+	Diagram          []byte
+	MaskedNodeIds    []string
+	SourceDiagramId  *string
+}
+
+func (q *Queries) UpsertExplanationCard(ctx context.Context, arg UpsertExplanationCardParams) (Card, error) {
+	row := q.db.QueryRow(ctx, upsertExplanationCard,
+		arg.ID,
+		arg.UserID,
+		arg.SubjectID,
+		arg.Front,
+		arg.Back,
+		arg.SourceQuestionID,
+		arg.MaterialID,
+		arg.Diagram,
+		arg.MaskedNodeIds,
+		arg.SourceDiagramId,
+	)
+	var i Card
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.SubjectID,
+		&i.Front,
+		&i.Back,
+		&i.Type,
+		&i.Bucket,
+		&i.ConsecutiveEasy,
+		&i.NextReviewAt,
+		&i.Deleted,
+		&i.Image,
+		&i.Masks,
+		&i.SourceQuestionID,
+		&i.Fsrs,
+		&i.CreatedAt,
+		&i.MaterialID,
+		&i.SourceKind,
+		&i.Diagram,
+		&i.MaskedNodeIds,
+		&i.SourceDiagramId,
+	)
+	return i, err
 }

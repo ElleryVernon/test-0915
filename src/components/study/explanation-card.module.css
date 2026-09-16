@@ -1,0 +1,135 @@
+.entry {
+  min-height: var(--control-size);
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: white;
+  font-size: 14px;
+}
+.entry > svg:last-child {
+  margin-left: auto;
+}
+.creator {
+  display: grid;
+  gap: var(--gap-section);
+  padding-bottom: var(--space-2);
+}
+.description {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.selection {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: var(--gap-inline);
+}
+.selection legend {
+  width: 100%;
+  padding: 0 0 var(--space-3);
+  font-size: 15px;
+  font-weight: 700;
+}
+.selection legend span {
+  float: right;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.node {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: var(--gap-related);
+  min-height: 52px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-primary);
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.node[aria-pressed='true'] {
+  border-color: var(--text-primary);
+  background: var(--surface-canvas);
+}
+.node:disabled {
+  opacity: 0.6;
+}
+.number {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.check {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-canvas);
+}
+.node[aria-pressed='true'] .check {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: white;
+}
+.preview {
+  min-width: 0;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-4);
+}
+.previewHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-related);
+  font-size: 14px;
+}
+.previewToggle {
+  min-height: 44px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.cardDiagram {
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+.node:focus-visible,
+.previewToggle:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
+}
+.savedText {
+  display: grid;
+  gap: var(--gap-block);
+  padding: var(--space-5);
+  background: var(--surface);
+  border-radius: 16px;
+  font-size: 15px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.savedText p {
+  margin: 0;
+  color: var(--text-secondary);
+}

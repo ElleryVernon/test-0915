@@ -1,4 +1,5 @@
 'use client';
+import { CommunityAsk } from '../social/community-ask';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
@@ -27,12 +28,12 @@ import {
 import { BUCKETS, intervalLabel, localReview, reviewLabel, TYPES } from './logic';
 import { previewIntervals } from '@/lib/srs';
 import { BusyText, ErrorNote, errorMessage, GenerationSheet, params, useAction } from './shared';
+import { useJourneyLayer, useJourneyState } from '../journey';
 import { StudyHeader } from './study-header';
+import { DiagramCardContent } from './explanation-card';
 import {
   bucketDistribution,
-  completedReviewSessions,
   libraryGroups,
-  MASTERY_HINT_SESSIONS,
   nextReviewDay,
   recordReviewSession,
   reviewMinutes,
@@ -46,15 +47,30 @@ import {
   type SessionRating,
 } from './insights';
 
+const recallLabel: Record<string, string> = {
+  AGAIN: '못 떠올림',
+  HARD: '어렵게',
+  GOOD: '떠올림',
+  EASY: '바로',
+};
 const bucketLabel = (bucket: Bucket) => BUCKETS.find((b) => b.id === bucket)?.label ?? '';
 const reviewable = (card: Card) => !card.deleted && !(card.bucket === 'MASTERED' && !card.fsrs);
+const cardTypeLabel = (card: Card) => (card.diagram ? '다이어그램' : TYPES[card.type][0]);
 
 export function Flashcards(props: ScreenProps) {
   const query = params(props.path);
+  // The library needs a recognizable question; masked review fronts stay source-label free.
+  const questionPrompts = new Map(
+    props.data.questions.map((question) => [question.id, question.prompt]),
+  );
+  const libraryTitle = (card: Card) =>
+    card.diagram && card.sourceQuestionId
+      ? questionPrompts.get(card.sourceQuestionId) || card.front
+      : card.front;
   const [cards, setCards] = useState(props.data.cards);
-  const [subject, setSubject] = useState(query.get('subject') || '');
-  const [bucket, setBucket] = useState<Bucket | null>(null);
-  const [dueOnly, setDueOnly] = useState(false);
+  const [subject, setSubject] = useJourneyState('cards.subject', query.get('subject') || '');
+  const [bucket, setBucket] = useJourneyState<Bucket | null>('cards.bucket', null);
+  const [dueOnly, setDueOnly] = useJourneyState('cards.dueOnly', false);
   const [trash, setTrash] = useState(query.get('trash') === '1');
   // Home's "복습 카드 만들기" opens the sheet on the material it names, once: the intent is removed
   // from the address so back navigation or a reload does not open it again.
@@ -81,22 +97,19 @@ export function Flashcards(props: ScreenProps) {
     (c) => !c.deleted && (!subject || c.subjectId === subject),
   );
   // A session walks the cards in the order the library lists them: the longest overdue first.
-  const [reviewIds, setReviewIds] = useState<string[] | null>(() =>
+  const [reviewIds, setReviewIds] = useJourneyState<string[] | null>('cards.reviewIds', () =>
     query.get('card')
       ? initial.filter((c) => c.id === query.get('card')).map((c) => c.id)
       : query.get('review') === '1'
         ? libraryGroups(initial).today.map((c) => c.id)
         : null,
   );
-  const [ratings, setRatings] = useState<SessionRating[]>([]);
-  const [startedAt, setStartedAt] = useState(() => Date.now());
-  const [finishedAt, setFinishedAt] = useState<number | null>(null);
-  const [hintSessions, setHintSessions] = useState(() =>
-    completedReviewSessions(props.data.profile.id),
-  );
-  const recorded = useRef(false);
-  const [index, setIndex] = useState(0);
-  const [flipped, setFlipped] = useState(false);
+  const [ratings, setRatings] = useJourneyState<SessionRating[]>('cards.ratings', []);
+  const [startedAt, setStartedAt] = useJourneyState('cards.startedAt', () => Date.now());
+  const [finishedAt, setFinishedAt] = useJourneyState<number | null>('cards.finishedAt', null);
+  const [recorded, setRecorded] = useJourneyState('cards.recorded', false);
+  const [index, setIndex] = useJourneyState('cards.index', 0);
+  const [flipped, setFlipped] = useJourneyState('cards.flipped', false);
   const [expanded, setExpanded] = useState(false);
   const [menu, setMenu] = useState(false);
   const [libraryMenu, setLibraryMenu] = useState(false);
@@ -193,11 +206,19 @@ export function Flashcards(props: ScreenProps) {
     : undefined;
   const finished = !!reviewIds && !current;
   useEffect(() => {
-    if (!finished || recorded.current || !ratings.length) return;
-    recorded.current = true;
+    if (!finished || recorded || !ratings.length) return;
+    setRecorded(true);
     setFinishedAt(Date.now());
     recordReviewSession(userId);
-  }, [finished, ratings.length, userId]);
+  }, [finished, ratings.length, userId, recorded, setRecorded, setFinishedAt]);
+  useEffect(() => {
+    if (reviewIds) {
+      setReviewIds(reviewIds);
+      setStartedAt(startedAt);
+    }
+    // Freeze the initial due list before ratings change which cards are due.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   function start(ids: string[]) {
     setReviewIds(ids);
     setIndex(0);
@@ -206,14 +227,16 @@ export function Flashcards(props: ScreenProps) {
     setRatings([]);
     setStartedAt(Date.now());
     setFinishedAt(null);
-    setHintSessions(completedReviewSessions(userId));
     setPreview(null);
-    recorded.current = false;
+    setRecorded(false);
   }
   function exitReview() {
     setReviewIds(null);
     setRatings([]);
   }
+  const directReview = !!query.get('card') || query.get('review') === '1';
+  const closeReview = useJourneyLayer(reviewIds !== null && !directReview, exitReview);
+  const leaveReview = () => (directReview ? props.back('/flashcards') : closeReview());
   function advance() {
     setIndex((i) => i + 1);
     setFlipped(false);
@@ -296,14 +319,18 @@ export function Flashcards(props: ScreenProps) {
   if (finished) {
     const now = new Date();
     const result = sessionResult(ratings);
-    const next = nextReviewDay(cards, now);
+    const reviewedIds = new Set(ratings.map((rating) => rating.cardId));
+    const next = nextReviewDay(
+      cards.filter((card) => reviewedIds.has(card.id)),
+      now,
+    );
     const streak = streakThroughToday(props.data, result.total, now);
     const again = result.againIds
       .map((id) => cards.find((c) => c.id === id))
       .filter((c): c is Card => !!c && !c.deleted);
     return (
       <>
-        <StudyHeader close={exitReview} />
+        <StudyHeader close={leaveReview} />
         <div className="page-inset recall-done">
           {result.total ? (
             <>
@@ -317,6 +344,7 @@ export function Flashcards(props: ScreenProps) {
                   ? `다음 복습은 ${next.when} ${next.count}장이에요`
                   : '예정된 다음 복습이 없어요'}
               </h1>
+              <p className="recall-done-note">이번에 복습한 카드의 다음 일정이에요.</p>
               <p className="recall-done-meta">
                 {[
                   sessionDuration((finishedAt ?? now.getTime()) - startedAt),
@@ -329,7 +357,7 @@ export function Flashcards(props: ScreenProps) {
                 <div
                   className="recall-dist"
                   role="img"
-                  aria-label={`이번 평가 ${result.counts.map((c) => `${c.label} ${c.count}장`).join(', ')}`}
+                  aria-label={`이번 평가 ${result.counts.map((c) => `${recallLabel[c.id]} ${c.count}장`).join(', ')}`}
                 >
                   {result.counts
                     .filter((c) => c.count)
@@ -343,7 +371,7 @@ export function Flashcards(props: ScreenProps) {
                       <strong>{c.count}</strong>
                       <small>
                         <i data-bucket={c.id} />
-                        {c.label}
+                        {recallLabel[c.id]}
                       </small>
                     </span>
                   ))}
@@ -353,9 +381,11 @@ export function Flashcards(props: ScreenProps) {
                 <div className="recall-again">
                   {again.map((card) => (
                     <div key={card.id} className="recall-list-row">
-                      <span className="recall-row-type">{TYPES[card.type][0]}</span>
-                      <span className="recall-row-front">{card.front}</span>
-                      <span className="recall-row-when">다시 · {whenLabel(card).text}</span>
+                      <span className="recall-row-type" title={cardTypeLabel(card)}>
+                        {card.diagram ? '도식' : TYPES[card.type][0]}
+                      </span>
+                      <span className="recall-row-front">{libraryTitle(card)}</span>
+                      <span className="recall-row-when">못 떠올림 · {whenLabel(card).text}</span>
                     </div>
                   ))}
                 </div>
@@ -378,14 +408,17 @@ export function Flashcards(props: ScreenProps) {
           {again.length > 0 ? (
             <>
               <Button className="w-full" onClick={() => start(again.map((c) => c.id))}>
-                &quot;다시&quot; {again.length}장 한 번 더 보기
+                못 떠올린 {again.length}장 한 번 더 보기
               </Button>
-              <button className="recall-done-back" onClick={() => props.navigate('/study')}>
+              <button
+                className="recall-done-back"
+                onClick={() => props.navigate('/study', { replace: true })}
+              >
                 학습으로 돌아가기
               </button>
             </>
           ) : (
-            <Button className="w-full" onClick={() => props.navigate('/study')}>
+            <Button className="w-full" onClick={() => props.navigate('/study', { replace: true })}>
               학습으로 돌아가기
             </Button>
           )}
@@ -403,7 +436,9 @@ export function Flashcards(props: ScreenProps) {
     const meta = (
       <div className="recall-card-meta">
         <span className="recall-type-chip">
-          {TYPES[current.type][0]} · {TYPES[current.type][1]}
+          {current.diagram
+            ? '다이어그램 · 가림 카드'
+            : `${TYPES[current.type][0]} · ${TYPES[current.type][1]}`}
         </span>
         <span>
           {bucketLabel(current.bucket)} 상자{ordinal ? ` · ${ordinal}` : ''}
@@ -434,7 +469,7 @@ export function Flashcards(props: ScreenProps) {
     return (
       <div className="recall-screen">
         <StudyHeader
-          close={exitReview}
+          close={leaveReview}
           title={`${index + 1} / ${reviewIds.length}`}
           subtitle={[`약 ${reviewMinutes(reviewIds.length - index)}분 남음`, subjectName]
             .filter(Boolean)
@@ -461,6 +496,7 @@ export function Flashcards(props: ScreenProps) {
             <section className="recall-card is-back" aria-label="정답">
               {meta}
               <p className="recall-back-question">{current.front}</p>
+              <DiagramCardContent card={current} revealed />
               {image(false)}
               <hr />
               <span className="recall-answer-label">정답</span>
@@ -475,19 +511,25 @@ export function Flashcards(props: ScreenProps) {
                   <p className="recall-explanation">{explanation}</p>
                 ))}
             </section>
+          ) : current.diagram ? (
+            <section className="recall-card" aria-label="가림 카드 앞면">
+              {meta}
+              <DiagramCardContent card={current} />
+              <p className="recall-hint">가려진 부분을 떠올린 뒤 정답을 확인해 보세요</p>
+            </section>
           ) : (
             <button className="recall-card" onClick={() => setFlipped(true)} aria-label="정답 보기">
               {meta}
               {image(true)}
               {current.type !== 'BLIND' && <h2 className="recall-question">{current.front}</h2>}
-              <p className="recall-hint">답이 떠오르면 카드를 탭하세요</p>
+              <p className="recall-hint">먼저 답을 떠올린 뒤 확인해 보세요</p>
             </button>
           )}
           <div className="recall-actions">
             <ErrorNote error={action.error} />
             {flipped ? (
               <>
-                <p className="recall-rate-prompt">얼마나 쉽게 떠올렸나요?</p>
+                <p className="recall-rate-prompt">정답을 보기 전에 얼마나 떠올렸나요?</p>
                 <div className="recall-ratings">
                   {BUCKETS.slice(0, 4).map((b) => (
                     <button
@@ -496,7 +538,7 @@ export function Flashcards(props: ScreenProps) {
                       onClick={() => void rate(b.id as Rating)}
                       className="recall-rating"
                     >
-                      <span>{b.label}</span>
+                      <span>{recallLabel[b.id]}</span>
                       <small>
                         {intervalLabel(intervals.find((i) => i.rating === b.id)!.due, previewNow)}{' '}
                         뒤
@@ -504,13 +546,10 @@ export function Flashcards(props: ScreenProps) {
                     </button>
                   ))}
                 </div>
-                {hintSessions < MASTERY_HINT_SESSIONS && (
-                  <p className="recall-mastery-hint">
-                    {mode === 'FSRS'
-                      ? '쉬움 2번이면 암기완료로 옮겨져요. 오래 기억하도록 이후 복습도 이어가요.'
-                      : '쉬움을 2번 연속 고르면 암기완료 상자로 옮겨져요.'}
-                  </p>
-                )}
+                <p className="recall-mastery-hint">
+                  누르면 평가가 저장되고 다음 카드로 넘어가요. 버튼의 시간은 다음 복습 예정이에요.
+                </p>
+                <CommunityAsk {...props} card={current} kind="CARD" />
               </>
             ) : (
               <Button className="w-full" onClick={() => setFlipped(true)}>
@@ -534,11 +573,18 @@ export function Flashcards(props: ScreenProps) {
         >
           <div className="space-y-2">
             <p className="mb-4 text-sm text-muted">
-              {TYPES[current.type][0]} 카드 · {reviewLabel(current)}
+              {cardTypeLabel(current)} 카드 · {reviewLabel(current)}
             </p>
-            <Button variant="secondary" className="w-full" onClick={() => setEdit(true)}>
-              카드 내용 수정
-            </Button>
+            {!current.diagram && (
+              <Button variant="secondary" className="w-full" onClick={() => setEdit(true)}>
+                카드 내용 수정
+              </Button>
+            )}
+            {current.diagram && (
+              <p className="text-sm text-muted">
+                이 카드의 다이어그램은 문제의 자료 원문을 기준으로 만들었어요.
+              </p>
+            )}
             <Button variant="secondary" className="w-full" onClick={advance}>
               이번 복습에서는 건너뛰기
             </Button>
@@ -599,8 +645,10 @@ export function Flashcards(props: ScreenProps) {
     const when = whenLabel(card, nowMs);
     return (
       <button key={card.id} className="recall-list-row" onClick={() => setPreview(card)}>
-        <span className="recall-row-type">{TYPES[card.type][0]}</span>
-        <span className="recall-row-front">{card.front}</span>
+        <span className="recall-row-type" title={cardTypeLabel(card)}>
+          {card.diagram ? '도식' : TYPES[card.type][0]}
+        </span>
+        <span className="recall-row-front">{libraryTitle(card)}</span>
         <span className={`recall-row-when${when.strong ? ' is-strong' : ''}`}>{when.text}</span>
       </button>
     );
@@ -609,7 +657,7 @@ export function Flashcards(props: ScreenProps) {
     <>
       <StudyHeader
         title={trash ? '카드 휴지통' : '복습 카드'}
-        back={() => (trash ? setTrash(false) : props.navigate('/study'))}
+        back={() => (trash ? setTrash(false) : props.back('/study'))}
         action={
           !trash && (
             <IconButton label="카드 보관함 메뉴" onClick={() => setLibraryMenu(true)}>
@@ -653,8 +701,10 @@ export function Flashcards(props: ScreenProps) {
           <div className="recall-groups">
             {deleted.map((card) => (
               <div key={card.id} className="recall-list-row">
-                <span className="recall-row-type">{TYPES[card.type][0]}</span>
-                <span className="recall-row-front">{card.front}</span>
+                <span className="recall-row-type" title={cardTypeLabel(card)}>
+                  {card.diagram ? '도식' : TYPES[card.type][0]}
+                </span>
+                <span className="recall-row-front">{libraryTitle(card)}</span>
                 <button
                   className="recall-restore"
                   onClick={() =>
@@ -846,20 +896,26 @@ export function Flashcards(props: ScreenProps) {
           setPreview(null);
           setDeleting(false);
         }}
-        title={preview ? `${TYPES[preview.type][0]} 카드` : '카드'}
+        title={preview ? `${cardTypeLabel(preview)} 카드` : '카드'}
       >
         {preview && (
           <div className="space-y-2">
             <p className="text-[13px] text-muted">
               {bucketLabel(preview.bucket)} 상자 · {reviewLabel(preview)}
             </p>
-            <p className="recall-preview-front">{preview.front}</p>
+            {preview.diagram ? (
+              <DiagramCardContent card={preview} />
+            ) : (
+              <p className="recall-preview-front">{preview.front}</p>
+            )}
             <Button className="w-full" onClick={() => start([preview.id])}>
               이 카드 복습하기
             </Button>
-            <Button variant="secondary" className="w-full" onClick={() => setEdit(true)}>
-              카드 내용 수정
-            </Button>
+            {!preview.diagram && (
+              <Button variant="secondary" className="w-full" onClick={() => setEdit(true)}>
+                카드 내용 수정
+              </Button>
+            )}
             {!deleting ? (
               <Button variant="ghost" className="w-full" onClick={() => setDeleting(true)}>
                 휴지통으로 옮기기

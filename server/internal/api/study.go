@@ -15,6 +15,7 @@ import (
 	"memoryz/server/internal/apierr"
 	"memoryz/server/internal/httpx"
 	"memoryz/server/internal/ids"
+	"memoryz/server/internal/learning"
 	"memoryz/server/internal/planner"
 	"memoryz/server/internal/ratelimit"
 	"memoryz/server/internal/srs"
@@ -130,6 +131,19 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request, user store.Use
 				if err != nil {
 					return nil, err
 				}
+				// Attach deterministic, validated metadata without another paid model request.
+				var generated []byte
+				if item.LearningExplanation != nil {
+					item.LearningExplanation.QuestionID = row.ID
+					generated, _ = json.Marshal(item.LearningExplanation)
+				}
+				explanation := learning.Resolve(row.ID, row.Citation, material.content, row.Options, int(row.Answer), generated)
+				if explanation.Status == "READY" {
+					raw, _ := json.Marshal(explanation)
+					if err := q.SetQuestionExplanation(ctx, store.SetQuestionExplanationParams{ID: row.ID, LearningExplanation: raw}); err != nil {
+						return nil, err
+					}
+				}
 				created = append(created, questionOf(row))
 			}
 			for _, item := range items.Essays {
@@ -161,6 +175,8 @@ func (s *Server) answerQuiz(w http.ResponseWriter, r *http.Request, user store.U
 	var in struct {
 		QuestionID string   `json:"questionId"`
 		Answer     *float64 `json:"answer"`
+		ResponseMs *float64 `json:"responseMs"`
+		RequestID  *string  `json:"requestId"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -173,6 +189,14 @@ func (s *Server) answerQuiz(w http.ResponseWriter, r *http.Request, user store.U
 	} else {
 		answer = v.intRange(*in.Answer, -1, 4)
 	}
+	var responseMs *int32
+	if in.ResponseMs != nil {
+		ms := int32(v.intRange(*in.ResponseMs, 0, 86400000))
+		responseMs = &ms
+	}
+	if in.RequestID != nil {
+		v.uuid(*in.RequestID)
+	}
 	if err := v.result(); err != nil {
 		return err
 	}
@@ -184,19 +208,39 @@ func (s *Server) answerQuiz(w http.ResponseWriter, r *http.Request, user store.U
 	if err != nil {
 		return err
 	}
+	if answer >= len(question.Options) {
+		return apierr.New(400, "문제에 있는 선택지를 골라 주세요.")
+	}
 	correct := int32(answer) == question.Answer
 	score := int32(0)
 	if correct {
 		score = 100
 	}
-	if _, err := s.q.CreateAttempt(ctx, store.CreateAttemptParams{ID: ids.New(), UserID: user.ID, QuestionID: &question.ID, Answer: strconv.Itoa(answer), Correct: correct, Score: score}); err != nil {
+	attemptID := ""
+	err = s.locked(ctx, user.ID, func(tx pgx.Tx, q *store.Queries) error {
+		if in.RequestID != nil {
+			previous, e := q.GetAttemptByRequest(ctx, store.GetAttemptByRequestParams{UserID: user.ID, RequestID: in.RequestID})
+			if e == nil {
+				if previous.QuestionID == nil || *previous.QuestionID != question.ID || previous.Answer != strconv.Itoa(answer) {
+					return apierr.New(409, "이미 다른 답에 사용된 요청이에요.")
+				}
+				attemptID = previous.ID
+				return nil
+			}
+			if !errors.Is(e, pgx.ErrNoRows) {
+				return e
+			}
+		}
+		attemptID = ids.New()
+		if _, e := q.CreateAttempt(ctx, store.CreateAttemptParams{ID: attemptID, UserID: user.ID, QuestionID: &question.ID, Answer: strconv.Itoa(answer), Correct: correct, Score: score}); e != nil {
+			return e
+		}
+		return q.SetAttemptMetadata(ctx, store.SetAttemptMetadataParams{ID: attemptID, ResponseMs: responseMs, RequestID: in.RequestID})
+	})
+	if err != nil {
 		return err
 	}
-	httpx.OK(w, http.StatusOK, struct {
-		Correct     bool   `json:"correct"`
-		Explanation string `json:"explanation"`
-		Citation    string `json:"citation"`
-	}{Correct: correct, Explanation: question.Explanation, Citation: question.Citation})
+	httpx.OK(w, 200, map[string]any{"correct": correct, "explanation": question.Explanation, "citation": question.Citation, "attemptId": attemptID})
 	return nil
 }
 

@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/jackc/pgx/v5"
-
 	"memoryz/server/internal/httpx"
 	"memoryz/server/internal/ids"
 	"memoryz/server/internal/jsonx"
@@ -124,46 +122,38 @@ func (s *Server) social(w http.ResponseWriter, r *http.Request, user store.User)
 
 // toggleFollow answers POST /api/follow with the new state.
 func (s *Server) toggleFollow(w http.ResponseWriter, r *http.Request, user store.User) error {
-	var input struct {
-		UserID string `json:"userId"`
-	}
-	if err := httpx.Decode(r, &input); err != nil {
-		return err
-	}
-	v := &validator{}
-	userID := v.id(input.UserID)
-	if err := v.result(); err != nil {
-		return err
-	}
-	ctx := r.Context()
-	if _, err := s.peer(ctx, user, userID); err != nil {
-		return err
-	}
-	var following bool
-	err := s.locked(ctx, user.ID, func(_ pgx.Tx, q *store.Queries) error {
-		previous, err := q.HasFollow(ctx, store.HasFollowParams{FollowerID: user.ID, FollowingID: userID})
-		if err != nil {
-			return err
-		}
-		following = !previous
-		if previous {
-			return q.DeleteFollow(ctx, store.DeleteFollowParams{FollowerID: user.ID, FollowingID: userID})
-		}
-		return q.CreateFollow(ctx, store.CreateFollowParams{FollowerID: user.ID, FollowingID: userID})
-	})
-	if err != nil {
-		return err
-	}
-	httpx.OK(w, http.StatusOK, map[string]bool{"following": following})
-	return nil
+	return s.communityFollow(w, r, user)
 }
 
 // listMessages answers GET /api/messages?userId=…: the 200 oldest messages between the two.
 func (s *Server) listMessages(w http.ResponseWriter, r *http.Request, user store.User) error {
 	ctx := r.Context()
+	if r.URL.Query().Get("inbox") == "1" {
+		rows, err := s.q.ListConversations(ctx, store.ListConversationsParams{ViewerID: user.ID, Role: user.Role})
+		if err != nil {
+			return err
+		}
+		type conversation struct {
+			ID        string     `json:"id"`
+			Nickname  string     `json:"nickname"`
+			Body      string     `json:"body"`
+			CreatedAt jsonx.Time `json:"createdAt"`
+		}
+		items := make([]conversation, 0, len(rows))
+		for _, row := range rows {
+			items = append(items, conversation{ID: row.ID, Nickname: row.Nickname, Body: row.Body, CreatedAt: jsonx.Time(row.CreatedAt)})
+		}
+		httpx.OK(w, http.StatusOK, items)
+		return nil
+	}
 	peerID := r.URL.Query().Get("userId")
-	if _, err := s.peer(ctx, user, peerID); err != nil {
+	peer, err := s.peer(ctx, user, peerID)
+	if err != nil {
 		return err
+	}
+	if r.URL.Query().Get("peer") == "1" {
+		httpx.OK(w, http.StatusOK, userRef{ID: peer.ID, Nickname: peer.Nickname})
+		return nil
 	}
 	rows, err := s.q.ListMessages(ctx, store.ListMessagesParams{UserID: user.ID, PeerID: peerID})
 	if err != nil {

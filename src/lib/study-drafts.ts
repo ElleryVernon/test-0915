@@ -5,6 +5,8 @@ export interface EssayDraft {
   essayId: string;
   revision: string;
   stage: number;
+  guided?: boolean;
+  coaching?: string;
   selected: string[];
   order: string[];
   hint: boolean;
@@ -39,6 +41,7 @@ export function readEssayDrafts(userId: string, storage = browserStorage()): Ess
           d.selected.every((s: unknown) => typeof s === 'string') &&
           Array.isArray(d.order) &&
           d.order.every((s: unknown) => typeof s === 'string') &&
+          (d.coaching === undefined || typeof d.coaching === 'string') &&
           typeof d.hint === 'boolean' &&
           typeof d.answer === 'string' &&
           typeof d.updatedAt === 'string' &&

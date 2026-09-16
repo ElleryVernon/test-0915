@@ -16,7 +16,7 @@ interface AdminData {
   }[];
   schools: { id: string; name: string }[];
 }
-export default function Admin({ data, navigate, toast }: ScreenProps) {
+export default function Admin({ data, navigate, back, toast }: ScreenProps) {
   const [admin, setAdmin] = useState<AdminData | null>(null);
   const [tab, setTab] = useState<'reports' | 'users' | 'schools'>('reports');
   const [error, setError] = useState('');
@@ -71,7 +71,7 @@ export default function Admin({ data, navigate, toast }: ScreenProps) {
     );
   return (
     <>
-      <ScreenHeader title="운영 관리" back={() => navigate('/profile')} />
+      <ScreenHeader title="운영 관리" back={() => back('/profile')} />
       <div className="page-inset pb-8">
         <div className="grid grid-cols-3 gap-2 mt-3">
           {(
@@ -136,9 +136,10 @@ export default function Admin({ data, navigate, toast }: ScreenProps) {
                       {r.status === 'OPEN' && (
                         <div className="flex gap-2 mt-4">
                           <Button
+                            size="compact"
                             disabled={busy}
                             variant="secondary"
-                            className="flex-1 !min-h-10 !text-sm !bg-white"
+                            className="flex-1 !text-sm !bg-white"
                             onClick={() =>
                               mutation(`/admin/reports/${r.id}`, { status: 'DISMISSED' }, 'PATCH')
                             }
@@ -146,8 +147,9 @@ export default function Admin({ data, navigate, toast }: ScreenProps) {
                             기각
                           </Button>
                           <Button
+                            size="compact"
                             disabled={busy}
-                            className="flex-1 !min-h-10 !text-sm"
+                            className="flex-1 !text-sm"
                             onClick={() =>
                               mutation(`/admin/reports/${r.id}`, { status: 'RESOLVED' }, 'PATCH')
                             }
@@ -201,7 +203,11 @@ export default function Admin({ data, navigate, toast }: ScreenProps) {
                     value={school}
                     onChange={(e) => setSchool(e.target.value)}
                   />
-                  <Button type="submit" disabled={busy || school.trim().length < 2} className="shrink-0 !px-4">
+                  <Button
+                    type="submit"
+                    disabled={busy || school.trim().length < 2}
+                    className="shrink-0 !px-4"
+                  >
                     추가
                   </Button>
                 </form>

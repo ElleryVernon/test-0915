@@ -1,3 +1,4 @@
+import { sessionFetch } from '@/lib/session-boundary';
 import { openDB, type DBSchema } from 'idb';
 import type { Bucket, Card } from './contracts';
 import { scheduleCard, type SrsMode } from './srs';
@@ -70,7 +71,7 @@ export async function cacheCards(userId: string, cards: Card[]) {
           if (await db.get('images', key)) return;
           try {
             // jitter: none — one fetch per uncached image per device when cards load (screen open, or the refresh after a sync started over U[0,10 s)); no retry timer [site src/lib/offline.ts:70]
-            const response = await fetch(card.image!, { signal: AbortSignal.timeout(8000) });
+            const response = await sessionFetch(card.image!, { signal: AbortSignal.timeout(8000) });
             if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) return;
             const blob = await response.blob();
             const data = await new Promise<string>((resolve, reject) => {
@@ -280,8 +281,8 @@ export function cancelSync(userId: string) {
   scheduled.delete(userId);
 }
 
-export async function clearStudyCache(userId: string) {
-  await clearAiTasks(userId);
+export async function clearStudyCache(userId: string, preservePending = false) {
+  if (!preservePending) await clearAiTasks(userId);
   const db = await database();
   const tx = db.transaction(['cards', 'reviews', 'images'], 'readwrite');
   for (const row of await tx.objectStore('images').getAll())
@@ -289,6 +290,6 @@ export async function clearStudyCache(userId: string) {
   for (const row of await tx.objectStore('cards').getAll())
     if (row.userId === userId) await tx.objectStore('cards').delete(row.key);
   for (const row of await tx.objectStore('reviews').getAll())
-    if (row.userId === userId) await tx.objectStore('reviews').delete(row.reviewId);
+    if (!preservePending && row.userId === userId) await tx.objectStore('reviews').delete(row.reviewId);
   await tx.done;
 }

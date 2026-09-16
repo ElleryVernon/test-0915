@@ -58,9 +58,9 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 }
 
 const createPost = `-- name: CreatePost :one
-INSERT INTO "Post" ("id", "userId", "role", "category", "title", "body", "anonymous")
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, "userId", role, category, title, body, anonymous, "createdAt"
+INSERT INTO "Post" ("id", "userId", "role", "category", "title", "body", "anonymous", "school")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, "userId", role, category, title, body, anonymous, "createdAt", school
 `
 
 type CreatePostParams struct {
@@ -71,6 +71,7 @@ type CreatePostParams struct {
 	Title     string
 	Body      string
 	Anonymous bool
+	School    string
 }
 
 func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, error) {
@@ -82,6 +83,7 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 		arg.Title,
 		arg.Body,
 		arg.Anonymous,
+		arg.School,
 	)
 	var i Post
 	err := row.Scan(
@@ -93,6 +95,7 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 		&i.Body,
 		&i.Anonymous,
 		&i.CreatedAt,
+		&i.School,
 	)
 	return i, err
 }
@@ -217,7 +220,7 @@ func (q *Queries) GetPeer(ctx context.Context, arg GetPeerParams) (GetPeerRow, e
 
 const getPostAccess = `-- name: GetPostAccess :one
 
-SELECT p.id, p."userId", p.role, p.category, p.title, p.body, p.anonymous, p."createdAt", u."suspended" AS author_suspended,
+SELECT p.id, p."userId", p.role, p.category, p.title, p.body, p.anonymous, p."createdAt", p.school, u."suspended" AS author_suspended,
   EXISTS (
     SELECT 1 FROM "Block" AS b
     WHERE (b."userId" = $1::text AND b."blockedId" = p."userId")
@@ -254,6 +257,7 @@ func (q *Queries) GetPostAccess(ctx context.Context, arg GetPostAccessParams) (G
 		&i.Post.Body,
 		&i.Post.Anonymous,
 		&i.Post.CreatedAt,
+		&i.Post.School,
 		&i.AuthorSuspended,
 		&i.Blocked,
 	)
@@ -364,28 +368,44 @@ func (q *Queries) ListComments(ctx context.Context, arg ListCommentsParams) ([]L
 }
 
 const listPosts = `-- name: ListPosts :many
-SELECT p.id, p."userId", p.role, p.category, p.title, p.body, p.anonymous, p."createdAt", u."nickname" AS author_nickname,
+SELECT p.id, p."userId", p.role, p.category, p.title, p.body, p.anonymous, p."createdAt", p.school, u."nickname" AS author_nickname,
   (SELECT count(*) FROM "PostLike" AS l WHERE l."postId" = p."id") AS likes,
   EXISTS (SELECT 1 FROM "PostLike" AS l WHERE l."postId" = p."id" AND l."userId" = $1::text) AS liked,
   EXISTS (SELECT 1 FROM "PostSave" AS s WHERE s."postId" = p."id" AND s."userId" = $1::text) AS saved,
   (SELECT count(*) FROM "Comment" AS c WHERE c."postId" = p."id") AS comment_count
 FROM "Post" AS p JOIN "User" AS u ON u."id" = p."userId"
 WHERE p."role" = $2
+  AND NOT EXISTS (SELECT 1 FROM "CommunityPost" cp WHERE cp."postId"=p."id" AND cp."deleted")
+  AND (NOT $3::boolean OR (NOT p."anonymous" AND EXISTS (SELECT 1 FROM "Follow" f WHERE f."followerId" = $1::text AND f."followingId"=p."userId")))
+  AND ($4::text = '' OR (p."userId" = $1::text AND EXISTS(SELECT 1 FROM "CommunityPost" cp WHERE cp."postId"=p."id" AND cp."sourceRef"->>'questionId' = $4::text)))
+  AND ($5::text = '' OR EXISTS (SELECT 1 FROM "CommunityPost" cp WHERE cp."postId"=p."id" AND (cp."tags"->>'subjectId' = $5::text OR cp."tags"->>'subjectName' = (SELECT "name" FROM "Subject" WHERE "id" = $5::text AND "userId" = $1::text AND NOT "deleted"))))
+  AND (NOT $6::boolean OR (p."category"='질문' AND p."createdAt" < now()-interval '24 hours' AND NOT EXISTS(SELECT 1 FROM "Comment" c WHERE c."postId"=p."id") AND EXISTS(SELECT 1 FROM "CommunityPost" cp JOIN "Subject" sub ON sub."userId" = $1::text AND NOT sub."deleted" AND sub."name"=cp."tags"->>'subjectName' WHERE cp."postId"=p."id")))
+  AND (p."school" = $7::text OR ($8::boolean AND (p."school" = '' OR p."school" = $7::text)))
+  AND (NOT $9::boolean OR p."userId" = $1::text)
+  AND (NOT $10::boolean OR EXISTS (SELECT 1 FROM "PostSave" AS ps WHERE ps."postId" = p."id" AND ps."userId" = $1::text))
   AND u."suspended" = false
   AND NOT EXISTS (
     SELECT 1 FROM "Block" AS b
     WHERE (b."userId" = $1::text AND b."blockedId" = p."userId")
        OR (b."userId" = p."userId" AND b."blockedId" = $1::text)
   )
-  AND (NOT $3::boolean OR EXISTS (SELECT 1 FROM "Comment" AS c WHERE c."postId" = p."id" AND c."userId" = $1::text))
+  AND (NOT $11::boolean OR EXISTS (SELECT 1 FROM "Comment" AS c WHERE c."postId" = p."id" AND c."userId" = $1::text))
 ORDER BY p."createdAt" DESC
 LIMIT 100
 `
 
 type ListPostsParams struct {
-	ViewerID  string
-	Role      Role
-	Commented bool
+	ViewerID      string
+	Role          Role
+	FollowingOnly bool
+	QuestionID    string
+	SubjectID     string
+	Unanswered    bool
+	School        string
+	Activity      bool
+	Mine          bool
+	SavedOnly     bool
+	Commented     bool
 }
 
 type ListPostsRow struct {
@@ -400,7 +420,19 @@ type ListPostsRow struct {
 // The community feed: the 100 newest posts of one role, minus those by suspended authors and by
 // anyone the viewer blocked or was blocked by; commented keeps only the posts the viewer commented on.
 func (q *Queries) ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error) {
-	rows, err := q.db.Query(ctx, listPosts, arg.ViewerID, arg.Role, arg.Commented)
+	rows, err := q.db.Query(ctx, listPosts,
+		arg.ViewerID,
+		arg.Role,
+		arg.FollowingOnly,
+		arg.QuestionID,
+		arg.SubjectID,
+		arg.Unanswered,
+		arg.School,
+		arg.Activity,
+		arg.Mine,
+		arg.SavedOnly,
+		arg.Commented,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -417,6 +449,7 @@ func (q *Queries) ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPos
 			&i.Post.Body,
 			&i.Post.Anonymous,
 			&i.Post.CreatedAt,
+			&i.Post.School,
 			&i.AuthorNickname,
 			&i.Likes,
 			&i.Liked,

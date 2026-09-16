@@ -2,10 +2,19 @@
 // five-minute time lists, stepper and slider arithmetic, and inline validation messages. No DOM —
 // tests/ui-logic.test.ts covers every rule and scripts/ui-logic-mutation.mjs proves the tests bite.
 
-export type DayCell = { date: string; day: number; inMonth: boolean; today: boolean; selected: boolean; disabled: boolean; weekday: number };
+export type DayCell = {
+  date: string;
+  day: number;
+  inMonth: boolean;
+  today: boolean;
+  selected: boolean;
+  disabled: boolean;
+  weekday: number;
+};
 
 const pad = (n: number) => String(n).padStart(2, '0');
-export const isoDate = (year: number, month: number, day: number) => `${year}-${pad(month)}-${pad(day)}`;
+export const isoDate = (year: number, month: number, day: number) =>
+  `${year}-${pad(month)}-${pad(day)}`;
 
 /** Days in a month (month is 1–12). */
 export function daysInMonth(year: number, month: number): number {
@@ -19,8 +28,18 @@ export function weekdayOf(date: string): number {
 }
 
 /** Six weeks of cells for a month picker; days outside the month fill the first and last rows. */
-export function monthGrid(year: number, month: number, options: { today?: string; selected?: string; min?: string; max?: string } = {}): DayCell[] {
-  const first = weekdayOf(isoDate(year, month, 1));
+export function monthGrid(
+  year: number,
+  month: number,
+  options: {
+    today?: string;
+    selected?: string;
+    min?: string;
+    max?: string;
+    weekStartsOn?: 0 | 1;
+  } = {},
+): DayCell[] {
+  const first = (weekdayOf(isoDate(year, month, 1)) - (options.weekStartsOn ?? 0) + 7) % 7;
   const cells: DayCell[] = [];
   const start = new Date(Date.UTC(year, month - 1, 1 - first));
   for (let i = 0; i < 42; i++) {
@@ -40,7 +59,11 @@ export function monthGrid(year: number, month: number, options: { today?: string
 }
 
 /** The month `delta` months away from year/month. */
-export function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
+export function shiftMonth(
+  year: number,
+  month: number,
+  delta: number,
+): { year: number; month: number } {
   const index = year * 12 + (month - 1) + delta;
   return { year: Math.floor(index / 12), month: (index % 12) + 1 };
 }
@@ -78,7 +101,10 @@ export function roundToStep(time: string, step = 5): string {
 }
 
 /** Stepper: snap to the step grid from `min`, then clamp; a non-number falls back to min. */
-export function clampStep(value: number, options: { min: number; max: number; step?: number }): number {
+export function clampStep(
+  value: number,
+  options: { min: number; max: number; step?: number },
+): number {
   const step = options.step ?? 1;
   if (!Number.isFinite(value)) return options.min;
   const snapped = options.min + Math.round((value - options.min) / step) * step;
@@ -86,7 +112,11 @@ export function clampStep(value: number, options: { min: number; max: number; st
 }
 
 /** Keyboard on a slider thumb (WAI-ARIA): arrows step, Page keys jump ten steps, Home/End hit the ends. */
-export function sliderKey(value: number, key: string, options: { min: number; max: number; step?: number }): number {
+export function sliderKey(
+  value: number,
+  key: string,
+  options: { min: number; max: number; step?: number },
+): number {
   const step = options.step ?? 1;
   switch (key) {
     case 'ArrowRight':
@@ -114,7 +144,14 @@ export function sliderPercent(value: number, min: number, max: number): number {
   return Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
 }
 
-export type FieldRule = { label: string; required?: boolean; minLength?: number; maxLength?: number; pattern?: RegExp; patternMessage?: string };
+export type FieldRule = {
+  label: string;
+  required?: boolean;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: RegExp;
+  patternMessage?: string;
+};
 
 const hasBatchim = (word: string) => {
   const code = word.charCodeAt(word.length - 1);
@@ -127,8 +164,11 @@ export const objectParticle = (word: string) => (hasBatchim(word) ? '을' : '를
 export function validationMessage(value: string, rule: FieldRule): string {
   const trimmed = value.trim();
   if (rule.required && !trimmed) return `${rule.label}${objectParticle(rule.label)} 입력해 주세요.`;
-  if (rule.minLength !== undefined && trimmed && [...trimmed].length < rule.minLength) return `${rule.label}${objectParticle(rule.label)} ${rule.minLength}자 이상 입력해 주세요.`;
-  if (rule.maxLength !== undefined && [...trimmed].length > rule.maxLength) return `${rule.label}${objectParticle(rule.label)} ${rule.maxLength}자 이내로 줄여 주세요.`;
-  if (rule.pattern && trimmed && !rule.pattern.test(trimmed)) return rule.patternMessage ?? `${rule.label} 형식이 맞지 않아요.`;
+  if (rule.minLength !== undefined && trimmed && [...trimmed].length < rule.minLength)
+    return `${rule.label}${objectParticle(rule.label)} ${rule.minLength}자 이상 입력해 주세요.`;
+  if (rule.maxLength !== undefined && [...trimmed].length > rule.maxLength)
+    return `${rule.label}${objectParticle(rule.label)} ${rule.maxLength}자 이내로 줄여 주세요.`;
+  if (rule.pattern && trimmed && !rule.pattern.test(trimmed))
+    return rule.patternMessage ?? `${rule.label} 형식이 맞지 않아요.`;
   return '';
 }

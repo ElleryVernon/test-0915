@@ -65,3 +65,18 @@ SELECT * FROM "School"
 WHERE "name" ILIKE @pattern::text
 ORDER BY "name" ASC
 LIMIT 30;
+
+-- name: ListConversations :many
+SELECT u."id", u."nickname", recent."body", recent."createdAt"
+FROM "User" u
+JOIN LATERAL (
+  SELECT m."body", m."createdAt" FROM "Message" m
+  WHERE (m."senderId" = @viewer_id::text AND m."recipientId" = u."id")
+     OR (m."recipientId" = @viewer_id::text AND m."senderId" = u."id")
+  ORDER BY m."createdAt" DESC, m."id" DESC LIMIT 1
+) recent ON true
+WHERE u."id" <> @viewer_id::text AND u."role" = @role AND NOT u."suspended"
+  AND NOT EXISTS (SELECT 1 FROM "Block" b
+    WHERE (b."userId" = @viewer_id::text AND b."blockedId" = u."id")
+       OR (b."userId" = u."id" AND b."blockedId" = @viewer_id::text))
+ORDER BY recent."createdAt" DESC, u."id" LIMIT 100;

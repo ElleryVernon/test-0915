@@ -8,7 +8,7 @@
     "build": "next build && node scripts/precompress.mjs out",
     "start": "node scripts/start-local.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --import ./tests/register-css.mjs --test tests/*.test.ts",
     "check:web": "tsx scripts/web-build-check.ts && tsx scripts/web-static-check.ts && node scripts/dev-proxy-check.mjs",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",

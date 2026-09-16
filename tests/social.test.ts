@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import type { AppData, Post, Schedule } from '../src/lib/contracts';
 import { recoverPlannerResult } from '../src/components/social/planner';
-import { conflictFixes, findFreeSlot, formatMinutes } from '../src/lib/schedule';
+import {
+  conflictFixes,
+  findFreeSlot,
+  formatMinutes,
+  moveScheduleStart,
+  scheduleMatchesDraft,
+} from '../src/lib/schedule';
 import {
   ceilTime,
   dateKey,
@@ -448,4 +454,45 @@ test('a new schedule starts where the day frees up, not an hour later', () => {
     'the first free window between schedules comes first',
   );
   console.log('schedule review default slot verified');
+});
+
+test('moving a schedule start preserves duration and never wraps into the next day', () => {
+  assert.deepEqual(moveScheduleStart({ start: '16:00', end: '17:00' }, '18:00'), {
+    start: '18:00',
+    end: '19:00',
+  });
+  assert.deepEqual(moveScheduleStart({ start: '16:00', end: '16:25' }, '15:30'), {
+    start: '15:30',
+    end: '15:55',
+  });
+  assert.deepEqual(moveScheduleStart({ start: '16:00', end: '17:00' }, '23:30'), {
+    start: '23:30',
+    end: '23:59',
+  });
+});
+
+test('late-night defaults do not silently move a new schedule into the past', () => {
+  assert.deepEqual(defaultSlot([], '23:20'), { start: '23:20', end: '23:45' });
+  assert.deepEqual(defaultSlot([], '23:50'), { start: '23:50', end: '23:55' });
+  assert.deepEqual(defaultSlot([], '23:59'), { start: '23:59', end: '23:59' });
+});
+
+test('a 25-minute study gap can be offered without claiming adjacent occupied time', () => {
+  const rows = plannerRows(
+    [schedule('school', '08:30', '16:00'), schedule('lesson', '16:25', '22:00')],
+    { minGap: 25 },
+  );
+  assert.deepEqual(
+    rows.filter((row) => row.type === 'gap'),
+    [{ type: 'gap', start: '16:00', end: '16:25', minutes: 25 }],
+  );
+});
+
+test('draft reconciliation requires the exact saved schedule, including kind and subject', () => {
+  const saved = { ...schedule('study', '16:25', '16:50'), subjectId: 'biology' };
+  assert.equal(scheduleMatchesDraft(saved, { ...saved, title: ' study ' }), true);
+  assert.equal(scheduleMatchesDraft(saved, { ...saved, start: '16:00' }), false);
+  assert.equal(scheduleMatchesDraft(saved, { ...saved, subjectId: 'math' }), false);
+  assert.equal(scheduleMatchesDraft(saved, { ...saved, kind: 'FIXED' }), false);
+  assert.equal(scheduleMatchesDraft(saved, { ...saved, date: '2026-09-16' }), false);
 });

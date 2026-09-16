@@ -1,3 +1,4 @@
+import { sessionFetch } from '@/lib/session-boundary';
 // Material bodies are not part of the bootstrap payload (it carries contentLength, an excerpt and
 // a hash). Screens that need the text ask for the detail once and keep it for the session; the
 // hash in the key means an edited material is fetched again while an unchanged one never is.
@@ -15,7 +16,7 @@ async function loadDetail(id: string): Promise<MaterialDetail> {
   let response: Response;
   try {
     // jitter: none — one fetch a person starts, single-flight per id + content hash; retried only by the next open or the retry button [site src/lib/materials.ts:17]
-    response = await fetch(`/api/materials/${id}`, { signal: AbortSignal.timeout(20000) });
+    response = await sessionFetch(`/api/materials/${id}`, { signal: AbortSignal.timeout(20000) });
   } catch {
     throw new DetailError('연결이 끊겼어요. 연결을 확인하고 다시 시도해 주세요.', undefined, true);
   }

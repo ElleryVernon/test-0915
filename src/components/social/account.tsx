@@ -27,7 +27,7 @@ import { OptionField } from '@/components/ui-choice';
 import { validationMessage } from '@/lib/ui-logic';
 
 export default function Account(props: ScreenProps) {
-  const { data, navigate, refresh, toast, path } = props;
+  const { data, navigate, back, refresh, toast, path } = props;
   const [edit, setEdit] = useState(false);
   const [links, setLinks] = useState(false);
   const [hub, setHub] = useState<'followers' | 'following' | 'blocked' | null>(null);
@@ -107,7 +107,7 @@ export default function Account(props: ScreenProps) {
   if (path.startsWith('/settings'))
     return (
       <>
-        <ScreenHeader title="설정" back={() => navigate('/profile')} />
+        <ScreenHeader title="설정" back={() => back('/profile')} />
         <div className="page-inset pb-8">
           <SectionTitle title="내 계정" />
           <ListRow
@@ -223,8 +223,9 @@ export default function Account(props: ScreenProps) {
             </p>
           </div>
           <Button
+            size="compact"
             variant="secondary"
-            className="!min-h-9 !px-3 !text-[13px]"
+            className="!px-3 !text-[13px]"
             onClick={() => setEdit(true)}
           >
             편집
@@ -439,7 +440,14 @@ function ProfileEditor({
   }, [form.school, searching, open]);
   async function save(e: FormEvent) {
     e.preventDefault();
-    const problem = validationMessage(form.name, { label: '이름', required: true, maxLength: 40 }) || validationMessage(form.nickname, { label: '닉네임', required: true, minLength: 2, maxLength: 30 });
+    const problem =
+      validationMessage(form.name, { label: '이름', required: true, maxLength: 40 }) ||
+      validationMessage(form.nickname, {
+        label: '닉네임',
+        required: true,
+        minLength: 2,
+        maxLength: 30,
+      });
     if (problem) {
       setError(problem);
       return;

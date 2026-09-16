@@ -5,8 +5,10 @@ import { Button, ScreenHeader } from './ui';
 import { api } from '@/lib/api';
 import { syncReviews } from '@/lib/offline';
 import type { ScreenProps } from '@/lib/contracts';
+import { readExplanationDepth, saveExplanationDepth } from '@/lib/learning-preferences';
 import { Slider } from '@/components/ui-choice';
-export default function LearningSettings({ data, navigate, refresh, toast }: ScreenProps) {
+export default function LearningSettings({ data, back, refresh, toast }: ScreenProps) {
+  const [depth, setDepth] = useState(() => readExplanationDepth(data.profile.id));
   const [mode, setMode] = useState(data.profile.srsMode ?? 'FIXED');
   const [retention, setRetention] = useState(data.profile.desiredRetention ?? 0.9);
   const [busy, setBusy] = useState(false);
@@ -17,9 +19,14 @@ export default function LearningSettings({ data, navigate, refresh, toast }: Scr
     try {
       await syncReviews(data.profile.id, (item) => api('/cards/review', item));
       await api('/profile', { srsMode: mode, desiredRetention: retention }, 'PATCH');
+      const savedDepth = saveExplanationDepth(data.profile.id, depth);
       await refresh();
-      toast('다음 복습부터 새 방식으로 기억해요');
-      navigate('/flashcards');
+      toast(
+        savedDepth
+          ? '학습 설정을 저장했어요'
+          : '복습 방식은 저장했지만 이 기기의 해설 설정은 저장하지 못했어요',
+      );
+      back('/profile');
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -28,7 +35,7 @@ export default function LearningSettings({ data, navigate, refresh, toast }: Scr
   }
   return (
     <>
-      <ScreenHeader title="나에게 맞는 복습" back={() => navigate('/profile')} />
+      <ScreenHeader title="나에게 맞는 복습" back={() => back('/profile')} />
       <div className="page-inset pb-8">
         <div className="mt-4 mb-7">
           <span className="eyebrow">복습하는 방식</span>
@@ -121,6 +128,25 @@ export default function LearningSettings({ data, navigate, refresh, toast }: Scr
           </section>
         )}
         <section className="mt-8">
+          <h2 className="mb-2 text-base font-bold">해설은 얼마나 볼까요?</h2>
+          <p className="mb-3 text-sm leading-relaxed text-muted">
+            처음 펼칠 해설 길이예요. 문제마다 바꿀 수 있고, 이 기기에 저장해요.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {(['SHORT', 'FULL'] as const).map((value) => (
+              <button
+                key={value}
+                className="choice-row"
+                aria-pressed={depth === value}
+                onClick={() => setDepth(value)}
+              >
+                <span>{value === 'SHORT' ? '핵심만' : '자세히'}</span>
+                <span className="choice-indicator">{depth === value && <Check size={14} />}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+        <section className="mt-8">
           <h2 className="font-bold text-base mb-3">솔직한 평가가 좋은 간격을 만들어요</h2>
           {[
             ['다시', '기억이 나지 않았어요'],
@@ -140,7 +166,7 @@ export default function LearningSettings({ data, navigate, refresh, toast }: Scr
           </p>
         )}
         <Button className="w-full mt-8" disabled={busy} onClick={save}>
-          {busy ? '저장하고 있어요' : '이 방식으로 복습하기'}
+          {busy ? '저장하고 있어요' : '복습 방식 저장'}
           <ChevronRight size={18} />
         </Button>
         <p className="text-[11px] text-center text-muted mt-4">기존 학습 기록은 그대로 보관해요</p>

@@ -1,0 +1,79 @@
+/* Single spacing source. Tailwind --spacing and handwritten CSS both derive from it.
+   Public semantic roles below are preferred over scale values in new components. */
+:root {
+  --space-unit: 4px;
+  --space-1: var(--space-unit);
+  --space-2: calc(var(--space-unit) * 2);
+  --space-3: calc(var(--space-unit) * 3);
+  --space-4: calc(var(--space-unit) * 4);
+  --space-5: calc(var(--space-unit) * 5);
+  --space-6: calc(var(--space-unit) * 6);
+  --space-7: calc(var(--space-unit) * 7);
+  --space-8: calc(var(--space-unit) * 8);
+  --space-10: calc(var(--space-unit) * 10);
+  --space-12: calc(var(--space-unit) * 12);
+  --page-gutter: var(--space-5);
+  --panel-inset: var(--space-5);
+  --panel-inset-compact: var(--space-4);
+  --gap-inline: var(--space-2);
+  --gap-related: var(--space-3);
+  --gap-block: var(--space-4);
+  --gap-section: var(--space-6);
+  --row-gap: var(--gap-related);
+  --row-icon-size: 24px;
+  --header-height: 64px;
+  --control-size: 44px;
+  --control-height: 52px;
+  --radius: 20px;
+  --radius-panel: 16px;
+  --radius-control: 12px;
+}
+/* Reading groups own gaps. Children must not add a second sibling margin. */
+.layout-section {
+  display: grid;
+  gap: var(--gap-section);
+  min-width: 0;
+}
+.layout-group {
+  display: grid;
+  gap: var(--gap-block);
+  min-width: 0;
+}
+.control-outline,
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-inline);
+  min-height: var(--control-size);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: white;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 600;
+  text-align: center;
+}
+.control-outline:hover,
+.btn-outline:hover {
+  background: var(--surface-muted);
+}
+.control-outline:active,
+.btn-outline:active {
+  background: var(--border-subtle);
+}
+/* Explicit size variants replace ad-hoc !min-h overrides. */
+.btn.btn-compact {
+  min-height: var(--control-size);
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
+}
+.btn.btn-outline {
+  border: 1px solid var(--border-strong);
+  background: white;
+}
+.btn.btn-outline:hover {
+  background: var(--surface-muted);
+}

@@ -152,3 +152,24 @@ export function conflictFixes(target: Interval, others: Interval[], minLength = 
   if (move) fixes.move = move;
   return fixes;
 }
+
+/** Move the start without silently changing the intended duration. Clamp at the same day's end. */
+export function moveScheduleStart(range: Interval, start: string): Interval {
+  const duration = Math.max(5, minutes(range.end) - minutes(range.start));
+  return { start, end: timeString(Math.min(DAY_END, minutes(start) + duration)) };
+}
+
+/** A server-confirmed copy can retire a draft after reload interrupted the save response. */
+export function scheduleMatchesDraft(
+  schedule: Pick<Schedule, 'title' | 'date' | 'start' | 'end' | 'kind' | 'subjectId'>,
+  draft: Pick<Schedule, 'title' | 'date' | 'start' | 'end' | 'kind' | 'subjectId'>,
+) {
+  return (
+    schedule.title.trim() === draft.title.trim() &&
+    schedule.date.slice(0, 10) === draft.date.slice(0, 10) &&
+    schedule.start === draft.start &&
+    schedule.end === draft.end &&
+    schedule.kind === draft.kind &&
+    (schedule.subjectId || '') === (draft.subjectId || '')
+  );
+}

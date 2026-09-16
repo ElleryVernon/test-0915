@@ -188,7 +188,7 @@ test('the app clears the cache where a session ends and seeds it where a save an
   for (const head of ['async function logout()', 'async function login(']) {
     assert.match(bodyOf(app, head), /forgetMaterialDetails\(\)/, `${head} keeps the previous bodies`);
   }
-  assert.match(app, /message\.includes\('로그인'\)\)\s*\{[\s\S]{0,240}?forgetMaterialDetails\(\)/, 'a bootstrap 401 keeps the bodies');
+  assert.match(app, /status === 401\)\s*\{[\s\S]{0,240}?forgetMaterialDetails\(\)/, 'a bootstrap 401 keeps the bodies');
   assert.match(app, /rememberSavedMaterial\(sample\.material\)/, 'the sample chapter is not remembered');
   assert.equal((subjects.match(/rememberSavedMaterial\(/g) ?? []).length, 2, 'create and edit must both seed');
   assert.match(subjects, /rememberSavedMaterial\(material\)/, 'the create seeds something other than its answer');

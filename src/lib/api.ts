@@ -1,3 +1,4 @@
+import { sessionFetch } from '@/lib/session-boundary';
 import { fullJitter, retryDelay, sleep, type Rand } from './jitter';
 
 /**
@@ -78,10 +79,10 @@ export async function retryTransient<T>(
 }
 
 export async function api<T = unknown>(path: string, body?: unknown, method?: string): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const response = await sessionFetch(`/api${path}`, {
     method: method ?? (body === undefined ? 'GET' : 'POST'),
     // jitter: none — each 20 s / 150 s timeout starts with its own request, which people already spread; api() never re-sends on a timeout [site src/lib/api.ts:4]
-    signal: AbortSignal.timeout(path === '/bootstrap' ? 20000 : 150000),
+    signal: AbortSignal.timeout(path === '/bootstrap' || path.startsWith('/quiz/') ? 20000 : 150000),
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });

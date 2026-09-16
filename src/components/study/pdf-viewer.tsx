@@ -1,4 +1,6 @@
 'use client';
+import { sessionFetch } from '@/lib/session-boundary';
+
 
 // Continuous PDF preview: every page is laid out at once (so the scroll position is the reading
 // position), rendered only when it comes near the viewport, re-rendered on zoom, with a live page
@@ -59,7 +61,7 @@ export default function PdfViewer({
         let response: Response;
         try {
           // jitter: none — one fetch a person starts (45 s deadline); retry is only the manual retry button [site src/components/study/pdf-viewer.tsx:61]
-          response = await fetch(url, { credentials: 'same-origin', signal: AbortSignal.timeout(45_000) });
+          response = await sessionFetch(url, { credentials: 'same-origin', signal: AbortSignal.timeout(45_000) });
         } catch (reason) {
           if (!active) return;
           setFailure(reason instanceof Error && reason.name === 'TimeoutError' ? { pdf: 'timeout' } : { network: true });

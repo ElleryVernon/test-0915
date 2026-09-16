@@ -1,3 +1,4 @@
+import { sessionFetch } from '@/lib/session-boundary';
 import { openDB, type DBSchema } from 'idb';
 import { ApiError, apiErrorOf, retryAfterMsOf, transient } from './api';
 import { between, cooldown, fullJitter, retryDelay, sleep, type Rand } from './jitter';
@@ -115,7 +116,7 @@ async function saveTask<T>(task: AiTaskRecord<T>) {
 }
 async function request(path: string, body?: unknown, signal?: AbortSignal) {
   const timeout = AbortSignal.timeout(body === undefined ? 20000 : AI_CLIENT_DEADLINE_MS);
-  const response = await fetch(`/api${path}`, {
+  const response = await sessionFetch(`/api${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },

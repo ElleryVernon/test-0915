@@ -29,7 +29,9 @@ export function latestAttempts(attempts: StudyAttempt[], kind: 'questionId' | 'e
 }
 export function wrongQuestions(data: Pick<AppData, 'attempts' | 'questions'>) {
   const latest = latestAttempts(data.attempts, 'questionId');
-  return data.questions.filter((q) => latest.has(q.id) && !latest.get(q.id)!.correct);
+  return data.questions.filter((q) =>
+    latest.has(q.id) ? !latest.get(q.id)!.correct : !!q.savedToNotes,
+  );
 }
 export function wrongEssays(data: Pick<AppData, 'attempts' | 'essays'>) {
   const latest = latestAttempts(data.attempts, 'essayId');

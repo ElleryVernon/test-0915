@@ -205,14 +205,20 @@ type AiRun struct {
 }
 
 type Attempt struct {
-	ID         string
-	UserID     string
-	QuestionID *string
-	EssayID    *string
-	Answer     string
-	Correct    bool
-	Score      int32
-	CreatedAt  time.Time
+	ID               string
+	UserID           string
+	QuestionID       *string
+	EssayID          *string
+	Answer           string
+	Correct          bool
+	Score            int32
+	CreatedAt        time.Time
+	ResponseMs       *int32
+	BeatsSeen        int32
+	ExplainDepth     *string
+	MicroResult      *string
+	DivergenceNodeId *string
+	RequestID        *string
 }
 
 type Block struct {
@@ -237,6 +243,10 @@ type Card struct {
 	Fsrs             []byte
 	CreatedAt        time.Time
 	MaterialID       *string
+	SourceKind       string
+	Diagram          []byte
+	MaskedNodeIds    []string
+	SourceDiagramId  *string
 }
 
 type CardReview struct {
@@ -267,6 +277,69 @@ type Comment struct {
 	CreatedAt time.Time
 }
 
+type CommunityAction struct {
+	UserID    string
+	PostID    string
+	BlockId   string
+	Kind      string
+	Result    []byte
+	CreatedAt time.Time
+}
+
+type CommunityCard struct {
+	CardID string
+	Public bool
+}
+
+type CommunityCardClone struct {
+	UserID       string
+	SourceCardId string
+	CardID       string
+}
+
+type CommunityComment struct {
+	CommentId string
+	Block     []byte
+	RequestID *string
+	UserID    string
+}
+
+type CommunityFollowEvent struct {
+	ID        string
+	UserID    string
+	CreatedAt time.Time
+}
+
+type CommunityPost struct {
+	PostID            string
+	Blocks            []byte
+	Tags              []byte
+	SourceRef         []byte
+	RequestID         *string
+	UserID            string
+	Deleted           bool
+	EditedAt          *time.Time
+	SolvedAt          *time.Time
+	AcceptedCommentId *string
+}
+
+type CommunityPrivacy struct {
+	UserID     string
+	Visibility []byte
+}
+
+type CommunityReward struct {
+	PostID    string
+	UserID    string
+	CreatedAt time.Time
+}
+
+type CommunitySavedQuestion struct {
+	UserID     string
+	QuestionID string
+	PostID     string
+}
+
 type Essay struct {
 	ID          string
 	UserID      string
@@ -277,6 +350,15 @@ type Essay struct {
 	Distractors []string
 	ModelAnswer string
 	Citation    string
+}
+
+type ExplanationReport struct {
+	ID         string
+	UserID     string
+	QuestionID string
+	NodeId     string
+	Reason     string
+	CreatedAt  time.Time
 }
 
 type Follow struct {
@@ -354,6 +436,7 @@ type Post struct {
 	Body      string
 	Anonymous bool
 	CreatedAt time.Time
+	School    string
 }
 
 type PostLike struct {
@@ -367,17 +450,18 @@ type PostSave struct {
 }
 
 type Question struct {
-	ID          string
-	UserID      string
-	SubjectID   string
-	MaterialID  string
-	Prompt      string
-	Options     []string
-	Answer      int32
-	Explanation string
-	Citation    string
-	Past        string
-	Future      string
+	ID                  string
+	UserID              string
+	SubjectID           string
+	MaterialID          string
+	Prompt              string
+	Options             []string
+	Answer              int32
+	Explanation         string
+	Citation            string
+	Past                string
+	Future              string
+	LearningExplanation []byte
 }
 
 type Report struct {
