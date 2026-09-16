@@ -25,7 +25,7 @@ import type { ScreenProps, Material, Subject } from '@/lib/contracts';
 import { Button, EmptyState, IconButton, Sheet } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useRetryCountdown, waitingLabel } from '@/lib/retry-countdown';
-import { useMaterialDetail } from '@/lib/materials';
+import { mergeSavedMaterial, rememberSavedMaterial, useMaterialDetail } from '@/lib/materials';
 import { seoulDateKey } from '@/lib/home';
 import {
   acknowledgeAiTask,
@@ -901,8 +901,12 @@ function MaterialEdit({
                 { title: title.trim(), content },
                 'PATCH',
               );
+              // The edit changed the hash, so the old entry is never read again; the new body is here,
+              // and a file's images and page count come from the detail this editor loaded.
+              rememberSavedMaterial(saved, body.detail);
               await props.refresh();
-              onSaved(saved);
+              // The answer alone would drop the file's page and image counts from the meta line.
+              onSaved(mergeSavedMaterial(material, saved));
               props.toast('자료를 수정했어요');
             })
           }
@@ -962,6 +966,8 @@ function UploadSheet({
         type: upload?.type || 'TXT',
         uploadId: upload?.uploadId,
       });
+      // The answer already carries the body this screen just sent; a file's images are not in it.
+      rememberSavedMaterial(material);
       setSaved(material);
       await props.refresh();
       if (upload?.warning) props.toast(upload.warning);

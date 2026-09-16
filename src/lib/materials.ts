@@ -43,9 +43,35 @@ export function fetchMaterialDetail(material: Pick<Material, 'id' | 'contentHash
   return pending;
 }
 
-/** Seeds the cache from a response that already carried the body (create, edit). */
+/** Remembers one body under its id and content hash; rememberSavedMaterial decides when that is right. */
 export function rememberMaterialDetail(detail: MaterialDetail) {
   details.set(keyOf(detail), Promise.resolve(detail));
+}
+
+/**
+ * Seeds the cache from a save that answered with the material (create, edit, the sample chapter).
+ * That answer carries the body but not the file's images or page count — only GET /api/materials/:id
+ * has them — so it is the whole detail by itself for a material saved without a file. With a file,
+ * the images and the page count belong to the upload and a save does not change them: they come from
+ * the detail the screen already had. Without that detail nothing is remembered, so a material is
+ * never shown missing its images; the next open fetches it as before.
+ */
+export function rememberSavedMaterial(saved: Material, loaded?: MaterialDetail | null) {
+  if (saved.content === undefined) return;
+  const body = { ...saved, content: saved.content };
+  if (!saved.uploadId) rememberMaterialDetail({ ...body, images: [], pages: undefined });
+  else if (loaded && loaded.id === saved.id && loaded.uploadId === saved.uploadId)
+    rememberMaterialDetail({ ...body, images: loaded.images, pages: loaded.pages });
+}
+
+/**
+ * The material as it stands after a save. The answer is the row alone: it has no page count and no
+ * image count, which the bootstrap summary carries and screens show in the material's meta line.
+ * Both belong to the uploaded file, which a save does not touch, so they stay from the material that
+ * was saved over; an answer that does carry them wins.
+ */
+export function mergeSavedMaterial(previous: Material, saved: Material): Material {
+  return { ...saved, pages: saved.pages ?? previous.pages, imageCount: saved.imageCount ?? previous.imageCount };
 }
 
 /** Drops every remembered body (sign-out). */

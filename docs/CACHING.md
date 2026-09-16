@@ -77,7 +77,7 @@ bootstrap 크기(데모 학생 김지우, 자료 6개, 2026-09-15 측정):
 | content 포함 (leaf-2.1 시점, 자료 본문 24,075바이트 동봉) | 68,087 B |
 | content 제외 (leaf-2.2: contentLength·excerpt·contentHash 만) | 43,219 B |
 
-본문은 `GET /api/materials/{id}` 로 열 때 한 번 받고 세션 동안 해시 키로 기억한다(`src/lib/materials.ts`). 2만 자 자료 하나를 더해도 bootstrap 은 본문 바이트의 1.93% 만 는다(`scripts/materials-payload.ts`).
+본문은 `GET /api/materials/{id}` 로 열 때 한 번 받고 세션 동안 해시 키로 기억한다(`src/lib/materials.ts`). 저장 응답이 이미 본문을 담고 있으면(생성·수정·샘플) 그것으로 캐시를 채워 다음에 열 때 다시 받지 않는다 — 단 그 응답에는 파일의 이미지·쪽수가 없으므로, 파일 없는 자료이거나 편집기가 이미 상세를 불러온 수정일 때만 채운다(`rememberSavedMaterial`). 로그아웃·계정 전환·세션 만료(부트스트랩 401)에서는 `forgetMaterialDetails()` 로 전부 지운다: 로그아웃은 새로고침 없이 화면만 바꾸기 때문이다. 2만 자 자료 하나를 더해도 bootstrap 은 본문 바이트의 1.93% 만 는다(`scripts/materials-payload.ts`).
 
 캐시 후 수치는 프로세스 내 캐시 기준이다. Valkey 는 왕복 약 0.3–1 ms 를 더하지만 Cloud Run 인스턴스가 여럿일 때도 같은 항목을 공유한다.
 

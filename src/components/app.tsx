@@ -44,7 +44,8 @@ import { readEssayDrafts, type EssayDraft } from '@/lib/study-drafts';
 import { formatMinutes, relativeTime } from './social/helpers';
 import { wrongQuestions, wrongEssays } from './study/logic';
 import { cachedCards, clearStudyCache, pendingReviews, syncReviews } from '@/lib/offline';
-import type { AppData, Role, ScreenProps } from '@/lib/contracts';
+import { forgetMaterialDetails, rememberSavedMaterial } from '@/lib/materials';
+import type { AppData, Material, Role, ScreenProps } from '@/lib/contracts';
 import { Button, IconButton, Sheet, EmptyState, ScreenHeader, SectionTitle, ListRow } from './ui';
 const StudyScreens = dynamic(() => import('./study'), { loading: () => <ScreenLoading /> });
 const SocialScreens = dynamic(() => import('./social'), { loading: () => <ScreenLoading /> });
@@ -451,7 +452,9 @@ export function HomeScreen({ data, navigate, toast, refresh }: ScreenProps) {
                     if (sampling) return;
                     setSampling(true);
                     try {
-                      await api('/materials/sample', {});
+                      const sample = await api<{ material: Material }>('/materials/sample', {});
+                      // The answer carries the chapter itself, so opening it needs no second request.
+                      rememberSavedMaterial(sample.material);
                       await refresh();
                       toast('샘플 자료를 넣었어요. 바로 시작해 보세요');
                     } catch (e) {
@@ -731,7 +734,9 @@ export default function App() {
           if (!(await restoreCached().catch(() => false)))
             setError('처음 한 번은 인터넷에 연결해 주세요.');
         } else if ((e as Error).message.includes('로그인')) {
+          // The session is gone (expired or ended elsewhere): drop what it let us read.
           setData(null);
+          forgetMaterialDetails();
           const db = await shellDB();
           await db.clear('session');
         } else setError((e as Error).message);
@@ -772,6 +777,8 @@ export default function App() {
       await clearStudyCache(data.profile.id);
     }
     await api('/session', { role });
+    // The session now belongs to someone else: the bodies read under the previous one go with it.
+    forgetMaterialDetails();
     await refresh();
     navigate(role === 'PARENT' ? '/parent' : '/');
     setRoleSheet(false);
@@ -790,6 +797,8 @@ export default function App() {
       await api('/logout', {});
       const db = await shellDB();
       await db.clear('session');
+      // Signing out keeps this page: without this the material bodies stay in memory for the next person.
+      forgetMaterialDetails();
       setData(null);
       navigate('/');
       setRoleSheet(false);
