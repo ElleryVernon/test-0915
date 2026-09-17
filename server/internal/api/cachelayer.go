@@ -22,8 +22,6 @@ const (
 	bootstrapTTL = 60 * time.Second
 	// jitter: coalesce singleflight on the posts fill; the TTL stays 15 s [site server/internal/api/cachelayer.go:19]
 	postsTTL = 15 * time.Second
-	// jitter: coalesce singleflight on the one key shared across users; the TTL stays 1 h [site server/internal/api/cachelayer.go:20]
-	schoolsTTL = time.Hour
 	// jitter: none — an expired version costs no query (its entries live ≤ 1 h); bumps restart above any old value [site server/internal/api/cachelayer.go:21]
 	versionTTL = 7 * 24 * time.Hour
 )

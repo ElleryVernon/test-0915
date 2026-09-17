@@ -42,7 +42,7 @@ await db.connect();
 
 // The fake model: one valid quiz item (and OCR text) per call, or held until released.
 const source = '나트륨 이온이 세포 안으로 유입되어 탈분극이 일어난다. 칼륨 이온이 세포 밖으로 나가면 재분극이 일어난다.';
-const item = { prompt: '탈분극을 일으키는 이온의 이동은?', options: ['나트륨 유입', '나트륨 유출', '칼륨 유입', '칼륨 유출', '이동 없음'], answer: 0, explanation: '나트륨 이온이 세포 안으로 유입되어 탈분극이 발생해요.', citation: '나트륨 이온이 세포 안으로 유입되어 탈분극이 일어난다.', past: '세포막', future: '막전위' };
+const item = { prompt: '탈분극을 일으키는 이온의 이동은?', options: ['나트륨 유입', '나트륨 유출', '칼륨 유입', '칼륨 유출', '이동 없음'], answer: 0, explanation: '나트륨 이온이 세포 안으로 유입되어 탈분극이 발생해요.', citation: '나트륨 이온이 세포 안으로 유입되어 탈분극이 일어난다.', past: '세포막', future: '막전위' }; // AI_QUALITY_REVIEW is off below, so the item cites source text, not evidence block ids
 const model = { mode: 'ok', inFlight: 0, calls: 0, held: [] };
 const upstream = http.createServer(async (req, res) => {
   const chunks = [];
@@ -97,6 +97,7 @@ async function startServer(extra) {
   if (!ready) throw new Error(`server did not start: ${output}`);
   const server = {
     base,
+    log: () => output,
     stop: async () => {
       child.kill('SIGTERM');
       await Promise.race([exited, new Promise((r) => setTimeout(r, 12_000))]);
@@ -105,7 +106,9 @@ async function startServer(extra) {
   servers.push(server);
   return server;
 }
-const ai = { OPENROUTER_API_KEY: 'synthetic-provider-key', OPENROUTER_MODEL: 'openai/gpt-5.6-luna', OPENROUTER_REASONING_EFFORT: 'high', OPENROUTER_BASE_URL: upstreamURL };
+// The fake answers every tool with the same quiz item, so the independent quality review (which would
+// ask it to solve and judge the item) is off here; its own Go tests cover the reviewer.
+const ai = { OPENROUTER_API_KEY: 'synthetic-provider-key', OPENROUTER_MODEL: 'openai/gpt-5.6-luna', OPENROUTER_REASONING_EFFORT: 'high', OPENROUTER_BASE_URL: upstreamURL, AI_QUALITY_REVIEW: 'false' };
 
 // Every response this script reads passes through here, so the invariant covers the whole run.
 const refusals = [];
@@ -159,7 +162,7 @@ try {
   const generate = (base, cookie, requestId = randomUUID()) => call(base, '/api/generate', { method: 'POST', cookie, body: { materialId: materialID, count: 1, mode: 'quiz', requestId } });
   const g1 = await generate(a.base, student);
   const g2 = await generate(a.base, student);
-  check(g1.status === 201 && g2.status === 201, `two runs within the minute budget (${g1.status} ${g2.status})`);
+  check(g1.status === 201 && g2.status === 201, `two runs within the minute budget (${g1.status} ${g2.status}) ${g1.status === 201 ? '' : JSON.stringify(g1.json).slice(0, 300)}`);
   const refusedID = randomUUID();
   const g3 = await generate(a.base, student, refusedID);
   hinted(g3, 1, 76, 'AI minute budget (rest of the minute + U[0,15 s))');
@@ -218,6 +221,8 @@ try {
   console.log(`JITTER_HTTP_OK (${checks} checks)`);
 } catch (error) {
   console.error(error);
+  // The servers' own logs name the refusal that the HTTP status alone does not.
+  for (const s of servers) console.error(`--- server ${s.base} log (tail) ---\n${s.log().slice(-1500)}`);
   process.exitCode = 1;
 } finally {
   releaseModel();

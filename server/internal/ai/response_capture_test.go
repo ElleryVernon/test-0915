@@ -19,7 +19,7 @@ func TestResponseCaptureOptInProviderAndFailureSeparation(t *testing.T) {
 			var logs bytes.Buffer
 			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Authorization") != "Bearer test-key" {
-					http.Error(w, "missing fake key", 401)
+					http.Error(w, "missing fake key", http.StatusUnauthorized)
 					return
 				}
 				var body map[string]any

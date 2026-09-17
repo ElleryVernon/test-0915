@@ -14,6 +14,7 @@ import (
 	"memoryz/server/internal/apierr"
 	"memoryz/server/internal/httpx"
 	"memoryz/server/internal/ids"
+	"memoryz/server/internal/jsonx"
 	"memoryz/server/internal/learning"
 	"memoryz/server/internal/store"
 	"memoryz/server/internal/textmatch"
@@ -33,16 +34,16 @@ var errGenerationSubject = apierr.New(400, "선택한 자료에 속한 과목을
 var errSnapshotImmutable = apierr.New(409, "여러 자료로 만든 원본은 수정할 수 없어요. 기존 자료를 수정한 뒤 새로 만들어 주세요.")
 
 type generationSource struct {
-	ID            string    `json:"id"`
-	Title         string    `json:"title"`
-	SubjectID     string    `json:"subjectId"`
-	Content       string    `json:"content"`
-	ContentHash   string    `json:"contentHash"`
-	ContentLength int       `json:"contentLength"`
-	Type          string    `json:"type"`
-	CreatedAt     time.Time `json:"createdAt"`
-	Available     bool      `json:"available"`
-	Changed       bool      `json:"changed"`
+	ID            string     `json:"id"`
+	Title         string     `json:"title"`
+	SubjectID     string     `json:"subjectId"`
+	Content       string     `json:"content"`
+	ContentHash   string     `json:"contentHash"`
+	ContentLength int        `json:"contentLength"`
+	Type          string     `json:"type"`
+	CreatedAt     jsonx.Time `json:"createdAt"`
+	Available     bool       `json:"available"`
+	Changed       bool       `json:"changed"`
 }
 type generationContext struct {
 	sources   []generationSource
@@ -93,9 +94,11 @@ func loadGenerationSources(ctx context.Context, db generationQueryer, userID str
 	byID := map[string]generationSource{}
 	for rows.Next() {
 		var source generationSource
-		if err = rows.Scan(&source.ID, &source.Title, &source.SubjectID, &source.Content, &source.Type, &source.CreatedAt); err != nil {
+		var created time.Time
+		if err = rows.Scan(&source.ID, &source.Title, &source.SubjectID, &source.Content, &source.Type, &created); err != nil {
 			return nil, err
 		}
+		source.CreatedAt = jsonx.Time(created)
 		source.ContentHash = textHash(source.Content)
 		source.ContentLength = length(source.Content)
 		source.Available = true

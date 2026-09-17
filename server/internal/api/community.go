@@ -58,8 +58,8 @@ type PostView struct {
 	Tags              map[string]any   `json:"tags"`
 	SourceRef         map[string]any   `json:"sourceRef,omitempty"`
 	IsMine            bool             `json:"isMine"`
-	EditedAt          *time.Time       `json:"editedAt,omitempty"`
-	SolvedAt          *time.Time       `json:"solvedAt,omitempty"`
+	EditedAt          *jsonx.Time      `json:"editedAt,omitempty"`
+	SolvedAt          *jsonx.Time      `json:"solvedAt,omitempty"`
 	AcceptedCommentID *string          `json:"acceptedCommentId,omitempty"`
 	Status            string           `json:"status"`
 	School            string           `json:"school"`
@@ -78,34 +78,11 @@ type PostView struct {
 	CreatedAt         jsonx.Time       `json:"createdAt"`
 }
 
-// postRecord is a Post row as the previous server returned it from create calls.
-type postRecord struct {
-	ID        string     `json:"id"`
-	UserID    string     `json:"userId"`
-	Role      store.Role `json:"role"`
-	Category  string     `json:"category"`
-	Title     string     `json:"title"`
-	Body      string     `json:"body"`
-	Anonymous bool       `json:"anonymous"`
-	CreatedAt jsonx.Time `json:"createdAt"`
-}
-
-// commentRecord is a Comment row as the previous server returned it from create calls; a top-level
-// comment carries parentId: null.
-type commentRecord struct {
-	ID        string     `json:"id"`
-	PostID    string     `json:"postId"`
-	UserID    string     `json:"userId"`
-	Body      string     `json:"body"`
-	ParentID  *string    `json:"parentId"`
-	CreatedAt jsonx.Time `json:"createdAt"`
-}
-
 // commentView is a comment as the thread shows it (contracts.ts Comment): the author's nickname
 // instead of their id, and no parentId key at all on a top-level comment.
 type commentView struct {
 	Deleted      bool            `json:"deleted"`
-	EditedAt     *time.Time      `json:"editedAt,omitempty"`
+	EditedAt     *jsonx.Time     `json:"editedAt,omitempty"`
 	Likes        int64           `json:"likes"`
 	Liked        bool            `json:"liked"`
 	IsPostAuthor bool            `json:"isPostAuthor"`
@@ -153,7 +130,7 @@ func (s *Server) accessiblePost(ctx context.Context, user store.User, postID str
 	if e := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM "CommunityPost" WHERE "postId"=$1 AND "deleted")`, postID).Scan(&deleted); e != nil {
 		return store.Post{}, e
 	}
-	if deleted || row.AuthorSuspended || row.Blocked || !postSchoolVisible(row.Post.School, user.School) {
+	if deleted || row.AuthorSuspended || row.Blocked || !(row.Post.School == "" || (strings.TrimSpace(user.School) != "" && row.Post.School == strings.TrimSpace(user.School))) {
 		return store.Post{}, errPostNotFound
 	}
 	return row.Post, nil
@@ -184,10 +161,6 @@ func (s *Server) peer(ctx context.Context, user store.User, userID string) (stor
 // or shared), reported as X-Cache by GET /api/posts.
 func (s *Server) postsFor(ctx context.Context, user store.User, commented bool) ([]PostView, string, error) {
 	return s.postsForFeed(ctx, user, store.ListPostsParams{Commented: commented})
-}
-
-func postSchoolVisible(postSchool, userSchool string) bool {
-	return postSchool == "" || (strings.TrimSpace(userSchool) != "" && postSchool == strings.TrimSpace(userSchool))
 }
 
 func (s *Server) postsForFeed(ctx context.Context, user store.User, options store.ListPostsParams) ([]PostView, string, error) {
@@ -348,10 +321,12 @@ func (s *Server) listComments(w http.ResponseWriter, r *http.Request, user store
 		view := commentView{PostID: post.ID}
 		var raw []byte
 		var created time.Time
-		if err = rows.Scan(&view.ID, &view.AuthorID, &view.Body, &view.ParentID, &created, &view.Author, &view.Deleted, &view.EditedAt, &raw, &view.Accepted, &view.Likes, &view.Liked); err != nil {
+		var edited *time.Time
+		if err = rows.Scan(&view.ID, &view.AuthorID, &view.Body, &view.ParentID, &created, &view.Author, &view.Deleted, &edited, &raw, &view.Accepted, &view.Likes, &view.Liked); err != nil {
 			return err
 		}
 		view.CreatedAt = jsonx.Time(created)
+		view.EditedAt = jsonx.TimePtr(edited)
 		view.IsMine = view.AuthorID == user.ID
 		view.IsPostAuthor = view.AuthorID == post.UserID
 		if view.Deleted {
@@ -500,7 +475,7 @@ func (s *Server) createComment(w http.ResponseWriter, r *http.Request, user stor
 		// The notice lives on the post owner's bootstrap; their version must move for it to show.
 		s.bump(ctx, post.UserID)
 	}
-	httpx.OK(w, 201, map[string]any{"id": comment.ID, "postId": comment.PostID, "body": comment.Body, "parentId": comment.ParentID, "createdAt": comment.CreatedAt, "isMine": true})
+	httpx.OK(w, 201, map[string]any{"id": comment.ID, "postId": comment.PostID, "body": comment.Body, "parentId": comment.ParentID, "createdAt": jsonx.Time(comment.CreatedAt), "isMine": true})
 	return nil
 }
 

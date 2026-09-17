@@ -32,7 +32,7 @@ func TestQuestionFollowupCardIsOwnedIdempotentAndDueToday(t *testing.T) {
 	}
 	due, err := time.Parse(time.RFC3339Nano, repeated["nextReviewAt"].(string))
 	if err != nil || due.After(time.Now().Add(time.Second)) {
-		t.Fatal("must be due now", due, time.Now(), due.Sub(time.Now()), err)
+		t.Fatal("must be due now", due, time.Now(), time.Until(due), err)
 	}
 	var count, attempts, reviews int
 	if err = h.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM "Card" WHERE "userId"=$1),(SELECT count(*) FROM "Attempt" WHERE "userId"=$1),(SELECT count(*) FROM "CardReview" WHERE "userId"=$1)`, h.student).Scan(&count, &attempts, &reviews); err != nil {

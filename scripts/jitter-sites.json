@@ -207,13 +207,6 @@
    "policy": "coalesce: singleflight on the posts fill"
   },
   {
-   "id": "server/internal/api/cachelayer.go:20",
-   "token": "coalesce",
-   "kind": "ttl",
-   "what": "schoolsTTL = 1h for key schools:<ver(schools)>:<q>",
-   "policy": "coalesce: singleflight on the shared schools key"
-  },
-  {
    "id": "server/internal/api/cachelayer.go:21",
    "token": "none",
    "kind": "ttl",

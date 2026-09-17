@@ -42,7 +42,7 @@ OAuth 시작은 최상위 이동이라 JSON 을 읽을 수 없으므로, 거절�
 
 ## 합치기·줄 세우기
 
-- **singleflight** (`server/internal/api/cachelayer.go` `fill`): bootstrap·게시글·학교 검색의 버전 키 채우기. 같은 키의 동시 미스는 로더를 한 번 부르고 나머지는 `X-Cache: shared` 로 받는다(세 경로 모두 `X-Cache` 를 보낸다). 채우기는 분리된 12 s 문맥에서 끝나므로 먼저 떠난 호출자가 취소하지 못한다. DEMO_MODE 에서는 반 전체가 demo-student 의 한 키를 쓰므로 수업 종의 bootstrap 50건이 채우기 1회가 된다.
+- **singleflight** (`server/internal/api/cachelayer.go` `fill`): bootstrap·게시글의 버전 키 채우기(학교 검색은 2026-09-17 부터 내장 디렉터리를 바로 읽어 캐시 계층을 거치지 않는다). 같은 키의 동시 미스는 로더를 한 번 부르고 나머지는 `X-Cache: shared` 로 받는다(두 경로 모두 `X-Cache` 를 보낸다). 채우기는 분리된 12 s 문맥에서 끝나므로 먼저 떠난 호출자가 취소하지 못한다. DEMO_MODE 에서는 반 전체가 demo-student 의 한 키를 쓰므로 수업 종의 bootstrap 50건이 채우기 1회가 된다.
 - **AI 입장** (`server/internal/ai/provider.go` `admit`): 인스턴스마다 `AI_CONCURRENCY`(기본 16) 슬롯의 FIFO 세마포어, 대기 최대 30 s. 대기가 끝나면 429 [10 s, 20 s), 호출자의 시한이 먼저면 그 문맥 오류(504·중단). 지표 `memoryz.ai.queue_wait`, `memoryz.ai.upstream_429`.
 - **PDF 슬롯** (`uploads.go` `pdfSlot`): `PDF_WORKERS` 개, 대기 30 s 뒤 429 [30 s, 60 s). 클라이언트가 떠나면(`httpx.ClientGone`) 즉시 자리를 내놓는다. 스캔 PDF 의 OCR 이 입장에서 거절되면 422 가 아니라 그 429 와 힌트를 그대로 돌려준다.
 - **버전 올리기**: Lua `max(cur+1, now_ms)` 한 번(단조, 동시 200회 → 200개 서로 다른 값), 요청 취소와 무관한 분리 문맥, id 마다 따로 500 ms 예산으로 나란히(한 id 의 시간 초과가 다른 id 의 시도를 먹지 않음) full jitter 로 최대 3회.
@@ -144,7 +144,6 @@ OAuth 시작은 최상위 이동이라 JSON 을 읽을 수 없으므로, 거절�
 | server/internal/api/bootstrap.go:163 | none | The bootstrap cache key includes the Seoul date (dateKey, bootstrap.go:36), so every boot key rolls over at 00:00 KST. | none — The rollover at midnight KST is needed for correctness (the date is in the key) |
 | server/internal/api/cachelayer.go:18 | coalesce | bootstrapTTL = 60s for key boot:<user>:<learner>:<SeoulDate>:<ver(user)>:<ver(learner)> (the ETag plus the bootstrap JSON) | coalesce: singleflight on the bootstrap fill |
 | server/internal/api/cachelayer.go:19 | coalesce | postsTTL = 15s for key posts:<user>:<role>:<commented>:<ver(user)>:<ver(posts)> | coalesce: singleflight on the posts fill |
-| server/internal/api/cachelayer.go:20 | coalesce | schoolsTTL = 1h for key schools:<ver(schools)>:<q> | coalesce: singleflight on the shared schools key |
 | server/internal/api/cachelayer.go:21 | none | versionTTL = 7 days for ver:<userId>, ver:posts and ver:schools | none — When a version key expires it costs zero queries, because the entries it versioned live ≤ 1 h |
 | server/internal/api/cachelayer.go:40 | backoff | bump(): a GET of the version, then a SET of n+1 with a 7-day TTL, using r.Context() | backoff: a bounded full-jitter retry of a write that is idempotent in effect, on a detached context, with values that only increase. |
 | server/internal/api/cards.go:195 | none | The server only accepts review timestamps inside a fixed window, and one rejected review blocks the rest of the offline queue | none — Affects one device |

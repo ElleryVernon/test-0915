@@ -186,6 +186,13 @@ func (ns NullScheduleKind) Value() (driver.Value, error) {
 	return string(ns.ScheduleKind), nil
 }
 
+type AccountOnboarding struct {
+	UserID      string
+	Draft       []byte
+	CompletedAt *time.Time
+	UpdatedAt   time.Time
+}
+
 type AiRun struct {
 	ID           string
 	UserID       string
@@ -277,6 +284,11 @@ type Comment struct {
 	CreatedAt time.Time
 }
 
+type CommentLike struct {
+	CommentId string
+	UserID    string
+}
+
 type CommunityAction struct {
 	UserID    string
 	PostID    string
@@ -302,6 +314,8 @@ type CommunityComment struct {
 	Block     []byte
 	RequestID *string
 	UserID    string
+	Deleted   bool
+	EditedAt  *time.Time
 }
 
 type CommunityFollowEvent struct {
@@ -364,6 +378,13 @@ type ExplanationReport struct {
 type Follow struct {
 	FollowerID  string
 	FollowingID string
+}
+
+type GenerationSource struct {
+	MaterialID string
+	Sources    []byte
+	Topic      string
+	CreatedAt  pgtype.Timestamptz
 }
 
 type Invite struct {
@@ -449,10 +470,28 @@ type OpsBlob struct {
 	CreatedAt   pgtype.Timestamptz
 }
 
+type ParentLearningNotice struct {
+	NotificationId string
+	StudentID      string
+	Day            pgtype.Date
+}
+
 type ParentLink struct {
 	ParentID  string
 	StudentID string
 	CreatedAt time.Time
+}
+
+type PointTopup struct {
+	ID         string
+	UserID     string
+	RequestID  string
+	Amount     int32
+	Mode       string
+	Status     string
+	PaymentKey *string
+	CreatedAt  pgtype.Timestamptz
+	CreditedAt pgtype.Timestamptz
 }
 
 type Post struct {
@@ -475,6 +514,13 @@ type PostLike struct {
 type PostSave struct {
 	UserID string
 	PostID string
+}
+
+type ProfilePhoto struct {
+	UserID    string
+	Version   string
+	Data      []byte
+	UpdatedAt time.Time
 }
 
 type Question struct {

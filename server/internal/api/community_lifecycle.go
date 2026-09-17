@@ -234,8 +234,8 @@ func (s *Server) enrichCommunityPost(ctx context.Context, user store.User, p *Po
 		return err
 	}
 	p.IsMine = owner == user.ID
-	p.EditedAt = edited
-	p.SolvedAt = solved
+	p.EditedAt = jsonx.TimePtr(edited)
+	p.SolvedAt = jsonx.TimePtr(solved)
 	p.AcceptedCommentID = accepted
 	p.Status = "OPEN"
 	if solved != nil {

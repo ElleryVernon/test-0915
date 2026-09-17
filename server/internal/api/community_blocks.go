@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"memoryz/server/internal/blob"
 	"net/http"
@@ -273,7 +272,6 @@ func (s *Server) communitySubject(ctx context.Context, tx pgx.Tx, user store.Use
 	}
 	return id, err
 }
-func blockRefKey(b communityBlock) string { return fmt.Sprintf("%s:%s", b.Type, b.RefID) }
 
 // Published snapshots own their bytes: never disclose a private upload URL or depend on its lifetime.
 func (s *Server) communityCardImage(ctx context.Context, c store.Card) any {

@@ -58,7 +58,7 @@ const MSG_REQUIRED = '내용을 입력해 주세요.';
 const MSG_ROLE = '이 계정으로 접근할 수 없는 기능이에요.';
 const MSG_BAD_CODE = '유효하지 않거나 만료된 코드예요.';
 const MSG_LOCKED = '5회 확인에 실패했어요. 30분 후 다시 시도해 주세요.';
-const profileKeys = ['completedSubjects', 'desiredRetention', 'grade', 'id', 'name', 'nickname', 'points', 'privacy', 'role', 'school', 'srsMode', 'streak'];
+const profileKeys = ['completedSubjects', 'desiredRetention', 'grade', 'id', 'name', 'nickname', 'onboardingRequired', 'points', 'privacy', 'role', 'school', 'srsMode', 'streak'];
 const isoShape = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const keysOf = (value: object) => Object.keys(value).sort();
 const seoulDay = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(date);

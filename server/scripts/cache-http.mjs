@@ -123,13 +123,13 @@ try {
   const feedLiked = (await json(await call('/api/posts', { cookie: student }))).data;
   check(feedLiked.find((p) => p.id === post.id)?.likes === 1, "another user's like is visible immediately");
 
-  // 7. School search: the second identical query is a hit with the same body.
+  // 7. School search reads the embedded directory (server/internal/schools) on every call: no cache
+  //    layer, no X-Cache header, and two identical queries return the same body.
   const schoolsFirst = await call('/api/schools?q=고', { cookie: student });
   const schoolsSecond = await call('/api/schools?q=고', { cookie: student });
   const [s1, s2] = [await schoolsFirst.text(), await schoolsSecond.text()];
-  check(schoolsFirst.headers.get('x-cache') === 'miss' && schoolsSecond.headers.get('x-cache') === 'hit' && s1 === s2 && JSON.parse(s1).data.length > 0, `school search ${schoolsFirst.headers.get('x-cache')} ${schoolsSecond.headers.get('x-cache')}`);
-  const schoolsOther = await call('/api/schools?q=중', { cookie: student });
-  check(schoolsOther.headers.get('x-cache') === 'miss', 'a different query is its own entry');
+  check(schoolsFirst.status === 200 && schoolsSecond.status === 200 && s1 === s2 && JSON.parse(s1).data.length > 0, `school search ${schoolsFirst.status} ${schoolsSecond.status}`);
+  check(schoolsFirst.headers.get('x-cache') === null && schoolsSecond.headers.get('x-cache') === null, 'the directory answers without the cache layer');
 
   // 8. Health reports the cache driver.
   const health = (await json(await call('/api/health'))).data;

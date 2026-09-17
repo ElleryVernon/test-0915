@@ -383,6 +383,12 @@ func (s *Server) communityFollow(w http.ResponseWriter, r *http.Request, u store
 	if e := httpx.Decode(r, &in); e != nil {
 		return e
 	}
+	// An empty or oversized id is a bad request, not a missing user (contract: 400 입력값을 확인해 주세요).
+	v0 := &validator{}
+	v0.id(in.UserID)
+	if e := v0.result(); e != nil {
+		return e
+	}
 	ctx := r.Context()
 	peer, e := s.peer(ctx, u, in.UserID)
 	if e != nil {

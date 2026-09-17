@@ -16,6 +16,7 @@ import (
 	"memoryz/server/internal/demo"
 	"memoryz/server/internal/httpx"
 	"memoryz/server/internal/ids"
+	"memoryz/server/internal/jsonx"
 	"memoryz/server/internal/store"
 )
 
@@ -29,18 +30,20 @@ func init() {
 }
 
 type topup struct {
-	ID        string    `json:"id"`
-	Amount    int       `json:"amount"`
-	Mode      string    `json:"mode"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID        string     `json:"id"`
+	Amount    int        `json:"amount"`
+	Mode      string     `json:"mode"`
+	Status    string     `json:"status"`
+	CreatedAt jsonx.Time `json:"createdAt"`
 	key       *string
 }
 
 const topupColumns = `"id","amount","mode","status","createdAt","paymentKey"`
 
 func scanTopup(row pgx.Row) (o topup, err error) {
-	err = row.Scan(&o.ID, &o.Amount, &o.Mode, &o.Status, &o.CreatedAt, &o.key)
+	var created time.Time
+	err = row.Scan(&o.ID, &o.Amount, &o.Mode, &o.Status, &created, &o.key)
+	o.CreatedAt = jsonx.Time(created)
 	return
 }
 func (s *Server) ownedTopup(ctx context.Context, id, userID string) (topup, error) {

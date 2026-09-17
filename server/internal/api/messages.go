@@ -35,7 +35,7 @@ type messageRecord struct {
 	Body        string            `json:"body"`
 	CreatedAt   jsonx.Time        `json:"createdAt"`
 	RequestID   *string           `json:"requestId,omitempty"`
-	ReadAt      *time.Time        `json:"readAt"`
+	ReadAt      *jsonx.Time       `json:"readAt"`
 	ReplyTo     *messageReply     `json:"replyTo,omitempty"`
 	Blocks      []communityBlock  `json:"blocks"`
 	Deleted     bool              `json:"deleted"`
@@ -59,11 +59,13 @@ func scanMessage(row pgx.Row, viewerID string) (messageRecord, error) {
 	var replyDeleted, mine bool
 	var count int
 	var created time.Time
-	err := row.Scan(&m.ID, &m.SenderID, &m.RecipientID, &m.Body, &created, &m.RequestID, &m.ReadAt, &blocks, &reply, &m.Deleted, &m.Ordinal, &replyDeleted, &count, &mine)
+	var readAt *time.Time
+	err := row.Scan(&m.ID, &m.SenderID, &m.RecipientID, &m.Body, &created, &m.RequestID, &readAt, &blocks, &reply, &m.Deleted, &m.Ordinal, &replyDeleted, &count, &mine)
 	if err != nil {
 		return m, err
 	}
 	m.CreatedAt = jsonx.Time(created)
+	m.ReadAt = jsonx.TimePtr(readAt)
 	if err = json.Unmarshal(blocks, &m.Blocks); err != nil {
 		return m, err
 	}
@@ -198,7 +200,7 @@ func (s *Server) messageInbox(w http.ResponseWriter, r *http.Request, user store
 		CreatedAt   jsonx.Time       `json:"createdAt"`
 		UnreadCount int              `json:"unreadCount"`
 		SenderID    string           `json:"senderId"`
-		ReadAt      *time.Time       `json:"readAt"`
+		ReadAt      *jsonx.Time      `json:"readAt"`
 		Blocks      []communityBlock `json:"blocks"`
 		Deleted     bool             `json:"deleted"`
 	}

@@ -175,6 +175,9 @@ try {
   const report = await call('other', 'reports', 'POST', { postId: post.id, reason: '검증 신고' });
   await call('student', 'admin', 'GET', undefined, 403);
   await call('admin', `admin/reports/${report.id}`, 'PATCH', { status: 'RESOLVED' });
+  // Following defaults to the same grade (community privacy WhoCanFollow=SAME_GRADE); fixtures start without one.
+  await call('student', 'profile', 'PATCH', { grade: '고2' });
+  await call('other', 'profile', 'PATCH', { grade: '고2' });
   await call('student', 'follow', 'POST', { userId: ids.other });
   await call('student', 'messages', 'POST', { userId: ids.other, body: '안녕하세요' }, 201);
   check((await call('other', `messages?userId=${ids.student}`)).length === 1, 'message delivered');
@@ -237,6 +240,7 @@ try {
     await providerState.onRequest();
     if (providerState.mode === 'hold' && providerState.held) await providerState.held;
     const name = body.tool_choice?.function?.name;
+    // With AI_QUALITY_REVIEW off the model cites source text (with it on, it would cite evidence block ids).
     const citation = providerState.mode === 'bad-citation' ? '원문에 없는 전혀 다른 출처 문장이에요.' : item.citation;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ id: 'gen-1', model: 'openai/gpt-5.6-luna', provider: 'Amazon Bedrock', choices: [{ finish_reason: 'stop', message: { content: null, tool_calls: [{ function: { name, arguments: JSON.stringify({ items: [{ ...item, citation }] }) } }] } }], usage: { prompt_tokens: 10, completion_tokens: 5 } }));
@@ -250,7 +254,7 @@ try {
   const aiPort = await freePort();
   const aiBase = `http://127.0.0.1:${aiPort}`;
   const aiServer = spawn(bin, ['serve'], {
-    env: { ...process.env, DATABASE_URL: database.href, PORT: String(aiPort), HOST: '127.0.0.1', ENV: 'development', LOG_FORMAT: 'json', LOG_LEVEL: 'warn', APP_URL: aiBase, DEMO_MODE: 'true', AUTH_SECRET: randomBytes(24).toString('hex'), OPENROUTER_API_KEY: 'synthetic-provider-key', OPENROUTER_MODEL: 'openai/gpt-5.6-luna', OPENROUTER_REASONING_EFFORT: 'high', OPENROUTER_BASE_URL: `http://127.0.0.1:${providerPort}`, AI_RATE_PER_MINUTE: '100', STATIC_DIR: '' },
+    env: { ...process.env, DATABASE_URL: database.href, PORT: String(aiPort), HOST: '127.0.0.1', ENV: 'development', LOG_FORMAT: 'json', LOG_LEVEL: 'warn', APP_URL: aiBase, DEMO_MODE: 'true', AUTH_SECRET: randomBytes(24).toString('hex'), OPENROUTER_API_KEY: 'synthetic-provider-key', OPENROUTER_MODEL: 'openai/gpt-5.6-luna', OPENROUTER_REASONING_EFFORT: 'high', OPENROUTER_BASE_URL: `http://127.0.0.1:${providerPort}`, AI_QUALITY_REVIEW: 'false' /* the fake model cannot act as the independent reviewer; Go tests cover it */, AI_RATE_PER_MINUTE: '100', STATIC_DIR: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let aiLog = '';
@@ -303,7 +307,7 @@ try {
     assert.deepEqual(replayed, created, 'replay returns the stored result');
     check(providerState.calls === 1 && (await db.question.count({ where: { userId: ids.student, materialId: material2.id } })) === 1, 'replay does not call the provider again');
     const saved = await ai('student', `ai-runs/${requestId}`);
-    check(saved.status === 'COMPLETED' && JSON.stringify(saved.result) === JSON.stringify(created) && JSON.stringify(saved.steps.map((s: { stage: string }) => s.stage)) === '["LOAD_CONTEXT","GENERATE","VALIDATE","COMMIT"]' && saved.steps.every((s: { status: string }) => s.status === 'COMPLETED') && saved.skillVersion === '1.0.0' && !JSON.stringify(saved).includes('synthetic-provider-key'), `saved record ${JSON.stringify(saved.steps)}`);
+    check(saved.status === 'COMPLETED' && JSON.stringify(saved.result) === JSON.stringify(created) && JSON.stringify(saved.steps.map((s: { stage: string }) => s.stage)) === '["LOAD_CONTEXT","GENERATE","VALIDATE","COMMIT"]' && saved.steps.every((s: { status: string }) => s.status === 'COMPLETED') && saved.skillVersion === '2.8.0' /* memoryz.quiz in server/internal/ai/skills.go */ && !JSON.stringify(saved).includes('synthetic-provider-key'), `saved record ${JSON.stringify(saved.steps)}`);
     check(saved.steps.every((s: { durationMs: number; finishedAt: string }) => typeof s.durationMs === 'number' && typeof s.finishedAt === 'string'), 'steps carry timings');
 
     providerState.mode = 'bad-citation';

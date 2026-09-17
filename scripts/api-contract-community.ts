@@ -27,6 +27,8 @@ const MSG = {
   route: '요청한 기능을 찾을 수 없어요.',
   otherBoard: '다른 역할의 커뮤니티에 접근할 수 없어요.',
   postMissing: '게시글을 찾을 수 없어요.',
+  commentMissing: '댓글을 찾을 수 없어요.',
+  followRole: '학생 프로필에서 팔로우할 수 있어요.',
   userMissing: '사용자를 찾을 수 없어요.',
   blocked: '차단된 사용자와 소통할 수 없어요.',
   replyDepth: '댓글은 한 단계까지만 답글을 달 수 있어요.',
@@ -78,7 +80,8 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 3));
 
 try {
   const mkUser = (suffix: string, role: 'STUDENT' | 'PARENT' | 'ADMIN', name: string) =>
-    db.user.create({ data: { id: `${prefix}-${suffix}`, name, nickname: `${prefix}-${suffix}`, role } });
+    // Students share a grade: following defaults to the same grade (community privacy WhoCanFollow=SAME_GRADE).
+    db.user.create({ data: { id: `${prefix}-${suffix}`, name, nickname: `${prefix}-${suffix}`, role, grade: role === 'STUDENT' ? '고2' : '' } });
   const student = await mkUser('student', 'STUDENT', '검증 학생');
   const other = await mkUser('other', 'STUDENT', '다른 학생');
   const third = await mkUser('third', 'STUDENT', '셋째 학생');
@@ -104,12 +107,13 @@ try {
   await call('/admin', undefined, 'POST', ac, 404, MSG.route);
 
   // --- posts -----------------------------------------------------------------------------------
-  const postKeys = ['id', 'userId', 'role', 'category', 'title', 'body', 'anonymous', 'createdAt'];
-  const viewKeys = ['id', 'author', 'authorId', 'role', 'category', 'title', 'body', 'anonymous', 'likes', 'liked', 'saved', 'commentCount', 'createdAt'];
+  // POST /posts answers with the same view the feed renders (author, counters, school scope, tags, blocks).
+  const postKeys = ['id', 'author', 'authorId', 'role', 'category', 'title', 'body', 'anonymous', 'blocks', 'tags', 'school', 'status', 'isMine', 'likes', 'liked', 'saved', 'commentCount', 'createdAt'];
+  const viewKeys = postKeys;
   const post = await call('/posts', { title: '  검증 게시글  ', body: '이 개념은 어떻게 기억하나요?', category: '자유', anonymous: false }, 'POST', sc, 201);
   expectKeys(post, postKeys, 'POST /posts');
   assert.equal(post.title, '검증 게시글', 'title is trimmed');
-  assert.equal(post.userId, student.id);
+  assert.equal(post.authorId, student.id);
   assert.equal(post.role, 'STUDENT');
   assert.equal(post.anonymous, false);
   assert.match(post.createdAt, ISO);
@@ -136,6 +140,8 @@ try {
   assert.deepEqual(mine, {
     id: post.id, author: student.nickname, authorId: student.id, role: 'STUDENT', category: '자유', title: '검증 게시글',
     body: '이 개념은 어떻게 기억하나요?', anonymous: false, likes: 0, liked: false, saved: false, commentCount: 0, createdAt: post.createdAt,
+    // Editor blocks, tags and school scope are part of the view even when empty; the viewer sees their own post as isMine.
+    blocks: [], tags: {}, school: '', status: 'OPEN', isMine: true,
   });
   checks++;
   const anonymous = feed.find((p: { id: string }) => p.id === anonPost.id);
@@ -178,13 +184,14 @@ try {
   await call(`/posts/${post.id}/like`, undefined, 'GET', sc, 404, MSG.route);
 
   // --- comments and one level of replies -----------------------------------------------------
-  const commentKeys = ['id', 'postId', 'userId', 'body', 'parentId', 'createdAt'];
+  // A created comment answers with the viewer flag instead of the raw author id.
+  const commentKeys = ['id', 'postId', 'body', 'parentId', 'createdAt', 'isMine'];
   assert.deepEqual(await call(`/posts/${post.id}/comments`, undefined, undefined, sc), []);
   const comment = await call(`/posts/${post.id}/comments`, { body: ' 첫 댓글 ' }, undefined, oc, 201);
   expectKeys(comment, commentKeys, 'POST comment');
   assert.equal(comment.body, '첫 댓글');
   assert.equal(comment.parentId, null);
-  assert.equal(comment.userId, other.id);
+  assert.equal(comment.isMine, true);
   assert.equal(comment.postId, post.id);
   assert.match(comment.createdAt, ISO);
   checks++;
@@ -193,8 +200,9 @@ try {
   assert.equal(reply.parentId, comment.id);
   await call(`/posts/${post.id}/comments`, { body: '2단계', parentId: reply.id }, undefined, sc, 400, MSG.replyDepth);
   const crossComment = await call(`/posts/${anonPost.id}/comments`, { body: '다른 글의 댓글' }, undefined, sc, 201);
-  await call(`/posts/${post.id}/comments`, { body: '다른 글에 답글', parentId: crossComment.id }, undefined, sc, 400, MSG.replyDepth);
-  await call(`/posts/${post.id}/comments`, { body: '없는 부모', parentId: 'no-such-comment' }, undefined, sc, 400, MSG.replyDepth);
+  // A parent is looked up inside this post first: another post's comment and an unknown id are both "not found".
+  await call(`/posts/${post.id}/comments`, { body: '다른 글에 답글', parentId: crossComment.id }, undefined, sc, 404, MSG.commentMissing);
+  await call(`/posts/${post.id}/comments`, { body: '없는 부모', parentId: 'no-such-comment' }, undefined, sc, 404, MSG.commentMissing);
   await call(`/posts/${post.id}/comments`, { body: '' }, undefined, sc, 400, MSG.required);
   await call(`/posts/${post.id}/comments`, { body: 'x'.repeat(2001) }, undefined, sc, 400, MSG.input);
   await call(`/posts/${post.id}/comments`, { body: 'b', parentId: '' }, undefined, sc, 400, MSG.input);
@@ -207,10 +215,11 @@ try {
   assert.equal(thread.length, 2);
   assert(nonDecreasing(thread), 'thread is oldest first');
   const top = thread.find((c: { id: string }) => c.id === comment.id);
-  assert.deepEqual(top, { id: comment.id, postId: post.id, author: other.nickname, body: '첫 댓글', createdAt: comment.createdAt });
+  // Comment views carry the author id, viewer flags, like state, acceptance and redaction state.
+  assert.deepEqual(top, { id: comment.id, postId: post.id, author: other.nickname, authorId: other.id, body: '첫 댓글', createdAt: comment.createdAt, isMine: false, isPostAuthor: false, deleted: false, likes: 0, liked: false, accepted: false });
   assert(!('parentId' in top), 'a top-level comment carries no parentId key');
   const nested = thread.find((c: { id: string }) => c.id === reply.id);
-  assert.deepEqual(nested, { id: reply.id, postId: post.id, author: student.nickname, body: '답글', parentId: comment.id, createdAt: reply.createdAt });
+  assert.deepEqual(nested, { id: reply.id, postId: post.id, author: student.nickname, authorId: student.id, body: '답글', parentId: comment.id, createdAt: reply.createdAt, isMine: true, isPostAuthor: true, deleted: false, likes: 0, liked: false, accepted: false });
   checks++;
   feed = await call('/posts', undefined, undefined, sc);
   assert.equal(feed.find((p: { id: string }) => p.id === post.id).commentCount, 2);
@@ -298,10 +307,12 @@ try {
   await call('/follow', { userId: student.id }, undefined, sc, 404, MSG.userMissing);
   await call('/follow', { userId: 'no-such-user' }, undefined, sc, 404, MSG.userMissing);
   await call('/follow', { userId: '' }, undefined, sc, 400, MSG.input);
-  await call('/follow', { userId: student.id }, undefined, pc, 404, MSG.userMissing);
+  // Only student profiles follow; a parent is refused by role before any lookup.
+  await call('/follow', { userId: student.id }, undefined, pc, 403, MSG.followRole);
 
   // --- messages ------------------------------------------------------------------------------
-  const messageKeys = ['id', 'senderId', 'recipientId', 'body', 'createdAt'];
+  // A message carries its read state, editor blocks, redaction flag, reactions and the conversation ordinal.
+  const messageKeys = ['id', 'senderId', 'recipientId', 'body', 'createdAt', 'readAt', 'blocks', 'deleted', 'reactions', 'ordinal'];
   const first = await call('/messages', { userId: other.id, body: ' 안녕 ' }, undefined, sc, 201);
   expectKeys(first, messageKeys, 'POST /messages');
   assert.equal(first.senderId, student.id);
@@ -425,28 +436,18 @@ try {
   assert(ids((await call('/social', undefined, undefined, sc)).users).includes(other.id));
   checks++;
 
-  // --- schools: case-insensitive contains, by name, 30 rows, q cut to 100 characters -----------
-  const longName = `${prefix} long `.padEnd(100, 'x');
-  await db.school.createMany({
-    data: [
-      ...Array.from({ length: 31 }, (_, i) => ({ id: `${prefix}-school-${i}`, name: `${prefix} SeArCh ${String(i).padStart(2, '0')}` })),
-      { id: `${prefix}-school-long`, name: longName },
-    ],
-  });
-  const q = `${prefix.toUpperCase()} search`;
-  const found = await call(`/schools?q=${encodeURIComponent(q)}`, undefined, undefined, sc);
-  assert.equal(found.length, 30);
-  assert(found.every((s: { name: string }) => s.name.toLowerCase().includes(q.toLowerCase())));
-  for (const s of found) expectKeys(s, ['id', 'name'], 'school');
-  assert.deepEqual(found, plain(await db.school.findMany({ where: { name: { contains: q, mode: 'insensitive' } }, orderBy: { name: 'asc' }, take: 30 })));
-  checks++;
-  assert.deepEqual(await call(`/schools?q=${encodeURIComponent(`${prefix} search 30`)}`, undefined, undefined, pc), [{ id: `${prefix}-school-30`, name: `${prefix} SeArCh 30` }]);
-  assert.deepEqual(ids(await call(`/schools?q=${encodeURIComponent(longName + 'zzz')}`, undefined, undefined, sc)), [`${prefix}-school-long`]);
-  assert.equal((await call('/schools', undefined, undefined, ac)).length, 30);
+  // --- schools: the embedded NEIS directory (server/internal/schools); every query word must match
+  //     the name or address, best name matches first, at most 30 rows, no database rows involved ----
+  const garak = await call('/schools?q=가락', undefined, undefined, sc);
+  assert(garak.some((s: { name: string; address: string }) => s.name === '가락고등학교' && s.address.includes('송파구')), 'directory search by name');
+  for (const s of garak) expectKeys(s, ['id', 'name', 'address', 'province'], 'school');
+  assert.deepEqual(ids(await call('/schools?q=가락 송파', undefined, undefined, pc)).sort(), ids(garak.filter((s: { address: string }) => s.address.includes('송파'))).sort(), 'every word must match; parents search too');
+  assert.equal((await call('/schools?q=고등학교', undefined, undefined, ac)).length, 30, 'capped at 30 rows');
   assert.deepEqual(await call(`/schools?q=${encodeURIComponent(prefix + ' nothing')}`, undefined, undefined, sc), []);
+  assert.deepEqual(await call(`/schools?q=${encodeURIComponent('x'.repeat(120))}`, undefined, undefined, sc), [], 'a long query is cut to 100 characters and finds nothing');
   checks++;
 
-  // --- limits: admin 500/500/1000, feed 100, thread 500, messages 200, peers 100 ---------------
+  // --- limits: admin 500/500/1000, feed 100, thread 500, messages 50 per page, peers 100 ---------------
   await db.user.createMany({
     data: Array.from({ length: 501 }, (_, i) => ({ id: `${prefix}-bulk-${i}`, name: `대량 ${i}`, nickname: `${prefix}-bulk-${i}`, role: 'STUDENT' as const, createdAt: future(1, i) })),
   });
@@ -489,10 +490,18 @@ try {
   assert.equal(bigThread[0].id, comment.id, 'the 500 oldest comments');
   assert.equal(bigThread[499].id, `${prefix}-bulkcomment-${500 - 4}`);
   checks++;
+  // A conversation answers its newest 50 messages oldest-first; before=<id> pages toward older ones.
   const bigChat = await call(`/messages?userId=${other.id}`, undefined, undefined, sc);
-  assert.equal(bigChat.length, 200);
-  assert.deepEqual(ids(bigChat).slice(0, 3), [first.id, second.id, afterBlock.id], 'the 200 oldest messages');
-  assert.equal(bigChat[199].id, `${prefix}-bulkmessage-196`);
+  assert.equal(bigChat.length, 50, 'a page is the 50 newest messages');
+  assert.equal(bigChat[0].id, `${prefix}-bulkmessage-151`, 'oldest first inside the page');
+  assert.equal(bigChat[49].id, `${prefix}-bulkmessage-200`);
+  let page = await call(`/messages?userId=${other.id}&before=${bigChat[0].id}`, undefined, undefined, sc);
+  assert.equal(page.length, 50);
+  assert.equal(page[49].id, `${prefix}-bulkmessage-150`, 'before= continues just past the previous page');
+  for (let hops = 0; hops < 3 && page.length === 50; hops++) page = await call(`/messages?userId=${other.id}&before=${page[0].id}`, undefined, undefined, sc);
+  assert.equal(page.length, 4, 'the last page holds the remaining messages');
+  assert.deepEqual(ids(page).slice(0, 3), [first.id, second.id, afterBlock.id], 'the conversation start is reached through the cursor');
+  await call(`/messages?userId=${other.id}&before=no-such-message`, undefined, undefined, sc, 404, MSG.missing);
   checks++;
   assert.equal((await call('/social', undefined, undefined, sc)).users.length, 100, 'peers are capped at 100');
   checks++;

@@ -1,6 +1,11 @@
+/* The workspace sheet keeps a stable height and clips its body, so this grid is the scroll container. */
 .workspace {
   display: grid;
   gap: var(--space-6);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: var(--space-4);
 }
 .section {
   display: grid;

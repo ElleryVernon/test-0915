@@ -52,7 +52,7 @@ async function startServer(extra) {
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   const child = spawn(bin, ['serve'], {
-    env: { ...process.env, DATABASE_URL: scratch.href, PORT: String(port), HOST: '127.0.0.1', ENV: 'development', LOG_FORMAT: 'json', LOG_LEVEL: 'warn', STATIC_DIR: staticDir, APP_URL: base, AUTH_SECRET: randomBytes(24).toString('hex'), GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', ...extra },
+    env: { ...process.env, DATABASE_URL: scratch.href, PORT: String(port), HOST: '127.0.0.1', ENV: 'development', LOG_FORMAT: 'json', LOG_LEVEL: 'warn', STATIC_DIR: staticDir, APP_URL: base, AUTH_SECRET: randomBytes(24).toString('hex'), GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', KAKAO_CLIENT_ID: '', KAKAO_CLIENT_SECRET: '', NAVER_CLIENT_ID: '', NAVER_CLIENT_SECRET: '', APPLE_CLIENT_ID: '', APPLE_CLIENT_SECRET: '', ...extra },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
