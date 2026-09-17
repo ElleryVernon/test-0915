@@ -630,7 +630,7 @@
 .unreadBadge {
   min-width: 20px;
   height: 20px;
-  padding: 0 6px;
+  padding: 0 calc(var(--space-unit) * 1.5);
   display: grid;
   place-items: center;
   border-radius: 12px;
@@ -646,9 +646,9 @@
 .receipt {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   min-height: 32px;
-  padding: 0 7px;
+  padding: 0 calc(var(--space-unit) * 1.75);
   border-radius: 12px;
   color: var(--text-secondary);
   background: var(--surface-muted);
@@ -672,7 +672,7 @@
 .failedLabel {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   color: var(--danger);
 }
 .composerHint {
@@ -727,7 +727,7 @@
   background: var(--surface-canvas, #fff);
   border-radius: 20px;
   box-shadow: 0 8px 36px rgb(0 0 0 / 16%);
-  padding: 6px;
+  padding: calc(var(--space-unit) * 1.5);
   outline: none;
   animation: contextAppear 120ms ease-out;
 }
@@ -738,7 +738,7 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 0 14px;
+  padding: 0 calc(var(--space-unit) * 3.5);
   border-radius: 14px;
   font-size: 14px;
   font-weight: 550;
@@ -750,10 +750,10 @@
 }
 .contextActions .quickHeart {
   justify-content: flex-start;
-  gap: 12px;
+  gap: var(--space-3);
   min-height: 56px;
   background: white;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 .quickHeart > span {
   font-size: 24px;
@@ -766,34 +766,34 @@
   color: var(--danger);
 }
 .contextConfirm {
-  padding: 8px;
+  padding: var(--space-2);
 }
 .contextConfirm strong {
   display: block;
   font-size: 15px;
-  margin: 6px 8px;
+  margin: calc(var(--space-unit) * 1.5) var(--space-2);
 }
 .contextConfirm p {
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.6;
-  margin: 8px 8px 12px;
+  margin: var(--space-2) var(--space-2) var(--space-3);
 }
 .receiptDetails {
-  padding: 12px;
+  padding: var(--space-3);
 }
 .receiptDetails > strong {
   font-size: 14px;
 }
 .receiptDetails dl {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .receiptDetails dl > div {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   font-size: 12px;
 }
 .receiptDetails dt {
@@ -806,7 +806,7 @@
   display: block;
   color: var(--text-muted);
   font-size: 10px;
-  margin-top: 3px;
+  margin-top: calc(var(--space-unit) * 0.75);
 }
 .messageContent:focus-visible {
   outline: 2px solid var(--text-primary);

@@ -30,7 +30,7 @@ import {
   removeStudySession,
   studySessionRevision,
 } from '@/lib/study-sessions';
-import { Checkbox } from '@/components/ui-choice';
+import { Checkbox, OptionField } from '@/components/ui-choice';
 
 import { QuizFeedback, QuestionExplanation, type AnswerResult } from './quiz-feedback';
 import { CommunityAsk } from '../social/community-ask';
@@ -607,21 +607,18 @@ function QuizResult({
         )}
         {focus && (
           <section className="mt-6 space-y-3">
-            <label className="block text-sm font-semibold">
-              더 살펴볼 문제
-              <select
-                className="field mt-2"
-                value={focus.id}
-                onChange={(event) => setFocusId(event.target.value)}
-              >
-                {questions.map((q, i) => (
-                  <option key={q.id} value={q.id}>
-                    {i + 1}. {wrong.some((w) => w.id === q.id) ? '다시 살펴보기 · ' : ''}
-                    {q.prompt}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <OptionField
+              label="더 살펴볼 문제"
+              title="더 살펴볼 문제"
+              name="quiz-result-focus"
+              value={focus.id}
+              options={questions.map((q, i) => ({
+                value: q.id,
+                label: `${i + 1}. ${q.prompt}`,
+                description: wrong.some((w) => w.id === q.id) ? '다시 살펴보기' : undefined,
+              }))}
+              onChange={setFocusId}
+            />
             <p className="text-sm leading-relaxed text-muted">{focus.prompt}</p>
             <CommunityAsk
               key={focus.id}
@@ -765,6 +762,9 @@ export function WrongNotes(props: ScreenProps) {
                   const answer = Number(attempt?.answer ?? -1);
                   const titleId = `wrong-title-${q.id}`;
                   const panelId = `wrong-explanation-${q.id}`;
+                  const sourceTitle = props.data.materials.find(
+                    (m) => m.id === q.materialId,
+                  )?.title;
                   return (
                     <article key={q.id} className={layout.note}>
                       <header className={layout.noteHeader}>
@@ -788,6 +788,7 @@ export function WrongNotes(props: ScreenProps) {
                         </div>
                       </header>
                       <p className={layout.noteMeta}>
+                        {sourceTitle ? `${sourceTitle} · ` : ''}
                         {q.savedToNotes && !wrongCounts.get(q.id)
                           ? '커뮤니티에서 담은 문제'
                           : `틀린 기록 ${wrongCounts.get(q.id) ?? 0}회`}

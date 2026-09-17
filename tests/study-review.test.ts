@@ -493,30 +493,45 @@ test('study home exposes four methods and keeps subject management in its own sc
   assert.ok(!html.includes('aria-label="만들기"'));
   const library = text(render('/subjects'));
   assert.ok(library.includes('과목 관리'));
-  assert.ok(library.includes('과목명순') && library.includes('전체 학기'));
+  // The library is folder-first: due folders sort ahead and carry a red "지금 복습" badge.
+  assert.ok(library.includes('과목 폴더') && library.includes('전체 학기'));
+  assert.ok(library.includes('복습할 폴더부터') && library.includes('지금 복습 2'));
+  assert.ok(library.indexOf('생명과학I') < library.indexOf('영어'), 'due folder first');
 });
 
 test('subject detail shows exam, today count, next action for empty materials and a fixed upload CTA', () => {
   const t = text(render('/subjects/bio'));
   assert.ok(t.includes('2026 2학기 중간고사 D-12'));
-  assert.ok(t.includes('자료 2 · 문제 3 · 카드 4 · 오늘 복습 2장'));
+  // The folder total counts questions and essays together, like the folder rows do.
+  assert.ok(t.includes('자료 2 · 문제 4 · 카드 4 · 오늘 복습 2장'));
   assert.ok(t.includes('문제·카드 만들기'), 'empty material names its next action');
   assert.ok(t.includes('문제 3 · 서술형 1'));
   assert.ok(t.includes('카드 4장 중 1장이 "다시" 상자'));
-  assert.ok(t.includes('자료 올리기'));
+  assert.ok(t.includes('이 폴더에 자료 추가'), 'the in-folder add action names its destination');
   assert.ok(!t.includes('0문제'));
 });
 
 test('card library separates review summary from searchable collection and uses borderless shared content', () => {
-  const html = render('/flashcards');
+  // The library lands on folders with the cross-folder review summary and the AI entry.
+  const landing = render('/flashcards');
+  const l = text(landing);
+  assert.ok(l.includes('지금 복습 2장') && l.includes('2장 복습'));
+  assert.ok(l.includes('폴더 2개') && l.includes('AI로 카드 만들기'));
+  assert.ok(landing.includes('data-card-library="all"'));
+  // Entering a folder shows only that folder's searchable collection.
+  const html = render('/flashcards?subject=bio');
   const t = text(html);
-  assert.ok(t.includes('오늘 복습 2장'));
+  assert.ok(t.includes('지금 복습 2장'));
   assert.ok(t.includes('2장 복습'));
   assert.ok(!html.includes('class="recall-dist"'));
   assert.ok(t.includes('오늘 복습 · 2장') && t.includes('복습 예정 · 1장'));
   assert.ok(t.includes('3일 뒤') && t.includes('암기완료'));
   assert.ok(html.includes('aria-label="카드 검색"'));
-  assert.ok(html.includes('data-card-library="all"'));
+  assert.ok(
+    t.includes('과목 폴더 생명과학I') && t.includes('내 카드'),
+    'breadcrumb names the folder',
+  );
+  assert.ok(!l.includes('내 카드'), 'the landing has no single-folder collection');
   assert.ok(!t.includes('오프라인 저장됨'));
   assert.ok(!html.includes('<select'));
   assert.ok(t.includes('카드 추가'));
@@ -529,7 +544,7 @@ test('review card front uses a white card, remaining time and subject, and a bra
   assert.ok(t.includes('약 1분 남음 · 생명과학I'));
   assert.ok(t.includes('개념 · 용어와 정의'));
   // The session walks the library's "오늘" list: the card overdue for an hour before the one due a second ago.
-  const library = text(render('/flashcards'));
+  const library = text(render('/flashcards?subject=bio'));
   assert.ok(
     library.indexOf('질문 due-good') < library.indexOf('질문 due-again'),
     'library lists the longest overdue first',

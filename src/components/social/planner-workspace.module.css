@@ -1,10 +1,10 @@
 .workspace {
   display: grid;
-  gap: 24px;
+  gap: var(--space-6);
 }
 .section {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
   min-width: 0;
 }
 .intro {
@@ -19,7 +19,7 @@
 }
 .row {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
   align-items: center;
   justify-content: space-between;
   min-width: 0;
@@ -30,11 +30,11 @@
 .fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 .field {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--text-secondary, #6b6b72);
   font-size: 13px;
 }
@@ -44,7 +44,7 @@
   min-height: 44px;
   border: 0;
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: calc(var(--space-unit) * 2.5) var(--space-3);
   background: var(--surface-muted, #f3f3f4);
   color: var(--text-primary, #242426);
   font: inherit;
@@ -52,10 +52,10 @@
 }
 .entry {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
   background: var(--surface-muted, #f3f3f4);
   border-radius: 20px;
-  padding: 16px;
+  padding: var(--space-4);
   min-width: 0;
 }
 .entry input,
@@ -65,7 +65,7 @@
 .weekdays {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
+  gap: var(--space-1);
 }
 .weekdays button {
   min-height: 40px;
@@ -84,7 +84,7 @@
 }
 .preview {
   background: var(--surface-muted, #f3f3f4);
-  padding: 14px 16px;
+  padding: calc(var(--space-unit) * 3.5) var(--space-4);
   border-radius: 16px;
   font-size: 14px;
 }
@@ -94,7 +94,7 @@
   min-height: 28px;
 }
 .preview ul {
-  margin: 12px 0 0;
+  margin: var(--space-3) 0 0;
   padding: 0;
   list-style: none;
   max-height: 240px;
@@ -103,16 +103,16 @@
 .preview li {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  gap: calc(var(--space-unit) * 1.5) var(--space-3);
   justify-content: space-between;
-  padding: 8px 0;
+  padding: var(--space-2) 0;
 }
 .preview strong {
   font-size: 12px;
 }
 .check {
   display: flex;
-  gap: 10px;
+  gap: calc(var(--space-unit) * 2.5);
   align-items: center;
   font-size: 14px;
   min-height: 44px;
@@ -125,12 +125,12 @@
 .planChoices {
   display: flex;
   overflow-x: auto;
-  gap: 8px;
-  padding-bottom: 4px;
+  gap: var(--space-2);
+  padding-bottom: var(--space-1);
 }
 .planChoices button {
   flex: 0 0 auto;
-  padding: 10px 14px;
+  padding: calc(var(--space-unit) * 2.5) calc(var(--space-unit) * 3.5);
   min-height: 44px;
   border: 0;
   border-radius: 14px;
@@ -144,7 +144,7 @@
   background: #fff3e9;
   color: #804019;
   border-radius: 16px;
-  padding: 14px 16px;
+  padding: calc(var(--space-unit) * 3.5) var(--space-4);
   font-size: 14px;
   line-height: 1.6;
 }
@@ -153,13 +153,13 @@
 }
 .list {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
   max-height: 45vh;
   overflow-y: auto;
 }
 .day {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .day h4 {
   margin: 0;
@@ -167,11 +167,11 @@
 }
 .block {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
   align-items: baseline;
   background: var(--surface-muted, #f3f3f4);
   border-radius: 12px;
-  padding: 12px;
+  padding: var(--space-3);
   font-size: 14px;
 }
 .block time {
@@ -184,13 +184,13 @@
   overflow-wrap: anywhere;
 }
 .entryPoint {
-  margin: 16px 0 20px;
+  margin: var(--space-4) 0 var(--space-5);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-4);
   width: 100%;
-  padding: 16px 18px;
+  padding: var(--space-4) calc(var(--space-unit) * 4.5);
   text-align: left;
   border: 0;
   border-radius: 20px;
@@ -202,7 +202,7 @@
 }
 .entryPoint small {
   display: block;
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 13px;
   color: #765c4d;
 }
@@ -219,7 +219,7 @@
 }
 .footer {
   display: grid;
-  gap: 10px;
+  gap: calc(var(--space-unit) * 2.5);
 }
 .workspace :is(button, input, select):focus-visible {
   outline: 2px solid var(--primary, #ff7510);
@@ -227,16 +227,16 @@
 }
 @media (max-width: 360px) {
   .fields {
-    gap: 8px;
+    gap: var(--space-2);
   }
   .entry {
-    padding: 12px;
+    padding: var(--space-3);
   }
   .weekdays button {
     min-height: 36px;
   }
   .block {
     flex-wrap: wrap;
-    gap: 4px;
+    gap: var(--space-1);
   }
 }

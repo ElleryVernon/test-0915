@@ -126,6 +126,19 @@ export default function Account(props: ScreenProps) {
             title={parent ? '자녀 연결 관리' : '학부모 연결'}
             onClick={() => setLinks(true)}
           />
+          {data.profile.role === 'STUDENT' && (
+            <ListRow
+              icon={<BookOpen size={21} />}
+              title="배운 과목"
+              description="개념 연결과 문제 생성에 참고해요"
+              extra={
+                <span className="text-sm text-subtle">
+                  {data.profile.completedSubjects.length}과목
+                </span>
+              }
+              onClick={() => navigate('/completed-subjects')}
+            />
+          )}
           {!parent && data.profile.role === 'STUDENT' && (
             <section className="mt-7">
               <SectionTitle title="부모님께 보여드릴 정보" />
@@ -440,7 +453,9 @@ function ProfileEditor({
     let active = true;
     // jitter: none — a 200 ms search debounce paced by one person's keystrokes [site src/components/social/account.tsx:421]
     const timer = setTimeout(() => {
-      api<{ id: string; name: string; address: string }[]>(`/schools?q=${encodeURIComponent(form.school)}`)
+      api<{ id: string; name: string; address: string }[]>(
+        `/schools?q=${encodeURIComponent(form.school)}`,
+      )
         .then((s) => {
           if (active) setSchools(s);
         })
@@ -539,7 +554,8 @@ function ProfileEditor({
                       }}
                       className="px-4 py-3 text-left text-sm font-medium"
                     >
-                      {s.name}<small className="block">{s.address}</small>
+                      {s.name}
+                      <small className="block">{s.address}</small>
                     </button>
                   ))}
                 </span>

@@ -3761,9 +3761,27 @@ body:has(.planner-cta) .toast {
   pointer-events: none;
   mix-blend-mode: multiply;
 }
-.pdf-evidence-pages { display: flex; gap: 8px; padding: 8px; overflow-x: auto; flex-shrink: 0; }
-.pdf-evidence-pages button { min-height: 36px; padding: 6px 14px; border-radius: 999px; background: var(--surface-raised); color: var(--text-secondary); font-size: 13px; white-space: nowrap; }
-.pdf-evidence-pages button[aria-current="page"] { background: var(--text-primary); color: var(--surface-raised); font-weight: 700; }
+.pdf-evidence-pages {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.pdf-evidence-pages button {
+  min-height: 36px;
+  padding: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 3.5);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.pdf-evidence-pages button[aria-current='page'] {
+  background: var(--text-primary);
+  color: var(--surface-raised);
+  font-weight: 700;
+}
 .pdf-evidence-highlights > span {
   position: absolute;
   background: var(--source-highlight);
@@ -3774,7 +3792,7 @@ body:has(.planner-cta) .toast {
   left: 8px;
   right: 8px;
   bottom: 32px;
-  padding: 8px;
+  padding: var(--space-2);
   background: var(--surface-raised);
   color: var(--text-secondary);
   font-size: 12px;
@@ -4993,7 +5011,9 @@ a.pill {
 .sheet-content-workspace {
   height: min(760px, 90dvh);
 }
-.sheet-content-workspace .sheet-handle { flex-shrink: 0; }
+.sheet-content-workspace .sheet-handle {
+  flex-shrink: 0;
+}
 .sheet-content-workspace .sheet-body {
   flex: 1;
   display: flex;

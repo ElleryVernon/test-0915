@@ -93,7 +93,7 @@
 .action svg {
   flex: none;
   box-sizing: content-box;
-  padding: 7px;
+  padding: calc(var(--space-unit) * 1.75);
   border-radius: 50%;
   background: var(--brand);
   color: white;

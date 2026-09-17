@@ -451,7 +451,8 @@ test('every study route renders data or an actionable empty state without unavai
   assert.equal((quiz.match(/role="radio"/g) || []).length, 5);
   assert.ok(quiz.includes('잘 모르겠어요'));
   assert.ok(quiz.includes('disabled=""'));
-  const emptyQuestionBank = renderToStaticMarkup(
+  // Folder-first: the bank lands on subject folders, and a folder without questions offers generation.
+  const folderLanding = renderToStaticMarkup(
     createElement(StudyScreens, {
       data: { ...data, questions: [] },
       path: '/quiz',
@@ -461,9 +462,23 @@ test('every study route renders data or an actionable empty state without unavai
       toast: () => {},
     }),
   );
+  assert.ok(folderLanding.includes('data-learning-folders="quiz"'));
+  const emptyQuestionBank = renderToStaticMarkup(
+    createElement(StudyScreens, {
+      data: { ...data, questions: [] },
+      path: '/quiz?subject=subject-1',
+      refresh: async () => {},
+      navigate: () => {},
+      back: () => {},
+      toast: () => {},
+    }),
+  );
   assert.ok(emptyQuestionBank.includes('자료로 문제 만들기'));
-  assert.equal(emptyQuestionBank.includes('먼저 학습 자료를 추가해 주세요.'), false,
-    'An unselected source must not be mistaken for an empty material library');
+  assert.equal(
+    emptyQuestionBank.includes('먼저 학습 자료를 추가해 주세요.'),
+    false,
+    'An unselected source must not be mistaken for an empty material library',
+  );
   const essay = renderToStaticMarkup(
     createElement(StudyScreens, {
       data,
