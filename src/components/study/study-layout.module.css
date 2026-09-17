@@ -18,6 +18,7 @@
   text-underline-offset: 4px;
 }
 .source {
+  --control-fill: var(--surface-raised);
   display: grid;
   gap: var(--gap-block);
   min-width: 0;
@@ -39,14 +40,64 @@
   font-size: 14px;
   line-height: 1.8;
   color: var(--text-secondary);
-  white-space: pre-wrap;
+  white-space: normal;
   overflow-wrap: anywhere;
 }
+.sourceMeta, .sourceNotice {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.sourcePdf {
+  display: flex;
+  height: min(540px, 65dvh);
+  min-height: 300px;
+  margin-top: var(--space-3);
+}
+.sourcePdf :global(.pdf-preview) { border: 0; }
+.sourceImage { width: 100%; height: auto; border-radius: var(--radius-control); margin-bottom: var(--space-3); }
+.sourceNotice {
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+}
+.sourceReading {
+  display: grid;
+  gap: var(--gap-block);
+  max-height: min(400px, 50dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-inline-end: var(--space-2);
+}
+.sourceLayout {
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.sourceLayout summary { cursor: pointer; font-weight: 600; }
+.sourceLayout p { margin-block: var(--space-2); line-height: 1.6; }
+.sourceLayout pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 .sourceOpen {
   composes: control-outline from global;
   justify-content: flex-start;
   width: 100%;
   text-align: left;
+}
+.sourceQuotePreview {
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sourceExpand {
+  composes: control-outline from global;
+  justify-self: start;
+  gap: var(--gap-inline);
+  font-size: 13px;
 }
 .sourceName {
   min-width: 0;
@@ -68,6 +119,7 @@
   composes: layout-group from global;
 }
 .note {
+  --control-fill: var(--surface-muted);
   display: grid;
   gap: var(--gap-block);
   padding: var(--panel-inset);
@@ -111,15 +163,14 @@
   composes: control-outline from global;
 }
 .disclosure[aria-expanded='true'] {
-  border-color: var(--text-primary);
+  --action-fill: var(--text-primary);
+  --action-text: var(--surface-raised);
 }
 .disclosure[aria-expanded='true'] svg {
   transform: rotate(180deg);
 }
 .retry {
   composes: control-outline from global;
-  border-color: var(--surface-muted);
-  background: var(--surface-muted);
 }
 .notePanel {
   display: grid;

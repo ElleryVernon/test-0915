@@ -26,8 +26,7 @@ mkdirSync(join(root, '.data'), { recursive: true });
 const bin = join(root, '.data', 'memoryz-server');
 if (!flag('--no-go') || !existsSync(bin)) run('go', ['build', '-o', bin, './cmd/server'], { cwd: join(root, 'server') });
 if (!flag('--no-web') || !existsSync(join(root, 'out', 'index.html'))) {
-  run('node_modules/.bin/next', ['build']);
-  run('node', ['scripts/precompress.mjs', 'out']);
+  run('node', ['scripts/build-web.mjs']);
 }
 const env = {
   ...process.env,

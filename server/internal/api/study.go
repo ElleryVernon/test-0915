@@ -13,6 +13,7 @@ import (
 
 	"memoryz/server/internal/ai"
 	"memoryz/server/internal/apierr"
+	"memoryz/server/internal/curriculum"
 	"memoryz/server/internal/httpx"
 	"memoryz/server/internal/ids"
 	"memoryz/server/internal/learning"
@@ -32,8 +33,8 @@ func init() {
 	})
 }
 
-// aiTimeout bounds one model-backed request end to end (the provider itself waits up to 120s).
-const aiTimeout = 180 * time.Second
+// aiTimeout includes model calls, semantic validation and regeneration.
+const aiTimeout = ai.RequestTimeout
 
 var (
 	errQuestionNotFound = apierr.New(404, "문제를 찾을 수 없어요.")
@@ -66,16 +67,27 @@ func (s *Server) aiBudget(ctx context.Context, userID string) error {
 
 func (s *Server) generate(w http.ResponseWriter, r *http.Request, user store.User) error {
 	var in struct {
-		MaterialID string   `json:"materialId"`
-		Count      *float64 `json:"count"`
-		Mode       string   `json:"mode"`
-		RequestID  *string  `json:"requestId"`
+		MaterialID  string   `json:"materialId"`
+		MaterialIDs []string `json:"materialIds"`
+		SubjectID   string   `json:"subjectId"`
+		Topic       string   `json:"topic"`
+		Count       *float64 `json:"count"`
+		Mode        string   `json:"mode"`
+		RequestID   *string  `json:"requestId"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
 	v := &validator{}
-	v.id(in.MaterialID)
+	materialIDs, sourceErr := generationIDs(in.MaterialID, in.MaterialIDs)
+	if sourceErr != nil {
+		return sourceErr
+	}
+	if in.SubjectID != "" {
+		v.id(in.SubjectID)
+	}
+	in.Topic = strings.TrimSpace(in.Topic)
+	v.bounded(in.Topic, 120)
 	count := 0
 	if in.Count == nil {
 		v.fail(msgInput)
@@ -92,42 +104,43 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request, user store.Use
 	}
 	kind := ai.Kind(in.Mode)
 	hashInput := map[string]any{"materialId": in.MaterialID, "count": count, "mode": in.Mode}
-	type loaded struct {
-		content   string
-		subjectID string
+	if in.MaterialIDs != nil || in.SubjectID != "" || in.Topic != "" {
+		hashInput = map[string]any{"materialIds": materialIDs, "subjectId": in.SubjectID, "topic": in.Topic, "count": count, "mode": in.Mode}
 	}
 	outcome, err := s.executeRun(r.Context(), user.ID, requestID, kind, hashInput, func(ctx context.Context, ex *execution) (any, error) {
-		material, err := ai.Tool(ctx, ex.rt, "LOAD_CONTEXT", func(ctx context.Context) (loaded, error) {
-			row, err := s.q.GetMaterialContent(ctx, store.GetMaterialContentParams{ID: in.MaterialID, UserID: user.ID})
-			if errors.Is(err, pgx.ErrNoRows) {
-				return loaded{}, errMaterialNotFound
-			}
+		material, err := ai.Tool(ctx, ex.rt, "LOAD_CONTEXT", func(ctx context.Context) (generationContext, error) {
+			sources, err := loadGenerationSources(ctx, s.pool, user.ID, materialIDs, false)
 			if err != nil {
-				return loaded{}, err
+				return generationContext{}, err
 			}
-			if length(strings.TrimSpace(row.Content)) < 20 {
-				return loaded{}, errMaterialTooShort
-			}
-			return loaded{content: row.Content, subjectID: row.SubjectID}, nil
+			return combineGenerationSources(sources, in.SubjectID)
 		})
 		if err != nil {
 			return nil, err
 		}
-		items, err := ai.GenerateItems(ctx, s.ai, material.content, kind, count)
+		subject, subjectErr := s.ownedSubject(ctx, user, material.subjectID)
+		if subjectErr != nil {
+			return nil, subjectErr
+		}
+		ctx = ai.WithLearningContext(ctx, user.CompletedSubjects, curriculum.Retrieve(subject.Name, user.Grade, time.Now(), material.content))
+		items, err := ai.GenerateItemsForTopic(ctx, s.ai, material.content, kind, count, in.Topic)
 		if err != nil {
 			return nil, err
 		}
+		if !material.grounded(items) {
+			return nil, apierr.New(422, "생성한 내용의 근거가 선택한 자료의 본문과 일치하지 않아요. 다시 시도해 주세요.")
+		}
 		return ex.commit(ctx, func(ctx context.Context, tx pgx.Tx, q *store.Queries) (any, error) {
-			current, err := q.GetMaterialContent(ctx, store.GetMaterialContentParams{ID: in.MaterialID, UserID: user.ID})
-			if errors.Is(err, pgx.ErrNoRows) || (err == nil && (current.Content != material.content || current.SubjectID != material.subjectID)) {
-				return nil, errMaterialChanged
+			if err := material.checkUnchanged(ctx, tx, user.ID); err != nil {
+				return nil, err
 			}
+			outputMaterialID, err := material.materialID(ctx, tx, q, user.ID, in.Topic)
 			if err != nil {
 				return nil, err
 			}
 			created := []any{}
 			for _, item := range items.Questions {
-				row, err := q.CreateQuestion(ctx, store.CreateQuestionParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, MaterialID: in.MaterialID, Prompt: item.Prompt, Options: item.Options, Answer: int32(item.Answer), Explanation: item.Explanation, Citation: item.Citation, Past: item.Past, Future: item.Future})
+				row, err := q.CreateQuestion(ctx, store.CreateQuestionParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, MaterialID: outputMaterialID, Prompt: item.Prompt, Options: item.Options, Answer: int32(item.Answer), Explanation: item.Explanation, Citation: item.Citation, Past: item.Past, Future: item.Future})
 				if err != nil {
 					return nil, err
 				}
@@ -147,14 +160,14 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request, user store.Use
 				created = append(created, questionOf(row))
 			}
 			for _, item := range items.Essays {
-				row, err := q.CreateEssay(ctx, store.CreateEssayParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, MaterialID: in.MaterialID, Prompt: item.Prompt, Keywords: item.Keywords, Distractors: item.Distractors, ModelAnswer: item.ModelAnswer, Citation: item.Citation})
+				row, err := q.CreateEssay(ctx, store.CreateEssayParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, MaterialID: outputMaterialID, Prompt: item.Prompt, Keywords: item.Keywords, Distractors: item.Distractors, ModelAnswer: item.ModelAnswer, Citation: item.Citation})
 				if err != nil {
 					return nil, err
 				}
 				created = append(created, essayOf(row))
 			}
 			for _, item := range items.Cards {
-				row, err := q.CreateGeneratedCard(ctx, store.CreateGeneratedCardParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, Front: item.Front, Back: item.Back + "\n\n근거: " + item.Citation, Type: store.CardType(item.Type), MaterialID: &in.MaterialID})
+				row, err := q.CreateGeneratedCard(ctx, store.CreateGeneratedCardParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, Front: item.Front, Back: item.Back + "\n\n근거: " + item.Citation, Type: store.CardType(item.Type), MaterialID: &outputMaterialID})
 				if err != nil {
 					return nil, err
 				}

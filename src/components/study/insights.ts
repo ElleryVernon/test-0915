@@ -132,6 +132,7 @@ export function studyMethods(
     );
     return (
       essay &&
+      (draft.answer.trim() || draft.selected.length || draft.order.length || draft.hint) &&
       !data.attempts.some(
         (a) => a.essayId === essay.id && Date.parse(a.createdAt) >= Date.parse(draft.updatedAt),
       )

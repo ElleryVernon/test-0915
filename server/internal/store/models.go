@@ -389,11 +389,38 @@ type Material struct {
 }
 
 type Message struct {
-	ID          string
-	SenderID    string
-	RecipientID string
-	Body        string
-	CreatedAt   time.Time
+	ID            string
+	SenderID      string
+	RecipientID   string
+	Body          string
+	CreatedAt     time.Time
+	Ordinal       int64
+	RequestID     *string
+	ReadAt        *time.Time
+	Blocks        []byte
+	ReplyToId     *string
+	ReplySnapshot []byte
+	Deleted       bool
+}
+
+type MessageAction struct {
+	UserID    string
+	MessageId string
+	BlockId   string
+	Kind      string
+	Result    []byte
+	CreatedAt time.Time
+}
+
+type MessageReaction struct {
+	MessageId string
+	UserID    string
+}
+
+type MessageSavedQuestion struct {
+	UserID     string
+	QuestionID string
+	MessageId  string
 }
 
 type Notification struct {
@@ -404,6 +431,7 @@ type Notification struct {
 	Read      bool
 	Href      string
 	CreatedAt time.Time
+	Kind      string
 }
 
 type OAuthAccount struct {

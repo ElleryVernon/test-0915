@@ -104,16 +104,21 @@ type commentRecord struct {
 // commentView is a comment as the thread shows it (contracts.ts Comment): the author's nickname
 // instead of their id, and no parentId key at all on a top-level comment.
 type commentView struct {
-	AuthorID  string          `json:"authorId,omitempty"`
-	IsMine    bool            `json:"isMine"`
-	Accepted  bool            `json:"accepted"`
-	Block     *communityBlock `json:"block,omitempty"`
-	ID        string          `json:"id"`
-	PostID    string          `json:"postId"`
-	Author    string          `json:"author"`
-	Body      string          `json:"body"`
-	ParentID  *string         `json:"parentId,omitempty"`
-	CreatedAt jsonx.Time      `json:"createdAt"`
+	Deleted      bool            `json:"deleted"`
+	EditedAt     *time.Time      `json:"editedAt,omitempty"`
+	Likes        int64           `json:"likes"`
+	Liked        bool            `json:"liked"`
+	IsPostAuthor bool            `json:"isPostAuthor"`
+	AuthorID     string          `json:"authorId,omitempty"`
+	IsMine       bool            `json:"isMine"`
+	Accepted     bool            `json:"accepted"`
+	Block        *communityBlock `json:"block,omitempty"`
+	ID           string          `json:"id"`
+	PostID       string          `json:"postId"`
+	Author       string          `json:"author"`
+	Body         string          `json:"body"`
+	ParentID     *string         `json:"parentId,omitempty"`
+	CreatedAt    jsonx.Time      `json:"createdAt"`
 }
 
 // reportRecord is a Report row.
@@ -325,32 +330,59 @@ func (s *Server) listComments(w http.ResponseWriter, r *http.Request, user store
 	if err != nil {
 		return err
 	}
-	rows, err := s.q.ListComments(ctx, store.ListCommentsParams{PostID: post.ID, ViewerID: user.ID})
+	rows, err := s.pool.Query(ctx, `SELECT c."id",c."userId",c."body",c."parentId",c."createdAt",u."nickname",
+ COALESCE(cc."deleted",false),cc."editedAt",cc."block",
+ EXISTS(SELECT 1 FROM "CommunityPost" cp WHERE cp."postId"=c."postId" AND cp."acceptedCommentId"=c."id"),
+ (SELECT count(*) FROM "CommentLike" l WHERE l."commentId"=c."id"),
+ EXISTS(SELECT 1 FROM "CommentLike" l WHERE l."commentId"=c."id" AND l."userId"=$2)
+ FROM "Comment" c JOIN "User" u ON u."id"=c."userId" LEFT JOIN "CommunityComment" cc ON cc."commentId"=c."id"
+ WHERE c."postId"=$1 AND u."role"=$3 AND NOT u."suspended"
+ AND NOT EXISTS(SELECT 1 FROM "Block" b WHERE (b."userId"=$2 AND b."blockedId"=c."userId") OR (b."userId"=c."userId" AND b."blockedId"=$2))
+ ORDER BY c."createdAt",c."id" LIMIT 500`, post.ID, user.ID, user.Role)
 	if err != nil {
 		return err
 	}
-	comments := make([]commentView, 0, len(rows))
-	for _, row := range rows {
-		c := row.Comment
-		view := commentView{ID: c.ID, PostID: c.PostID, Author: row.AuthorNickname, AuthorID: c.UserID, IsMine: c.UserID == user.ID, Body: c.Body, ParentID: c.ParentID, CreatedAt: jsonx.Time(c.CreatedAt)}
-		if post.Anonymous && c.UserID == post.UserID {
-			view.Author = "익명 · 글쓴이"
-			view.AuthorID = ""
-		}
+	defer rows.Close()
+	comments := make([]commentView, 0)
+	for rows.Next() {
+		view := commentView{PostID: post.ID}
 		var raw []byte
-		_ = s.pool.QueryRow(ctx, `SELECT "block" FROM "CommunityComment" WHERE "commentId"=$1`, c.ID).Scan(&raw)
-		if len(raw) > 0 && string(raw) != "null" {
-			var b communityBlock
-			if json.Unmarshal(raw, &b) == nil {
-				if b.Type == "QUESTION" || b.Type == "POLL" {
-					b.Stats = s.blockStats(ctx, user.ID, post.ID, b)
+		var created time.Time
+		if err = rows.Scan(&view.ID, &view.AuthorID, &view.Body, &view.ParentID, &created, &view.Author, &view.Deleted, &view.EditedAt, &raw, &view.Accepted, &view.Likes, &view.Liked); err != nil {
+			return err
+		}
+		view.CreatedAt = jsonx.Time(created)
+		view.IsMine = view.AuthorID == user.ID
+		view.IsPostAuthor = view.AuthorID == post.UserID
+		if view.Deleted {
+			view.Author, view.AuthorID, view.Body = "삭제된 댓글", "", ""
+			view.IsMine, view.IsPostAuthor, view.Liked = false, false, false
+			view.Likes, view.EditedAt = 0, nil
+		} else {
+			if post.Anonymous && view.IsPostAuthor {
+				view.Author, view.AuthorID = "익명 · 글쓴이", ""
+			}
+			if len(raw) > 0 && string(raw) != "null" {
+				var b communityBlock
+				if err = json.Unmarshal(raw, &b); err != nil {
+					return err
 				}
 				b.RefID = ""
 				view.Block = &b
 			}
 		}
-		_ = s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM "CommunityPost" WHERE "postId"=$1 AND "acceptedCommentId"=$2)`, post.ID, c.ID).Scan(&view.Accepted)
 		comments = append(comments, view)
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	// Release the list connection before attachment aggregates need another one.
+	rows.Close()
+	for i := range comments {
+		b := comments[i].Block
+		if b != nil && (b.Type == "QUESTION" || b.Type == "POLL") {
+			b.Stats = s.blockStats(ctx, user.ID, post.ID, *b)
+		}
 	}
 	httpx.OK(w, http.StatusOK, comments)
 	return nil
@@ -404,15 +436,6 @@ func (s *Server) createComment(w http.ResponseWriter, r *http.Request, user stor
 	if err = v.result(); err != nil {
 		return err
 	}
-	if parent != nil {
-		ok, e := s.q.IsTopLevelComment(ctx, store.IsTopLevelCommentParams{ID: *parent, PostID: post.ID})
-		if e != nil {
-			return e
-		}
-		if !ok {
-			return errReplyDepth
-		}
-	}
 	if in.Block != nil {
 		blocks, e := s.canonicalBlocks(ctx, user, []communityBlock{*in.Block}, true)
 		if e != nil {
@@ -422,6 +445,16 @@ func (s *Server) createComment(w http.ResponseWriter, r *http.Request, user stor
 	}
 	var comment store.Comment
 	err = s.locked(ctx, post.UserID, func(tx pgx.Tx, q *store.Queries) error {
+		if parent != nil {
+			target, e := lockedCommunityComment(ctx, tx, user, post.ID, *parent)
+			if e != nil {
+				return e
+			}
+			if target.parentID != nil {
+				return errReplyDepth
+			}
+			// A redacted root still anchors its existing conversation.
+		}
 		if in.RequestID != "" {
 			var id string
 			e := tx.QueryRow(ctx, `SELECT "commentId" FROM "CommunityComment" WHERE "userId"=$1 AND "requestId"=$2`, user.ID, in.RequestID).Scan(&id)
@@ -455,13 +488,17 @@ func (s *Server) createComment(w http.ResponseWriter, r *http.Request, user stor
 		if e != nil {
 			return e
 		}
-		if count == 0 && user.ID != post.UserID {
-			_, e = tx.Exec(ctx, `INSERT INTO "Notification"("id","userId","title","body","href") VALUES($1,$2,'첫 답변이 도착했어요',$3,$4)`, ids.New(), post.UserID, post.Title, communityPostHref(post))
+		if user.ID != post.UserID {
+			e = notifyAnswers(ctx, tx, post, count)
 		}
 		return e
 	})
 	if err != nil {
 		return err
+	}
+	if user.ID != post.UserID {
+		// The notice lives on the post owner's bootstrap; their version must move for it to show.
+		s.bump(ctx, post.UserID)
 	}
 	httpx.OK(w, 201, map[string]any{"id": comment.ID, "postId": comment.PostID, "body": comment.Body, "parentId": comment.ParentID, "createdAt": comment.CreatedAt, "isMine": true})
 	return nil

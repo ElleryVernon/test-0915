@@ -108,14 +108,20 @@ func (s *Server) patchProfile(w http.ResponseWriter, r *http.Request, user store
 		return err
 	}
 	s.auth.Invalidate(r.Context(), user.ID)
-	httpx.OK(w, http.StatusOK, profileOf(updated))
+	profile := profileOf(updated)
+	profile.AvatarURL, err = s.ownProfilePhotoURL(r.Context(), user.ID)
+	if err != nil {
+		return err
+	}
+	httpx.OK(w, http.StatusOK, profile)
 	return nil
 }
 
-// readNotifications marks every notification of the caller read.
+// readNotifications marks one owned notification read, or all when no id is supplied.
 func (s *Server) readNotifications(w http.ResponseWriter, r *http.Request, user store.User) error {
 	var input struct {
-		Read *bool `json:"read"`
+		Read *bool  `json:"read"`
+		ID   string `json:"id"`
 	}
 	if err := httpx.Decode(r, &input); err != nil {
 		return err
@@ -123,8 +129,14 @@ func (s *Server) readNotifications(w http.ResponseWriter, r *http.Request, user 
 	if input.Read == nil || !*input.Read {
 		return errInput
 	}
-	if err := s.q.MarkNotificationsRead(r.Context(), user.ID); err != nil {
-		return err
+	if input.ID != "" {
+		if _, err := s.pool.Exec(r.Context(), `UPDATE "Notification" SET "read"=true WHERE "id"=$1 AND "userId"=$2`, input.ID, user.ID); err != nil {
+			return err
+		}
+	} else {
+		if err := s.q.MarkNotificationsRead(r.Context(), user.ID); err != nil {
+			return err
+		}
 	}
 	httpx.OK(w, http.StatusOK, map[string]bool{"read": true})
 	return nil

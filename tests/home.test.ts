@@ -286,21 +286,20 @@ test('empty home renders a real onboarding action without invented progress or c
   data.questions = [];
   data.essays = [];
   data.subjects = [];
+  data.demo = false;
   const markup = renderToStaticMarkup(
     createElement(HomeScreen, {
       data,
       path: '/',
-      navigate: () => {}, back: () => {},
+      navigate: () => {},
+      back: () => {},
       toast: () => {},
       refresh: async () => {},
     }),
   );
-  // (B) no material: the onboarding card replaces both the continue and the recent-material sections.
-  assert.match(markup, /첫 자료로 시작하기/);
-  assert.match(markup, /사진 찍기/);
-  assert.match(markup, /샘플 자료로 체험/);
-  assert.match(markup, /첫 복습 카드 만들기/);
-  assert.match(markup, /공부 시간 정하기 · 2분/);
+  assert.match(markup, /예제로 1분 학습하기/);
+  assert.match(markup, /내 자료로 시작하기/);
+  assert.doesNotMatch(markup, /오늘 복습할 카드|첫 복습 카드 만들기|공부 시간 정하기/);
   assert.doesNotMatch(
     markup,
     /최근 자료|진행 중인 공부가 없어요|문제 · 서술형 · 오답노트 전체|첫 학습 자료 올리기/,
@@ -311,11 +310,14 @@ test('empty home renders a real onboarding action without invented progress or c
     createElement(HomeScreen, {
       data,
       path: '/',
-      navigate: () => {}, back: () => {},
+      navigate: () => {},
+      back: () => {},
       toast: () => {},
       refresh: async () => {},
     }),
   );
+  assert.match(existing, /자료 내용을 채우면/);
+  assert.match(existing, /자료 내용 확인하기/);
   assert.doesNotMatch(
     existing,
     /자료 하나가 여러 번의 공부로|첫 학습 자료 올리기|첫 자료로 시작하기/,
@@ -327,11 +329,70 @@ const render = (data: AppData) =>
     createElement(HomeScreen, {
       data,
       path: '/',
-      navigate: () => {}, back: () => {},
+      navigate: () => {},
+      back: () => {},
       toast: () => {},
       refresh: async () => {},
     }),
   );
+
+test('source-only home uses the shared next learning step, not an empty review dashboard', () => {
+  const data = {
+    ...fixture(),
+    demo: false,
+    questions: [],
+    essays: [],
+    aiAvailable: true,
+    materials: [{ ...material('source'), contentLength: 120 }],
+  };
+  const html = render(data);
+  assert.match(html, /자료가 준비됐어요/);
+  assert.match(html, /플래시카드 만들기|객관식 문제 만들기/);
+  assert.doesNotMatch(html, /오늘 복습할 카드|이번 주|과목과 자료 관리/);
+});
+
+test('exercise-only home starts cards without replacing existing learning with the beginner example', () => {
+  const data = {
+    ...fixture(),
+    demo: false,
+    aiAvailable: true,
+    materials: [{ ...material('m1'), contentLength: 120 }],
+  };
+  const html = render(data);
+  assert.match(html, /자료로 첫 카드 만들기/);
+  assert.match(html, /문제 2개 풀기/);
+  assert.doesNotMatch(html, /오늘 복습할 카드|예제로 1분|과목과 자료 관리/);
+  const offline = render({ ...data, aiAvailable: false });
+  assert.match(offline, /첫 카드 직접 만들기/);
+  assert.doesNotMatch(offline, /자료로 첫 카드 만들기/);
+});
+
+test('future review, completed review and deleted cards have different empty-state meanings', () => {
+  const data = fixture();
+  data.cards = [
+    {
+      id: 'card',
+      subjectId: 'bio',
+      front: '개념',
+      back: '설명',
+      type: 'CONCEPT',
+      bucket: 'GOOD',
+      consecutiveEasy: 0,
+      deleted: false,
+      nextReviewAt: '2999-01-01T00:00:00Z',
+    },
+  ];
+  const scheduled = render(data);
+  assert.match(scheduled, /지금은 복습할 카드가 없어요/);
+  assert.doesNotMatch(scheduled, /복습 완료|복습을 마쳤어요|예제로 1분|첫 카드/);
+  const complete = render({ ...data, stats: { ...data.stats, todayCards: 3 } });
+  assert.match(complete, /오늘 복습을 마쳤어요/);
+  assert.match(complete, /오늘 카드 3장을 복습했어요/);
+  assert.doesNotMatch(complete, /<strong>0<\/strong>/);
+  const deleted = render({ ...data, cards: [{ ...data.cards[0], deleted: true }] });
+  assert.match(deleted, /첫 카드 직접 만들기/);
+  assert.doesNotMatch(deleted, /오늘 복습할 카드/);
+});
 
 test("homeStart offers the newest material's actions with exact copy, chips and routes", () => {
   const data = fixture();

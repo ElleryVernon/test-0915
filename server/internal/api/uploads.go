@@ -26,6 +26,7 @@ import (
 	"memoryz/server/internal/db"
 	"memoryz/server/internal/httpx"
 	"memoryz/server/internal/ids"
+	"memoryz/server/internal/learning"
 	"memoryz/server/internal/logx"
 	"memoryz/server/internal/pdfx"
 	"memoryz/server/internal/store"
@@ -45,7 +46,7 @@ func init() {
 const (
 	// jitter: none — uploadTTL is a per-user age cutoff read on that user's next upload; nothing fires when it passes
 	maxUploadBytes = 10_000_000
-	maxText        = 200_000
+	maxText        = learning.MaxSourceRunes
 	uploadTTL      = 24 * time.Hour
 	pdfWait        = 30 * time.Second
 )
@@ -126,8 +127,21 @@ func readFile(r *http.Request) ([]byte, *multipart.FileHeader, error) {
 // material can be made from.
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, user store.User) error {
 	data, header, err := readFile(r)
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
 	if err != nil {
 		return err
+	}
+	purpose := r.URL.Query().Get("purpose")
+	if purpose != "" && purpose != "card-image" {
+		return apierr.New(400, "파일 사용 목적을 확인해 주세요.")
+	}
+	cardImage := purpose == "card-image"
+	if cardImage {
+		if _, err := occlusionImageMIME(data); err != nil {
+			return err
+		}
 	}
 	ctx := r.Context()
 	extension := strings.ToLower(strings.TrimPrefix(filepath.Ext(header.Filename), "."))
@@ -195,7 +209,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, user store
 		default:
 			mime = "image/webp"
 		}
-		if s.ai.Available() {
+		if s.ai.Available() && !cardImage {
 			// jitter: admission OCR here and on PDF pages goes through Provider.JSON: 16 AI slots, 30 s wait, refusal Retry-After 10 s + U[0,10 s) [site server/internal/api/uploads.go:183]
 			text, err := ai.ExtractImageText(ctx, s.ai, data, mime)
 			if err != nil {
@@ -261,7 +275,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, user store
 	for _, meta := range metas {
 		out.Images = append(out.Images, imageMetaOf(uploadID, meta))
 	}
-	if out.Warning == "" && content == "" {
+	if out.Warning == "" && content == "" && !cardImage {
 		out.Warning = warnNoText
 	}
 	httpx.OK(w, http.StatusOK, out)
@@ -389,10 +403,17 @@ func (s *Server) readUpload(w http.ResponseWriter, r *http.Request, user store.U
 	// The object is streamed; only a file whose hash was never recorded (legacy rows) is read whole,
 	// once, to compute it.
 	var (
-		body   io.Reader
-		size   int64
-		digest string
+		body          io.Reader
+		size          int64
+		digest        string
+		selectedPages []int
 	)
+	if r.URL.Query().Has("pages") {
+		selectedPages, err = requestedPDFPages(r.URL.Query().Get("pages"), upload.Mime)
+		if err != nil {
+			return err
+		}
+	}
 	if upload.Sha256 != nil {
 		digest = *upload.Sha256
 	}
@@ -423,11 +444,32 @@ func (s *Server) readUpload(w http.ResponseWriter, r *http.Request, user store.U
 		defer obj.Close()
 		body, size = obj, obj.Size
 	}
-	etag := `"` + digest + `"`
+	variant := digest
+	if len(selectedPages) > 0 {
+		variant += "-pages-v1-" + r.URL.Query().Get("pages")
+	}
+	etag := `"` + variant + `"`
 	fileHeaders(w.Header(), etag)
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return nil
+	}
+	if len(selectedPages) > 0 {
+		data, readErr := io.ReadAll(io.LimitReader(body, pdfx.MaxBytes+1))
+		if readErr != nil {
+			return readErr
+		}
+		pageCtx, cancel := context.WithTimeout(ctx, pdfWait)
+		defer cancel()
+		data, err = pdfx.SelectPages(pageCtx, data, selectedPages)
+		if errors.Is(err, pdfx.ErrPageSelection) {
+			return errPDFPages
+		}
+		if err != nil {
+			return err
+		}
+		body, size = bytes.NewReader(data), int64(len(data))
+		w.Header().Set("X-Memoryz-Source-Pages", r.URL.Query().Get("pages"))
 	}
 	disposition := "inline"
 	if r.URL.Query().Get("download") == "1" {

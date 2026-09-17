@@ -73,6 +73,13 @@ export function placeImages(content: string, pageBreaks: number[] | undefined, i
 
 /** Where a citation sits in the body, ignoring whitespace differences; page from the page breaks. */
 export function findCitation(content: string, citation: string, pageBreaks?: number[]): { start: number; end: number; page: number } | null {
+  const quote = citation.trim();
+  if (!quote) return null;
+  const exact = content.indexOf(quote);
+  if (exact >= 0) {
+    const page = splitPages(content, pageBreaks).find((p) => exact >= p.start && exact < Math.max(p.end, p.start + 1))?.page ?? 1;
+    return { start: exact, end: exact + quote.length, page };
+  }
   const needle = citation.replace(/\s+/g, '');
   if (!needle) return null;
   // Map each non-whitespace character of the body back to its offset.
@@ -99,8 +106,8 @@ export function displayTitle(title: string): string {
 }
 
 /** "PDF · 3쪽 · 그림 2" style meta line. */
-export function metaLabel(material: { type: string; pages?: number; imageCount?: number; contentLength?: number }): string {
-  const parts = [material.type.toUpperCase()];
+export function metaLabel(material: { type: string; extraction?: string; pages?: number; imageCount?: number; contentLength?: number }): string {
+  const parts = [material.extraction === 'combined' ? '모은 자료' : material.type.toUpperCase()];
   if (material.pages) parts.push(`${material.pages}쪽`);
   if (material.imageCount) parts.push(`그림 ${material.imageCount}`);
   if (!material.pages && material.contentLength !== undefined) parts.push(`${material.contentLength.toLocaleString('ko-KR')}자`);

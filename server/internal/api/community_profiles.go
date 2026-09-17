@@ -4,13 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
+	"net/http"
+	"strings"
+	"time"
+
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"memoryz/server/internal/apierr"
 	"memoryz/server/internal/httpx"
 	"memoryz/server/internal/ids"
 	"memoryz/server/internal/store"
-	"net/http"
-	"time"
 )
 
 func init() {
@@ -24,11 +30,12 @@ func init() {
 }
 
 type communityVisibility struct {
-	Grade         bool   `json:"grade"`
-	Subjects      bool   `json:"subjects"`
-	FollowerCount bool   `json:"followerCount"`
-	CardsDefault  bool   `json:"cardsDefault"`
-	WhoCanFollow  string `json:"whoCanFollow"`
+	Grade             bool       `json:"grade"`
+	Subjects          bool       `json:"subjects"`
+	FollowerCount     bool       `json:"followerCount"`
+	CardsDefault      bool       `json:"cardsDefault"`
+	WhoCanFollow      string     `json:"whoCanFollow"`
+	NicknameChangedAt *time.Time `json:"nicknameChangedAt,omitempty"`
 }
 
 func (s *Server) communityVisibility(ctx context.Context, id string) (communityVisibility, error) {
@@ -46,6 +53,7 @@ func (s *Server) communityVisibility(ctx context.Context, id string) (communityV
 func (s *Server) communityPrivacy(w http.ResponseWriter, r *http.Request, u store.User) error {
 	var in struct {
 		Visibility map[string]any `json:"visibility"`
+		Nickname   *string        `json:"nickname"`
 	}
 	if e := httpx.Decode(r, &in); e != nil {
 		return e
@@ -77,8 +85,33 @@ func (s *Server) communityPrivacy(w http.ResponseWriter, r *http.Request, u stor
 				return blockError()
 			}
 			v.WhoCanFollow = str
+		case "nicknameChangedAt":
+			// Server-owned field echoed back inside the visibility document; never client-set.
 		default:
 			return blockError()
+		}
+	}
+	if in.Nickname != nil {
+		nick := strings.TrimSpace(*in.Nickname)
+		runes := []rune(nick)
+		if len(runes) == 0 || len(runes) > 12 {
+			return apierr.New(400, "닉네임은 1~12자로 적어 주세요.")
+		}
+		if nick != u.Nickname {
+			if v.NicknameChangedAt != nil && s.now().Sub(*v.NicknameChangedAt) < 30*24*time.Hour {
+				left := v.NicknameChangedAt.Add(30 * 24 * time.Hour).Sub(s.now())
+				return apierr.New(429, fmt.Sprintf("닉네임은 30일에 한 번 바꿀 수 있어요. %d일 뒤에 다시 바꿀 수 있어요.", int(math.Ceil(left.Hours()/24))))
+			}
+			now := s.now()
+			v.NicknameChangedAt = &now
+			if _, e = s.q.UpdateProfile(r.Context(), store.UpdateProfileParams{ID: u.ID, Nickname: &nick}); e != nil {
+				var pgErr *pgconn.PgError
+				if errors.As(e, &pgErr) && pgErr.Code == "23505" {
+					return apierr.New(409, "이미 사용 중인 닉네임이에요.")
+				}
+				return e
+			}
+			s.auth.Invalidate(r.Context(), u.ID)
 		}
 	}
 	_, e = s.pool.Exec(r.Context(), `INSERT INTO "CommunityPrivacy"("userId","visibility") VALUES($1,$2) ON CONFLICT("userId") DO UPDATE SET "visibility"=$2`, u.ID, jsonBytes(v))
@@ -103,6 +136,10 @@ func (s *Server) communityProfile(w http.ResponseWriter, r *http.Request, u stor
 		return e
 	}
 	mine := id == u.ID
+	if !mine {
+		// The cooldown marker is the owner's own editing hint, not profile data.
+		v.NicknameChangedAt = nil
+	}
 	out := map[string]any{"id": id, "nickname": target.Nickname, "joinedAt": target.CreatedAt, "isMine": mine, "visibility": v, "subjects": []string{}, "posts": []PostView{}, "answers": []any{}, "cards": []communityBlock{}}
 	if v.Grade || mine {
 		out["grade"] = target.Grade
@@ -145,6 +182,26 @@ func (s *Server) communityProfile(w http.ResponseWriter, r *http.Request, u stor
 		return e
 	}
 	out["stats"] = map[string]int{"accepted": accepted, "answers": answers, "cardsCloned": cloned, "helpedUsers": helped}
+	if !mine {
+		// The relation line answers "이 사람 답을 믿어도 되나" with the viewer's own history:
+		// how many of my questions they answered, how many of those I accepted, how many of
+		// their cards I saved. Anonymous posts stay out: the relation must not re-identify them.
+		var answersToMe, acceptedForMe, cardsICloned int
+		e = s.pool.QueryRow(ctx, `
+ WITH target_blocks AS (
+ SELECT b->>'id' AS block_id, cp."postId" FROM "CommunityPost" cp JOIN "Post" p ON p."id"=cp."postId" CROSS JOIN LATERAL jsonb_array_elements(cp."blocks") b WHERE p."userId"=$2 AND NOT p."anonymous" AND NOT cp."deleted"
+ UNION ALL SELECT cc."block"->>'id', c."postId" FROM "CommunityComment" cc JOIN "Comment" c ON c."id"=cc."commentId" JOIN "Post" p ON p."id"=c."postId" WHERE c."userId"=$2 AND cc."block" IS NOT NULL AND NOT (p."anonymous" AND p."userId"=c."userId")
+ )
+ SELECT (SELECT count(DISTINCT c."postId") FROM "Comment" c JOIN "Post" p ON p."id"=c."postId" LEFT JOIN "CommunityPost" cp ON cp."postId"=p."id" WHERE c."userId"=$2 AND p."userId"=$1 AND p."role"='STUDENT' AND p."category"='질문' AND NOT p."anonymous" AND NOT COALESCE(cp."deleted",false)),
+ (SELECT count(*) FROM "Comment" c JOIN "CommunityPost" cp ON cp."acceptedCommentId"=c."id" JOIN "Post" p ON p."id"=cp."postId" WHERE c."userId"=$2 AND p."userId"=$1 AND NOT p."anonymous" AND NOT cp."deleted"),
+ (SELECT count(*) FROM "CommunityAction" a JOIN target_blocks tb ON tb."postId"=a."postId" AND tb.block_id=a."blockId" WHERE a."userId"=$1 AND a."kind"='clone')
+ + (SELECT count(*) FROM "CommunityCardClone" cc JOIN "Card" c ON c."id"=cc."sourceCardId" WHERE cc."userId"=$1 AND c."userId"=$2)`,
+			u.ID, id).Scan(&answersToMe, &acceptedForMe, &cardsICloned)
+		if e != nil {
+			return e
+		}
+		out["relation"] = map[string]int{"answersToMe": answersToMe, "acceptedForMe": acceptedForMe, "cardsICloned": cardsICloned}
+	}
 	// Select candidates before fetching each authorized view; no anonymous author linkage in public profiles.
 	rows, e := s.pool.Query(ctx, `SELECT p."id" FROM "Post" p LEFT JOIN "CommunityPost" cp ON cp."postId"=p."id" WHERE p."userId"=$1 AND NOT p."anonymous" AND NOT COALESCE(cp."deleted",false) ORDER BY p."createdAt" DESC LIMIT 100`, id)
 	if e != nil {
@@ -168,7 +225,7 @@ func (s *Server) communityProfile(w http.ResponseWriter, r *http.Request, u stor
 		}
 	}
 	out["posts"] = posts
-	rows, e = s.pool.Query(ctx, `SELECT c."postId",p."title",c."body",COALESCE(cp."acceptedCommentId"=c."id",false) FROM "Comment" c JOIN "Post" p ON p."id"=c."postId" LEFT JOIN "CommunityPost" cp ON cp."postId"=p."id" WHERE c."userId"=$1 AND NOT(p."anonymous" AND p."userId"=$1) AND NOT COALESCE(cp."deleted",false) ORDER BY c."createdAt" DESC LIMIT 100`, id)
+	rows, e = s.pool.Query(ctx, `SELECT c."postId",p."title",c."body",COALESCE(cp."acceptedCommentId"=c."id",false) FROM "Comment" c JOIN "Post" p ON p."id"=c."postId" LEFT JOIN "CommunityPost" cp ON cp."postId"=p."id" LEFT JOIN "CommunityComment" cc ON cc."commentId"=c."id" WHERE c."userId"=$1 AND NOT COALESCE(cc."deleted",false) AND NOT(p."anonymous" AND p."userId"=$1) AND NOT COALESCE(cp."deleted",false) ORDER BY c."createdAt" DESC LIMIT 100`, id)
 	if e != nil {
 		return e
 	}

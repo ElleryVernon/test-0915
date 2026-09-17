@@ -87,7 +87,7 @@ func TestProviderJSON(t *testing.T) {
 	if order := lastBody["provider"].(map[string]any)["order"].([]any); len(order) != 2 || lastBody["provider"].(map[string]any)["allow_fallbacks"] != false {
 		t.Fatalf("provider routing: %v", lastBody["provider"])
 	}
-	for header, want := range map[string]int{"content": 0, "402": 503, "429": 429, "500": 502, "length": 502, "refusal": 422, "garbage": 502} {
+	for header, want := range map[string]int{"content": 0, "402": 503, "429": 429, "500": 503, "length": 502, "refusal": 422, "garbage": 502} {
 		p.client.Transport = headerTransport{"X-Test": header}
 		value, err := p.JSON(context.Background(), "prompt", object(map[string]any{"text": str(0, 10)}, "text"), "memoryz_ocr", nil)
 		if want == 0 {

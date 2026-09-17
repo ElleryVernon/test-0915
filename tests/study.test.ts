@@ -423,7 +423,8 @@ test('every study route renders data or an actionable empty state without unavai
       data,
       path,
       refresh: async () => {},
-      navigate: () => {}, back: () => {},
+      navigate: () => {},
+      back: () => {},
       toast: () => {},
     };
     const html = renderToStaticMarkup(createElement(StudyScreens, props));
@@ -442,25 +443,44 @@ test('every study route renders data or an actionable empty state without unavai
       data,
       path: '/quiz?question=question-1',
       refresh: async () => {},
-      navigate: () => {}, back: () => {},
+      navigate: () => {},
+      back: () => {},
       toast: () => {},
     }),
   );
   assert.equal((quiz.match(/role="radio"/g) || []).length, 5);
   assert.ok(quiz.includes('잘 모르겠어요'));
   assert.ok(quiz.includes('disabled=""'));
+  const emptyQuestionBank = renderToStaticMarkup(
+    createElement(StudyScreens, {
+      data: { ...data, questions: [] },
+      path: '/quiz',
+      refresh: async () => {},
+      navigate: () => {},
+      back: () => {},
+      toast: () => {},
+    }),
+  );
+  assert.ok(emptyQuestionBank.includes('자료로 문제 만들기'));
+  assert.equal(emptyQuestionBank.includes('먼저 학습 자료를 추가해 주세요.'), false,
+    'An unselected source must not be mistaken for an empty material library');
   const essay = renderToStaticMarkup(
     createElement(StudyScreens, {
       data,
       path: '/essay?essay=essay-1',
       refresh: async () => {},
-      navigate: () => {}, back: () => {},
+      navigate: () => {},
+      back: () => {},
       toast: () => {},
     }),
   );
-  assert.ok(essay.includes('막혔나요? 키워드부터 연습하기'));
+  assert.ok(essay.includes('키워드 연습'));
   assert.equal(essay.includes('키워드를 모두 맞히면'), false);
-  assert.equal(essay.includes('<textarea'), true, 'Writing must be available without mandatory prerequisite games');
+  assert.equal(
+    essay.includes('<textarea'),
+    true,
+    'Writing must be available without mandatory prerequisite games',
+  );
   console.log('STUDY_RENDER_VERIFIED');
 });
 
@@ -870,6 +890,39 @@ test('Generation recovery restores the original count without another POST and r
     );
     assert.notEqual(posted.at(-1)?.requestId, storedFive.requestId);
     assert.ok(getCount >= 3);
+    const multiple = {
+      ...five,
+      payload: {
+        materialIds: ['source-a', 'source-b'],
+        subjectId: 'bio',
+        topic: '전도',
+        count: 3,
+        mode: 'quiz',
+      },
+    };
+    await runAiTask(multiple);
+    const multiCount = posted.length;
+    const multiLookup = {
+      userId,
+      materialIds: ['source-b', 'source-a'],
+      subjectId: 'bio',
+      topic: '전도',
+      mode: 'quiz' as const,
+    };
+    const multiRestored = await recoverGenerationTask(multiLookup);
+    assert.equal(multiRestored?.count, 3);
+    assert.deepEqual(multiRestored?.task.payload.materialIds, ['source-a', 'source-b']);
+    assert.equal(
+      await recoverGenerationTask({ ...multiLookup, materialIds: ['source-a', 'different'] }),
+      null,
+    );
+    assert.equal(await recoverGenerationTask({ ...multiLookup, topic: '호르몬' }), null);
+    assert.equal(await recoverGenerationTask({ ...multiLookup, subjectId: 'history' }), null);
+    assert.equal(
+      posted.length,
+      multiCount,
+      'Multi-source recovery never starts another generation',
+    );
     db.close();
     validateUploadSize({ size: 10_000_000 });
     assert.throws(() => validateUploadSize({ size: 10_000_001 }), /10MB/);

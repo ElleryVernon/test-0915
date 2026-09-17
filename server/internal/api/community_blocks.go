@@ -224,7 +224,7 @@ func (s *Server) blockFor(ctx context.Context, user store.User, postID, blockID 
 		return communityBlock{}, err
 	}
 	var raw []byte
-	err := s.pool.QueryRow(ctx, `SELECT b FROM "CommunityPost" p CROSS JOIN LATERAL jsonb_array_elements(p."blocks") b WHERE p."postId"=$1 AND b->>'id'=$2 UNION ALL SELECT cc."block" FROM "CommunityComment" cc JOIN "Comment" c ON c."id"=cc."commentId" JOIN "User" u ON u."id"=c."userId" WHERE c."postId"=$1 AND cc."block"->>'id'=$2 AND NOT u."suspended" AND NOT EXISTS(SELECT 1 FROM "Block" WHERE ("userId"=$3 AND "blockedId"=c."userId") OR ("userId"=c."userId" AND "blockedId"=$3)) LIMIT 1`, postID, blockID, user.ID).Scan(&raw)
+	err := s.pool.QueryRow(ctx, `SELECT b FROM "CommunityPost" p CROSS JOIN LATERAL jsonb_array_elements(p."blocks") b WHERE p."postId"=$1 AND b->>'id'=$2 UNION ALL SELECT cc."block" FROM "CommunityComment" cc JOIN "Comment" c ON c."id"=cc."commentId" JOIN "User" u ON u."id"=c."userId" WHERE c."postId"=$1 AND NOT cc."deleted" AND cc."block"->>'id'=$2 AND NOT u."suspended" AND NOT EXISTS(SELECT 1 FROM "Block" WHERE ("userId"=$3 AND "blockedId"=c."userId") OR ("userId"=c."userId" AND "blockedId"=$3)) LIMIT 1`, postID, blockID, user.ID).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return communityBlock{}, apierr.New(404, "첨부를 찾을 수 없어요.")
 	}

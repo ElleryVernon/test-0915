@@ -1,0 +1,82 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 81;
+  background: color-mix(in srgb, var(--ink) 32%, transparent);
+}
+.sheet {
+  position: fixed;
+  z-index: 81;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--app-width);
+  max-height: var(--attachment-height, 90dvh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  background: var(--surface-sheet);
+  outline: none;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-inline);
+  padding: var(--space-3) var(--page-gutter);
+  flex-shrink: 0;
+}
+.headingCopy {
+  flex: 1;
+  min-width: 0;
+}
+.headingCopy h2 {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.5;
+  outline: none;
+}
+.description {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin-top: var(--space-1);
+}
+.content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--page-gutter) var(--space-5);
+}
+.flush {
+  overflow: hidden;
+  padding: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sheet {
+    animation: attachment-enter 160ms ease-out;
+  }
+  @keyframes attachment-enter {
+    from {
+      opacity: 0;
+      translate: 0 12px;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+}
+
+.footer {
+  flex-shrink: 0;
+  padding: var(--space-3) var(--page-gutter) max(var(--space-4), env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-subtle);
+  background: white;
+}
+.footer > button {
+  width: 100%;
+}

@@ -2,7 +2,8 @@
 // running headers/footers or page-number lines, the offset where every page starts, and the embedded
 // images anchored to the paragraph they follow. Pages without a text layer can be read by an OCR
 // callback. It is a port of src/lib/server/pdf-extract.ts; this file holds the pure layout rules,
-// which are identical to the TypeScript ones, and extract.go feeds them from pdfium instead of pdf.js.
+// derived from the TypeScript ones, and extract.go feeds them from pdfium instead of pdf.js.
+// The production path additionally preserves sustained two-column prose in columns.go.
 //
 // Offsets (page breaks, paragraph starts and ends, image anchors) count UTF-16 code units, as the
 // web client's JavaScript strings do, so they stay compatible with the stored TypeScript output.
@@ -36,6 +37,8 @@ type Line struct {
 	Right float64
 	Y     float64
 	Size  float64
+	// readingGroup separates columns and full-width bands on the same page.
+	readingGroup int
 }
 
 // Block is a paragraph with the vertical span it came from.
@@ -370,6 +373,22 @@ func TidyLine(text string) string {
 // ToParagraphs joins soft-wrapped lines with a space; spacing, indents, short lines and list markers
 // end a paragraph. A nil lexicon means the lines' own words.
 func ToParagraphs(lines []Line, lexicon Lexicon) []Block {
+	if lexicon == nil {
+		lexicon = LexiconOf(lines)
+	}
+	var blocks []Block
+	for start := 0; start < len(lines); {
+		end := start + 1
+		for end < len(lines) && lines[end].readingGroup == lines[start].readingGroup {
+			end++
+		}
+		blocks = append(blocks, columnParagraphs(lines[start:end], lexicon)...)
+		start = end
+	}
+	return blocks
+}
+
+func columnParagraphs(lines []Line, lexicon Lexicon) []Block {
 	if len(lines) == 0 {
 		return nil
 	}

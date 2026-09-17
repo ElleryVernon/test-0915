@@ -1,0 +1,216 @@
+.invitation {
+  --invitation-tone: color-mix(in srgb, var(--brand) 9%, var(--surface-raised));
+  padding: var(--space-6);
+  border-radius: var(--radius-panel);
+  background: var(--invitation-tone);
+  min-width: 0;
+}
+.intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  align-items: center;
+  gap: var(--space-2);
+}
+.copy {
+  min-width: 0;
+}
+.eyebrow {
+  margin: 0 0 var(--space-3);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.copy h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(24px, 3.6vw, 28px);
+  font-weight: 750;
+  line-height: 1.4;
+  letter-spacing: -0.7px;
+  word-break: keep-all;
+}
+.copy h2 span {
+  display: block;
+}
+.art {
+  width: 100%;
+  height: auto;
+  color: var(--brand);
+}
+.description {
+  margin: var(--space-3) 0 var(--space-5);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  word-break: keep-all;
+}
+.start {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+.context {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prompt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin-top: var(--space-2);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.action svg {
+  flex: none;
+  box-sizing: content-box;
+  padding: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: white;
+}
+.progress {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.otherActivities {
+  margin-top: var(--space-2);
+}
+.expand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: var(--control-size);
+  padding: var(--space-2) var(--space-1);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.expand[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+.resumeList {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.resumeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--surface-raised) 65%, transparent);
+  color: var(--text-primary);
+  text-align: left;
+}
+.resumeRow > span {
+  flex: 1;
+  min-width: 0;
+}
+.resumeRow > svg {
+  flex: none;
+}
+.resumeRow .context {
+  display: block;
+}
+.resumeTitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin-top: var(--space-1);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.expand:focus-visible,
+.resumeRow:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
+}
+@media (hover: hover) {
+  .resumeRow:hover {
+    background: var(--surface-raised);
+  }
+  .expand:hover {
+    color: var(--text-primary);
+  }
+}
+.start:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 4px;
+}
+@media (hover: hover) {
+  .start:hover {
+    background: color-mix(in srgb, var(--brand) 4%, var(--surface-raised));
+  }
+}
+.start:active {
+  transform: scale(0.985);
+}
+@media (max-width: 420px) {
+  .invitation {
+    padding: var(--space-5);
+  }
+  .intro {
+    grid-template-columns: minmax(0, 1fr) 102px;
+  }
+  .copy h2 {
+    font-size: 24px;
+  }
+}
+@media (max-width: 350px) {
+  .intro {
+    grid-template-columns: minmax(0, 1fr) 76px;
+    gap: 0;
+  }
+  .copy h2 {
+    font-size: 21px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .start {
+    transition: none;
+  }
+  .start:active {
+    transform: none;
+  }
+}

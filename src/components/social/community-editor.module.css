@@ -1,0 +1,318 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--surface-canvas);
+}
+.page {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--app-width);
+  height: 100dvh;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  background: white;
+  outline: none;
+  padding-top: env(safe-area-inset-top, 0);
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  min-height: var(--header-height);
+  padding: var(--space-1) var(--page-gutter) var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.header h2 {
+  flex: 1;
+  min-width: 0;
+  font-size: 17px;
+  line-height: 1.4;
+  font-weight: 700;
+}
+.headerAction {
+  flex-shrink: 0;
+}
+.submit {
+  min-width: var(--control-size);
+  min-height: var(--control-size);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--primary);
+}
+.submit:disabled {
+  color: var(--text-disabled);
+}
+.submit:focus-visible,
+.contextButton:focus-visible,
+.metadataButton:focus-visible,
+.toolbar button:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 0 var(--page-gutter) var(--space-5);
+}
+.context {
+  display: grid;
+  gap: 0;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.contextButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--control-size);
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-align: left;
+}
+.contextButton strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.contextButton svg {
+  flex-shrink: 0;
+}
+.contextLabel {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.metadata {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: var(--space-4);
+}
+.metadataButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: var(--control-size);
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 100%;
+}
+.metadataButton span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metadataButton svg {
+  flex-shrink: 0;
+}
+.title {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: var(--space-4) 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.5;
+}
+.text {
+  flex: 1;
+  width: 100%;
+  resize: none;
+  min-height: 180px;
+  border: none;
+  outline: none;
+  padding: 0 0 var(--space-4);
+  font-size: 16px;
+  line-height: 1.75;
+  background: transparent;
+  field-sizing: content;
+}
+.title::placeholder,
+.text::placeholder {
+  color: var(--text-disabled);
+}
+.attachments {
+  margin-top: var(--space-3);
+}
+.attachmentHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-1) var(--page-gutter) max(var(--space-2), env(safe-area-inset-bottom, 0));
+  background: white;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.toolbar button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: 52px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.toolbar button:disabled {
+  opacity: 0.38;
+}
+.toolbar button:active:not(:disabled) {
+  background: var(--surface-muted);
+  border-radius: 12px;
+}
+.status {
+  min-height: 16px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-muted);
+}
+.status:empty {
+  display: none;
+}
+.error {
+  padding: var(--space-2) 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+.resume {
+  padding: var(--space-6) var(--page-gutter);
+  display: grid;
+  gap: var(--space-4);
+}
+.resume h3 {
+  font-size: 20px;
+  font-weight: 700;
+}
+.resume p {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.draftPreview {
+  padding: var(--space-4);
+  border-radius: 16px;
+  background: var(--surface-canvas);
+}
+.draftPreview strong {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-weight: 650;
+}
+.settings {
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-1);
+}
+.settings p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.settingsSection {
+  display: grid;
+  gap: var(--space-2);
+}
+.settingsLabel {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.authorPreview {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+}
+.authorPreviewIdentity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.previewAvatar {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: white;
+  color: var(--text-secondary);
+}
+.authorPreviewIdentity strong {
+  font-size: 14px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.previewGrade {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.authorOptions {
+  display: grid;
+}
+.authorOptions > :not(:last-child) {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.subjectSearch {
+  width: 100%;
+  min-height: var(--control-size);
+  padding: 0 var(--space-3);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  font-size: 14px;
+}
+@media (max-height: 580px) {
+  .toolbar button {
+    flex-direction: row;
+    min-height: var(--control-size);
+  }
+  .toolbar button span {
+    font-size: 11px;
+  }
+  .footer {
+    padding-bottom: max(var(--space-1), env(safe-area-inset-bottom, 0));
+  }
+}
+
+.title:focus-visible,
+.text:focus-visible {
+  outline: 1px solid var(--border-subtle);
+  outline-offset: 0;
+}

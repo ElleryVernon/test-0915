@@ -87,8 +87,17 @@ model User {
   receivedMessages  Message[] @relation("messageRecipient")
   uploads           Upload[]
   oauthAccounts     OAuthAccount[]
+  accountOnboarding AccountOnboarding?
   aiRuns            AiRun[]
   explanationReports ExplanationReport[]
+}
+
+model AccountOnboarding {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  draft Json @default("{}")
+  completedAt DateTime?
+  updatedAt DateTime @default(now())
 }
 
 model Session {

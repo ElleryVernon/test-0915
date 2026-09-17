@@ -1,0 +1,289 @@
+.screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-raised);
+}
+.header {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-3) var(--page-gutter);
+  font-size: 16px;
+  font-weight: 600;
+}
+.secure {
+  display: flex;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--page-gutter) var(--space-6);
+}
+.steps li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.steps li > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface-muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.steps li[data-current='true'] {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.steps li[data-current='true'] > span {
+  background: var(--text-primary);
+  color: white;
+}
+.steps li[data-done='true'] > span {
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
+.content {
+  flex: 1;
+  padding: var(--space-3) var(--page-gutter) var(--space-7);
+  animation: arrive 0.18s ease-out;
+}
+.content h1 {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: -1px;
+  outline: none;
+}
+.description {
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-8);
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-line;
+}
+.roles {
+  display: grid;
+  gap: var(--space-3);
+}
+.role {
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-4);
+  border-radius: 20px;
+  background: var(--surface-muted);
+  transition: background 0.15s;
+}
+.role[data-selected='true'] {
+  background: var(--text-primary);
+  color: white;
+}
+.role input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.role:has(input:focus-visible) {
+  outline: 2px solid var(--brand);
+  outline-offset: 4px;
+}
+.roleIcon {
+  flex-shrink: 0;
+  display: flex;
+}
+.roleCopy {
+  flex: 1;
+  display: grid;
+  gap: var(--space-2);
+}
+.roleCopy strong {
+  font-size: 16px;
+  font-weight: 650;
+}
+.roleCopy > span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.role[data-selected='true'] .roleCopy > span {
+  color: #d6d6d8;
+}
+.choiceMark {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+.role[data-selected='true'] .choiceMark {
+  background: white;
+}
+.fields {
+  display: grid;
+  gap: var(--space-3);
+}
+.fields label,
+.fields legend {
+  font-size: 14px;
+  font-weight: 650;
+}
+.fields :global(.field) {
+  min-height: 56px;
+  border: 0;
+  box-shadow: none;
+  background: var(--surface-muted);
+}
+.fields :global(.field):focus-visible,
+.fields :global(.search-field):has(input:focus-visible) {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
+}
+.help {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  margin-top: var(--space-6);
+}
+.note svg {
+  flex-shrink: 0;
+  margin-top: var(--space-1);
+}
+.note p {
+  font-size: 13px;
+  line-height: 1.7;
+}
+.grades {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+  margin-block: var(--space-3) var(--space-5);
+}
+.grades button {
+  min-height: 48px;
+  border-radius: 14px;
+  background: var(--surface-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.grades button[aria-pressed='true'] {
+  background: var(--text-primary);
+  color: white;
+}
+.optional {
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: var(--space-1);
+  font-size: 12px;
+}
+.schoolResults {
+  display: grid;
+  gap: var(--space-1);
+}
+.schoolResults p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.schoolResults button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-3);
+  border-radius: 12px;
+  background: var(--surface-canvas);
+  text-align: left;
+}
+.schoolResults button span {
+  flex: 1;
+  font-size: 14px;
+}
+.parentGuide h2 {
+  font-size: 15px;
+  font-weight: 650;
+  margin-bottom: var(--space-5);
+}
+.parentGuide ol {
+  display: grid;
+  gap: var(--space-6);
+}
+.parentGuide li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.parentGuide li > span {
+  background: var(--surface-muted);
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.parentGuide li p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.parentGuide li strong {
+  display: block;
+  font-weight: 650;
+}
+.footer {
+  position: sticky;
+  bottom: 0;
+  padding: var(--space-4) var(--page-gutter) max(var(--space-4), env(safe-area-inset-bottom));
+  background: var(--surface-raised);
+  display: grid;
+  gap: var(--space-3);
+}
+.footer > p {
+  font-size: 11px;
+  text-align: center;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+@keyframes arrive {
+  from {
+    opacity: 0.5;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .content {
+    animation: none;
+  }
+  .role {
+    transition: none;
+  }
+}

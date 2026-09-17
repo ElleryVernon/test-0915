@@ -111,8 +111,12 @@ const runtimeEnv = (appURL) => [
   ...(isCustom(appURL) ? [`TRUSTED_PROXIES=${lbAddress()}`] : []),
 ].join(',');
 const secretEnv = 'AUTH_SECRET=AUTH_SECRET:latest,OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,VALKEY_CA_PEM=VALKEY_CA_PEM:latest';
-const oauthSecretEnv = 'GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest';
-const hasOAuthSecrets = () => !!tryGcloud('secrets', 'describe', 'GOOGLE_CLIENT_ID') && !!tryGcloud('secrets', 'describe', 'GOOGLE_CLIENT_SECRET');
+const oauthSecretNames = ['GOOGLE', 'NAVER', 'KAKAO'].flatMap(provider => [`${provider}_CLIENT_ID`, `${provider}_CLIENT_SECRET`]);
+const oauthSecretEnv = oauthSecretNames.map(name => `${name}=${name}:latest`).join(',');
+const requireOAuthSecrets = () => {
+  for (const name of oauthSecretNames) if (!tryGcloud('secrets', 'versions', 'describe', 'latest', `--secret=${name}`, '--format=value(name)')) fail(`OAuth secret unavailable: ${name}`);
+  return oauthSecretEnv;
+};
 const vpc = ['--network=default', `--subnet=default`, '--vpc-egress=private-ranges-only'];
 
 function runJob(name, jobArgs, timeout) {
@@ -135,6 +139,11 @@ function jobLogs(execution) {
 }
 
 const commands = {
+  migrate() {
+    const result = runJob('memoryz-migrate', 'migrate,up', '600s');
+    if (!result.succeeded) fail(`MIGRATION_FAILED ${result.execution}`);
+    console.log(`MIGRATION_OK ${result.execution}`);
+  },
   image() {
     const build = spawnSync('docker', ['buildx', 'build', '--platform', 'linux/amd64', '--build-arg', `VERSION=${tag}`, '-t', image, '--push', '.'], { stdio: 'inherit', env: dockerEnvOnce() });
     if (build.status !== 0) fail('docker build/push failed');
@@ -192,7 +201,7 @@ const commands = {
     // jitter: none — clients hold no persistent connections, so a new revision starts no reconnect wave [site scripts/deploy.mjs:152]
     const deploy = (appURL) => gcloud('run', 'deploy', SERVICE, `--region=${REGION}`, `--image=${image}`, `--service-account=${SA}`, '--platform=managed', '--allow-unauthenticated',
       '--min-instances=1', '--max-instances=3', '--concurrency=80', '--cpu=1', '--memory=1Gi', '--timeout=300', '--cpu-boost', '--port=8080', `--ingress=${ingress}`, '--execution-environment=gen2',
-      `--set-cloudsql-instances=${SQL_INSTANCE}`, ...vpc, `--set-env-vars=${runtimeEnv(appURL)}`, `--set-secrets=${secretEnv}${hasOAuthSecrets() ? ',' + oauthSecretEnv : ''}`,
+      `--set-cloudsql-instances=${SQL_INSTANCE}`, ...vpc, `--update-env-vars=${runtimeEnv(appURL)}`, `--update-secrets=${secretEnv},${requireOAuthSecrets()}`,
       // jitter: none — one startup probe per instance, paced from that instance's own start; the database check belongs here [site scripts/deploy.mjs:154]
       '--startup-probe=httpGet.path=/api/health,httpGet.port=8080,initialDelaySeconds=2,periodSeconds=3,failureThreshold=20,timeoutSeconds=3',
       // Liveness asks only whether the process serves HTTP (/api/live, no I/O): a liveness check that
@@ -207,6 +216,9 @@ const commands = {
     let url = deploy(custom || existing || `https://${SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app`);
     const configured = gcloud('run', 'services', 'describe', SERVICE, `--region=${REGION}`, '--format=value(spec.template.spec.containers[0].env)');
     if (!custom && !configured.includes(url)) url = deploy(url);
+    // A prior rollback can pin traffic to an explicit revision. Deploying a new
+    // image preserves that pin, so explicitly promote this release after startup.
+    gcloud('run', 'services', 'update-traffic', SERVICE, `--region=${REGION}`, '--to-latest');
     console.log(`SERVICE_DEPLOYED ${custom || url} ingress=${ingress} image=${image}`);
   },
   'verify-service'() {
@@ -231,7 +243,7 @@ const commands = {
     expect(a['run.googleapis.com/cloudsql-instances'] === SQL_INSTANCE, 'cloud sql instance');
     expect(!!c.startupProbe?.httpGet && c.startupProbe.httpGet.path === '/api/health', 'startup probe');
     expect(!!c.livenessProbe?.httpGet && c.livenessProbe.httpGet.path === '/api/live', `liveness probe on /api/live (${c.livenessProbe?.httpGet?.path})`);
-    for (const name of ['AUTH_SECRET', 'OPENROUTER_API_KEY', 'VALKEY_CA_PEM']) expect(envs[name] === `secret:${name}`, `secret env ${name}`);
+    for (const name of ['AUTH_SECRET', 'OPENROUTER_API_KEY', 'VALKEY_CA_PEM', ...['GOOGLE', 'NAVER', 'KAKAO'].flatMap((provider) => [`${provider}_CLIENT_ID`, `${provider}_CLIENT_SECRET`])]) expect(envs[name] === `secret:${name}`, `secret env ${name}`);
     expect(envs.ENV === 'production' && envs.OTEL_EXPORTER === 'gcp' && envs.DB_IAM_AUTH === 'true' && envs.BLOB_STORE === 'gcs' && envs.VALKEY_IAM_AUTH === 'true', 'runtime env');
     // The public origin is either the run.app URL (ingress all) or, after the cutover, the custom domain
     // behind the load balancer (ingress internal-and-cloud-load-balancing).
@@ -241,6 +253,10 @@ const commands = {
     expect(ingress === (custom ? 'internal-and-cloud-load-balancing' : 'all'), `ingress ${ingress}`);
     expect(custom ? envs.TRUSTED_PROXIES === lbAddress() : !envs.TRUSTED_PROXIES, `TRUSTED_PROXIES ${envs.TRUSTED_PROXIES ?? '(unset)'} (load balancer ${custom ? lbAddress() : 'none'})`);
     const latest = s.status.latestReadyRevisionName;
+    expect(latest === s.status.latestCreatedRevisionName, 'newest revision is ready');
+    expect(c.image === image, 'requested image is deployed');
+    const revision = gcloudJSON('run', 'revisions', 'describe', latest, `--region=${REGION}`);
+    expect(revision.status?.conditions?.some((condition) => condition.type === 'Active' && condition.status === 'True'), 'serving revision is active');
     const traffic = (s.status.traffic ?? []).find((x) => x.latestRevision || x.revisionName === latest);
     expect(traffic && traffic.percent === 100, 'latest revision takes 100% traffic');
     const ready = (s.status.conditions ?? []).find((x) => x.type === 'Ready')?.status;
@@ -340,11 +356,12 @@ const commands = {
   'verify-oauth'() {
     const versions = (name) => (tryGcloud('secrets', 'versions', 'list', name, '--filter=state=ENABLED', '--format=value(name)') ?? '').split('\n').filter(Boolean).length;
     const accessor = (name) => { const pol = tryGcloud('secrets', 'get-iam-policy', name, '--format=json'); return !!pol && (JSON.parse(pol).bindings ?? []).some((b) => b.role === 'roles/secretmanager.secretAccessor' && b.members.includes(`serviceAccount:${SA}`)); };
-    const client = versions('GOOGLE_CLIENT_ID');
-    const secret = versions('GOOGLE_CLIENT_SECRET');
-    const ok = client > 0 && secret > 0 && accessor('GOOGLE_CLIENT_ID') && accessor('GOOGLE_CLIENT_SECRET');
-    if (!ok) fail(`OAUTH_SECRETS_NOT_OK client=${client}v secret=${secret}v`);
-    console.log(`OAUTH_SECRETS_OK client=${client}v secret=${secret}v accessor=true`);
+    for (const name of oauthSecretNames) {
+      const enabled = versions(name);
+      const allowed = accessor(name);
+      if (!enabled || !allowed) fail(`OAUTH_SECRETS_NOT_OK ${name} enabled=${enabled} accessor=${allowed}`);
+    }
+    console.log(`OAUTH_SECRETS_OK providers=3 secrets=${oauthSecretNames.length} accessor=true`);
   },
 };
 if (!commands[command]) {

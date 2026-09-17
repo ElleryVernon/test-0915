@@ -15,6 +15,7 @@ import {
   Camera,
   Trash2,
   Search,
+  FolderOpen,
   Sparkles,
   Sigma,
   Atom,
@@ -34,15 +35,12 @@ import {
   runAiTask,
   type AiTaskRecord,
 } from '@/lib/ai-task';
-import { dueCards, generatedItemCount, type GenerationMode } from './logic';
+import { generatedItemCount, type GenerationMode } from './logic';
 import {
   examCountdown,
   materialMeta,
-  nextReviewDay,
-  reviewMinutes,
   studyMethods,
   subjectInsight,
-  subjectMeta,
   subjectSummary,
 } from './insights';
 import {
@@ -60,6 +58,17 @@ import { useJourneyState } from '../journey';
 import { StudyHeader } from './study-header';
 import { Checkbox } from '@/components/ui-choice';
 import { DateField } from '@/components/ui-date';
+import { ActionGroup, ActionRow } from '@/components/ui-content';
+import library from './study-library.module.css';
+import { CardLibrary } from './card-library';
+import { soleUploadSubject, studyOnboarding } from '@/lib/study-onboarding';
+import { StudyOnboarding } from './study-onboarding';
+import { StudyLibraryEntry } from './library-entry';
+import { FirstLearningWelcome } from './first-learning';
+import { firstLearning } from '@/lib/first-learning';
+import { StudyInvitation } from './study-invitation';
+import { LearningFolders } from './learning-folders';
+import { UNFILED_MATERIALS } from '@/lib/material-folders';
 
 export function SubjectGlyph({ name }: { name: string }) {
   return /수학|미적분|대수/.test(name) ? (
@@ -83,52 +92,160 @@ const dayLabel = (iso: string) =>
     timeZone: 'Asia/Seoul',
   });
 
+/** Start with a usable source; expose the learning hub once there is something to study. */
 export function StudyHome(props: ScreenProps) {
-  const [add, setAdd] = useState(false);
-  const [create, setCreate] = useState(false);
-  // Home's "사진 찍기": go to a subject's upload sheet with the camera first; with no subject yet,
-  // the subject editor opens and the upload follows the first subject made.
-  const cameraIntent = useRef(params(props.path).get('upload') === 'camera');
-  const subjectCount = props.data.subjects.length;
-  const latestSubject = props.data.subjects[subjectCount - 1];
+  const [addingSubject, setAddingSubject] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [generation, setGeneration] = useState<GenerationMode | null>(null);
+  const { phase } = studyOnboarding(props.data);
+  const welcome =
+    firstLearning(props.data).showWelcome && params(props.path).get('methods') !== '1';
+  function createFirstCard() {
+    if (!props.data.subjects.length) setAddingSubject(true);
+    else props.navigate('/create-card');
+  }
   useEffect(() => {
-    if (!cameraIntent.current) return;
-    if (latestSubject) {
-      cameraIntent.current = false;
-      // Replace, not push: back from the upload sheet returns to where 사진 찍기 was pressed.
-      props.navigate(`/subjects/${latestSubject.id}?upload=1&capture=1`, { replace: true });
-    } else {
-      // keepScreen: remounting this screen would drop the editor opened here and the intent itself.
-      props.navigate('/study', { replace: true, keepScreen: true });
+    if (params(props.path).get('upload') === 'camera') {
+      props.navigate('/subjects?upload=camera', { replace: true });
+    }
+  }, [props.path, props.navigate]);
+  const methods = studyMethods(props.data);
+  const features = [
+    { key: 'cards', label: '플래시카드', description: '기억할 개념을 차근차근 복습해요' },
+    { key: 'essay', label: '서술형 도우미', description: '생각을 정리하고 답안을 완성해요' },
+    { key: 'quiz', label: '문제은행', description: '내 자료로 만든 문제를 풀어요' },
+    { key: 'wrong', label: '오답노트', description: '헷갈린 개념을 다시 확인해요' },
+  ] as const;
+  return (
+    <>
+      <StudyHeader title="학습" large />
+      <div className={library.home} data-study-home>
+        {welcome ? (
+          <FirstLearningWelcome props={props} onAddSource={() => setSourceOpen(true)} />
+        ) : phase !== 'ready' ? (
+          <StudyOnboarding
+            props={props}
+            onAddSource={() => setSourceOpen(true)}
+            onGenerate={setGeneration}
+            onManualCard={createFirstCard}
+          />
+        ) : (
+          <>
+            <StudyInvitation props={props} />
+            <section className={library.section} aria-labelledby="study-methods-heading">
+              <h2 id="study-methods-heading" className={library.methodsHeading}>
+                원하는 방식으로 공부하기
+              </h2>
+              <nav className={library.featureGrid} aria-label="학습 방법">
+                {features.map((feature) => {
+                  const method = methods.find((item) => item.key === feature.key)!;
+                  const Icon = METHOD_ICONS[feature.key];
+                  return (
+                    <button
+                      type="button"
+                      key={feature.key}
+                      className={library.feature}
+                      onClick={() => props.navigate(method.path)}
+                    >
+                      <span className={library.featureTop}>
+                        <Icon size={26} aria-hidden="true" />
+                        <ChevronRight size={17} aria-hidden="true" />
+                      </span>
+                      <strong>{feature.label}</strong>
+                      <span className={library.featureDescription}>{feature.description}</span>
+                      <small>{method.meta}</small>
+                    </button>
+                  );
+                })}
+              </nav>
+            </section>
+          </>
+        )}
+        <StudyLibraryEntry onClick={() => props.navigate('/subjects')} />
+      </div>
+      {sourceOpen && (
+        <SourceUploadFlow props={props} onClose={() => setSourceOpen(false)} sourceOnly />
+      )}
+      {addingSubject && (
+        <SubjectEditor
+          open
+          onClose={() => setAddingSubject(false)}
+          props={props}
+          nextStep="card"
+          onCreated={(subject) => {
+            setAddingSubject(false);
+            props.navigate(`/create-card?subject=${subject.id}`);
+          }}
+        />
+      )}
+      {generation && (
+        <GenerationSheet
+          key={generation}
+          open
+          onClose={() => setGeneration(null)}
+          props={props}
+          mode={generation}
+        />
+      )}
+    </>
+  );
+}
+
+/** Reused in feature landing headers, never during an active exercise. */
+export function StudyLibraryAction({ props }: { props: ScreenProps }) {
+  return (
+    <button
+      type="button"
+      className={library.libraryAction}
+      onClick={() => props.navigate('/subjects')}
+    >
+      <FolderOpen size={17} aria-hidden="true" />내 과목·자료
+    </button>
+  );
+}
+
+export function StudySubjectLibrary(props: ScreenProps) {
+  const [unfiled, setUnfiled] = useState(false);
+  const [unfiledMaterial, setUnfiledMaterial] = useState<Material | null>(null);
+  const [add, setAdd] = useState(
+    params(props.path).get('create') === 'card' && !props.data.subjects.length,
+  );
+  const [create, setCreate] = useState(false);
+  const [manage, setManage] = useState(false);
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [cardSetup, setCardSetup] = useState(params(props.path).get('create') === 'card');
+  const [uploadIntent, setUploadIntent] = useState<'file' | 'camera' | null>(() => {
+    const upload = params(props.path).get('upload');
+    return upload === 'camera' ? 'camera' : upload === '1' ? 'file' : null;
+  });
+  useEffect(() => {
+    const query = params(props.path);
+    if (query.get('create') === 'card' && props.data.subjects.length) {
+      props.navigate('/create-card', { replace: true });
+    } else if (query.has('upload') || query.get('create') === 'card') {
+      // Consume the entry intent without remounting the active setup sheet. Closing it must
+      // not make it return on refresh or after an unrelated subject is created later.
+      props.navigate('/subjects', { replace: true, keepScreen: true });
+    }
+  }, [props.path, props.navigate, props.data.subjects.length]);
+  function createCard() {
+    setCreate(false);
+    if (props.data.subjects.length) props.navigate('/create-card');
+    else {
+      setCardSetup(true);
       setAdd(true);
     }
-    // The intent resolves on the subject list; navigate is stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subjectCount]);
-  // Closing the editor without making a subject abandons the camera intent (a subject made later
-  // from this screen does not open the camera by surprise).
-  const editorWasOpen = useRef(false);
-  useEffect(() => {
-    if (add) editorWasOpen.current = true;
-    else if (editorWasOpen.current) {
-      editorWasOpen.current = false;
-      if (subjectCount === 0) cameraIntent.current = false;
-    }
-  }, [add, subjectCount]);
+  }
   const [semesterOpen, setSemesterOpen] = useState(false);
   const [semester, setSemester] = useJourneyState('study.semester', '');
   const now = Date.now();
   const subjects = props.data.subjects.filter((s) => !semester || s.semester === semester);
   const semesters = [...new Set(props.data.subjects.map((s) => s.semester))];
-  const due = dueCards(props.data.cards, now).length;
-  const hasCards = props.data.cards.some((c) => !c.deleted);
-  const next = due ? null : nextReviewDay(props.data.cards, new Date(now));
-  const yesterday = props.data.stats.yesterdayCards;
   return (
     <>
       <StudyHeader
-        title="학습"
-        large
+        title="내 과목·자료"
+        back={() => props.back('/study')}
         action={
           <>
             <IconButton label="학습 검색" onClick={() => props.navigate('/search')}>
@@ -140,123 +257,201 @@ export function StudyHome(props: ScreenProps) {
           </>
         }
       />
-      <div className="page-inset pb-8">
-        {/* The row opens the card library; the review itself starts from there or from home. */}
-        <button
-          className="study-today"
-          onClick={() => (hasCards ? props.navigate('/flashcards') : setCreate(true))}
-        >
-          <span className="study-today-copy">
-            <strong>
-              {due
-                ? `오늘 복습 ${due}장`
-                : hasCards
-                  ? '오늘 복습을 마쳤어요'
-                  : '복습 카드가 아직 없어요'}
-            </strong>
-            <small>
-              {due
-                ? `약 ${reviewMinutes(due)}분${yesterday ? ` · 어제 ${yesterday}장 했어요` : ''}`
-                : next
-                  ? `다음 복습은 ${next.when} ${next.count}장`
-                  : hasCards
-                    ? '예정된 복습이 없어요'
-                    : '자료를 올리면 카드가 생겨요'}
-            </small>
-          </span>
-          <span className={`study-today-pill${due ? ' is-primary' : ''}`}>
-            {due ? '바로 가기' : hasCards ? '카드 보기' : '만들기'}
-          </span>
-        </button>
-        <div className="study-section-head">
-          <h2>내 과목</h2>
-          {semesters.length > 0 && (
-            <button
-              className="study-chip"
-              aria-haspopup="dialog"
-              onClick={() => setSemesterOpen(true)}
-            >
-              {semester || (semesters.length === 1 ? semesters[0] : '전체 학기')}
-              <ChevronDown size={12} />
-            </button>
-          )}
-        </div>
-        <div className="subject-library">
-          {subjects.map((s) => {
-            const summary = subjectSummary(props.data, s.id, now);
-            const exam = examCountdown(s, new Date(now));
-            return (
-              <button
-                key={s.id}
-                onClick={() => props.navigate(`/subjects/${s.id}`)}
-                className="subject-library-row"
-              >
-                <span className="subject-library-icon">
-                  <SubjectGlyph name={s.name} />
-                </span>
-                <span className="subject-library-copy">
-                  <span className="subject-library-name">
-                    <span>{s.name}</span>
-                    {exam && <span className="study-dday">{exam.short}</span>}
-                  </span>
-                  <small>{subjectMeta(summary)}</small>
-                </span>
-                {summary.due > 0 && (
-                  <span className="subject-library-due">오늘 {summary.due}장</span>
-                )}
-                <ChevronRight size={18} className="shrink-0 text-disabled" />
-              </button>
-            );
-          })}
-          {!subjects.length && (
-            <p className="study-empty-note">이 학기에 공부할 과목을 추가해 보세요.</p>
-          )}
-          <div className="study-add-row">
-            <button onClick={() => setAdd(true)}>
-              <Plus size={16} />
-              과목 추가
-            </button>
-            <button onClick={() => props.navigate('/completed-subjects')}>
-              배운 과목 설정
-              <ChevronRight size={12} />
+      <div className={library.home} data-study-home>
+        <section className={library.section} aria-labelledby="study-subjects-title">
+          <div className={library.heading}>
+            <h2 id="study-subjects-title">과목 폴더</h2>
+            <button type="button" onClick={() => setManage(true)}>
+              과목 관리
             </button>
           </div>
-        </div>
-        <div className="study-section-head">
-          <h2>학습 방법</h2>
-        </div>
-        <nav className="study-methods" aria-label="학습 방법">
-          {studyMethods(props.data).map((m) => {
-            const Icon = METHOD_ICONS[m.key];
-            return (
-              <button key={m.key} onClick={() => props.navigate(m.path)}>
-                <Icon size={24} />
-                <span>{m.label}</span>
-                <small>{m.meta}</small>
-                <ChevronRight size={18} className="shrink-0 text-disabled" />
+          <div className={library.toolbar}>
+            {semesters.length > 0 && (
+              <button
+                className="study-chip"
+                aria-haspopup="dialog"
+                onClick={() => setSemesterOpen(true)}
+              >
+                {semester || '전체 학기'}
+                <ChevronDown size={12} />
               </button>
-            );
-          })}
-        </nav>
+            )}
+          </div>
+          <div>
+            {(subjects.length > 0 || (!semester && props.data.materials.length > 0)) && (
+              <LearningFolders
+                data={props.data}
+                mode="materials"
+                semester={semester}
+                now={now}
+                onSelect={(id) =>
+                  id === UNFILED_MATERIALS ? setUnfiled(true) : props.navigate(`/subjects/${id}`)
+                }
+              />
+            )}
+            {!subjects.length && !(!semester && props.data.materials.length > 0) && (
+              <div className={library.empty}>
+                <p>
+                  {props.data.subjects.length
+                    ? '이 학기에 등록한 과목이 없어요.'
+                    : '공부할 과목과 첫 자료를 추가해 보세요.'}
+                </p>
+                {props.data.subjects.length ? (
+                  <Button
+                    variant="secondary"
+                    className="mt-3 w-full"
+                    onClick={() => setSemester('')}
+                  >
+                    전체 학기 보기
+                  </Button>
+                ) : (
+                  <Button className="mt-3 w-full" onClick={() => setUploadIntent('file')}>
+                    첫 과목 폴더 만들기
+                  </Button>
+                )}
+              </div>
+            )}
+            {subjects.length > 0 && (
+              <button type="button" className={library.addFolder} onClick={() => setAdd(true)}>
+                <Plus size={18} />새 과목 폴더
+              </button>
+            )}
+          </div>
+        </section>
       </div>
-      <SubjectEditor
-        open={add}
+      <Sheet open={unfiled} onClose={() => setUnfiled(false)} title="과목 미지정 자료">
+        <p className={library.manageIntro}>
+          과목 정보를 찾을 수 없는 자료예요. 저장한 원문은 계속 확인할 수 있어요.
+        </p>
+        <div className="study-options">
+          {props.data.materials
+            .filter(
+              (material) =>
+                !props.data.subjects.some((subject) => subject.id === material.subjectId),
+            )
+            .map((material) => (
+              <button
+                key={material.id}
+                type="button"
+                onClick={() => {
+                  setUnfiled(false);
+                  setUnfiledMaterial(material);
+                }}
+              >
+                <MaterialIcon type={material.type} />
+                <span>{material.title}</span>
+                <ChevronRight size={18} />
+              </button>
+            ))}
+        </div>
+      </Sheet>
+      <MaterialViewer
+        material={unfiledMaterial}
         onClose={() => {
-          // Closing the editor without a subject abandons the camera intent.
-          cameraIntent.current = false;
-          setAdd(false);
+          setUnfiledMaterial(null);
+          setUnfiled(true);
         }}
-        props={props}
       />
+      <Sheet open={manage} onClose={() => setManage(false)} title="과목 관리">
+        <div className={library.manage}>
+          <section>
+            <div className={library.heading}>
+              <h3>공부 중인 과목</h3>
+              <span>{props.data.subjects.length}개</span>
+            </div>
+            <p className={library.manageIntro}>과목별로 자료·문제·카드를 모아 두는 공간이에요.</p>
+            {[...props.data.subjects]
+              .sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }))
+              .map((s) => (
+                <button
+                  key={s.id}
+                  className={library.subjectRow}
+                  onClick={() => {
+                    setManage(false);
+                    setEditingSubject(s);
+                  }}
+                >
+                  <span className={library.subjectCopy}>
+                    <strong>{s.name}</strong>
+                    <small>{s.semester || '학기 미지정'}</small>
+                  </span>
+                  <span className="text-xs text-muted">설정</span>
+                  <ChevronRight size={16} />
+                </button>
+              ))}
+            <Button
+              variant="secondary"
+              className="w-full mt-3"
+              onClick={() => {
+                setManage(false);
+                setAdd(true);
+              }}
+            >
+              <Plus size={18} />
+              공부할 과목 추가
+            </Button>
+          </section>
+          <section className={library.history}>
+            <button
+              onClick={() => {
+                setManage(false);
+                props.navigate('/completed-subjects');
+              }}
+            >
+              <span>이전에 배운 과목 · {props.data.profile.completedSubjects.length}개</span>
+              <ChevronRight size={18} />
+            </button>
+            <p>이수한 과목을 학습 이력으로 기록해요. 자료를 담는 내 과목과는 별도로 저장돼요.</p>
+          </section>
+        </div>
+      </Sheet>
+      {(add || editingSubject) && (
+        <SubjectEditor
+          key={editingSubject?.id || 'new'}
+          open
+          onClose={() => {
+            setAdd(false);
+            setEditingSubject(null);
+            setCardSetup(false);
+          }}
+          props={props}
+          subject={editingSubject || undefined}
+          nextStep="card"
+          onCreated={
+            cardSetup
+              ? (subject) => {
+                  setAdd(false);
+                  setCardSetup(false);
+                  props.navigate(`/create-card?subject=${subject.id}`);
+                }
+              : (subject) => {
+                  setAdd(false);
+                  props.navigate(`/subjects/${subject.id}`);
+                }
+          }
+        />
+      )}
       <CreateSheet
         open={create}
         onClose={() => setCreate(false)}
         props={props}
+        onUpload={() => {
+          setCreate(false);
+          setUploadIntent('file');
+        }}
+        onCreateCard={createCard}
         onAddSubject={() => {
           setCreate(false);
           setAdd(true);
         }}
       />
+      {uploadIntent && (
+        <SourceUploadFlow
+          props={props}
+          onClose={() => setUploadIntent(null)}
+          capture={uploadIntent === 'camera'}
+        />
+      )}
       <Sheet open={semesterOpen} onClose={() => setSemesterOpen(false)} title="학기 선택">
         <div className="study-options">
           {['', ...semesters].map((value) => (
@@ -283,88 +478,125 @@ function CreateSheet({
   onClose,
   props,
   onAddSubject,
+  onUpload,
+  onCreateCard,
 }: {
   open: boolean;
   onClose: () => void;
   props: ScreenProps;
   onAddSubject: () => void;
+  onUpload: () => void;
+  onCreateCard: () => void;
 }) {
-  const [picking, setPicking] = useState(false);
   const subjects = props.data.subjects;
-  const close = () => {
-    setPicking(false);
-    onClose();
-  };
-  const openUpload = (subject: Subject) => {
-    close();
-    props.navigate(`/subjects/${subject.id}?upload=1`);
-  };
   return (
-    <Sheet
-      open={open}
-      onClose={close}
-      title={picking ? '어느 과목에 올릴까요?' : '무엇을 만들까요?'}
-    >
-      {picking ? (
-        <div className="study-options">
-          {subjects.map((s) => (
-            <button key={s.id} onClick={() => openUpload(s)}>
-              <span>{s.name}</span>
-              <ChevronRight size={18} className="text-disabled" />
+    <Sheet open={open} onClose={onClose} title="무엇을 만들까요?">
+      <div className="study-create">
+        <button onClick={onUpload}>
+          <span className="study-create-icon">
+            <Upload size={22} />
+          </span>
+          <span className="study-create-copy">
+            <strong>자료 올리기</strong>
+            <small>
+              {subjects.length
+                ? '필기·PDF·사진에서 문제와 카드를 만들어요'
+                : '과목을 먼저 만든 뒤 올릴 수 있어요'}
+            </small>
+          </span>
+          <ChevronRight size={18} className="text-disabled" />
+        </button>
+        <button onClick={onAddSubject}>
+          <span className="study-create-icon">
+            <Plus size={22} />
+          </span>
+          <span className="study-create-copy">
+            <strong>과목 추가</strong>
+            <small>새 과목의 자료 보관함을 만들어요</small>
+          </span>
+          <ChevronRight size={18} className="text-disabled" />
+        </button>
+        <button onClick={onCreateCard}>
+          <span className="study-create-icon">
+            <Layers size={22} />
+          </span>
+          <span className="study-create-copy">
+            <strong>카드 만들기</strong>
+            <small>개념·관계·비교·가림 카드를 직접 만들어요</small>
+          </span>
+          <ChevronRight size={18} className="text-disabled" />
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+/** Shared source intake for first use, the library menu and the home camera shortcut. */
+function SourceUploadFlow({
+  props,
+  onClose,
+  capture = false,
+  sourceOnly = false,
+}: {
+  props: ScreenProps;
+  onClose: () => void;
+  capture?: boolean;
+  sourceOnly?: boolean;
+}) {
+  const [subject, setSubject] = useState(() =>
+    soleUploadSubject(props.data.subjects, props.data.materials),
+  );
+  const [creating, setCreating] = useState(!props.data.subjects.length);
+  if (subject)
+    return (
+      <UploadSheet
+        open
+        props={props}
+        subject={subject}
+        onClose={onClose}
+        capture={capture}
+        sourceOnly={sourceOnly}
+      />
+    );
+  if (creating)
+    return (
+      <SubjectEditor
+        open
+        props={props}
+        onClose={onClose}
+        onCreated={(saved) => {
+          setCreating(false);
+          setSubject(saved);
+        }}
+      />
+    );
+  return (
+    <Sheet open onClose={onClose} title="자료를 담을 폴더 선택">
+      <p className={library.manageIntro}>
+        과목 폴더에 자료를 모아 두면 문제와 카드도 함께 정리돼요.
+      </p>
+      <div className="study-options">
+        {[...props.data.subjects]
+          .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+          .map((item) => (
+            <button type="button" key={item.id} onClick={() => setSubject(item)}>
+              <FolderOpen size={21} />
+              <span>
+                {item.name}
+                <small className={library.uploadFolderMeta}>
+                  {item.semester || '학기 미지정'} · 자료{' '}
+                  {props.data.materials.filter((material) => material.subjectId === item.id).length}
+                  개
+                </small>
+              </span>
+              <ChevronRight size={18} />
             </button>
           ))}
-        </div>
-      ) : (
-        <div className="study-create">
-          <button
-            onClick={() =>
-              subjects.length === 1
-                ? openUpload(subjects[0])
-                : subjects.length
-                  ? setPicking(true)
-                  : onAddSubject()
-            }
-          >
-            <span className="study-create-icon">
-              <Upload size={22} />
-            </span>
-            <span className="study-create-copy">
-              <strong>자료 올리기</strong>
-              <small>
-                {subjects.length
-                  ? '필기·PDF·사진에서 문제와 카드를 만들어요'
-                  : '과목을 먼저 만든 뒤 올릴 수 있어요'}
-              </small>
-            </span>
-            <ChevronRight size={18} className="text-disabled" />
-          </button>
-          <button onClick={onAddSubject}>
-            <span className="study-create-icon">
-              <Plus size={22} />
-            </span>
-            <span className="study-create-copy">
-              <strong>과목 추가</strong>
-              <small>시험 날짜를 함께 정하면 D-day 가 보여요</small>
-            </span>
-            <ChevronRight size={18} className="text-disabled" />
-          </button>
-          <button
-            onClick={() => {
-              close();
-              props.navigate('/create-card');
-            }}
-          >
-            <span className="study-create-icon">
-              <Layers size={22} />
-            </span>
-            <span className="study-create-copy">
-              <strong>카드 만들기</strong>
-              <small>개념·관계·비교·가림 카드를 직접 만들어요</small>
-            </span>
-            <ChevronRight size={18} className="text-disabled" />
-          </button>
-        </div>
-      )}
+        <button type="button" onClick={() => setCreating(true)}>
+          <span>새 과목 폴더 만들기</span>
+          <Plus size={18} />
+        </button>
+      </div>
     </Sheet>
   );
 }
@@ -374,11 +606,15 @@ function SubjectEditor({
   onClose,
   props,
   subject,
+  onCreated,
+  nextStep = 'source',
 }: {
   open: boolean;
   onClose: () => void;
   props: ScreenProps;
   subject?: Subject;
+  onCreated?: (subject: Subject) => void;
+  nextStep?: 'source' | 'card';
 }) {
   const [name, setName] = useState(subject?.name || '');
   const [examName, setExamName] = useState(subject?.examDate ? subject.examName || '' : '');
@@ -387,8 +623,21 @@ function SubjectEditor({
   const action = useAction();
   const past = !!examDate && examDate < seoulDateKey(new Date());
   return (
-    <Sheet open={open} onClose={onClose} title={subject ? '과목 설정' : '어떤 과목을 공부하나요?'}>
-      <div className="space-y-5">
+    <Sheet
+      open={open}
+      onClose={() => {
+        if (!action.busy) onClose();
+      }}
+      title={subject ? '과목 설정' : '어떤 과목을 공부하나요?'}
+    >
+      <div className={`space-y-5 ${library.editor}`}>
+        {onCreated && (
+          <p className="text-sm text-muted leading-relaxed">
+            {nextStep === 'card'
+              ? '카드를 담을 과목을 먼저 만들어요. 다음 화면에서 카드를 직접 작성할 수 있어요.'
+              : '자료를 정리할 과목을 먼저 만들어요. 다음 화면에서 필기나 파일을 추가할 수 있어요.'}
+          </p>
+        )}
         <label className="block text-sm font-semibold">
           과목 이름
           <input
@@ -409,50 +658,56 @@ function SubjectEditor({
             ))}
           </div>
         )}
-        <fieldset className="study-exam">
-          <legend>
-            시험 일정 <small>선택</small>
-          </legend>
-          <div className="flex flex-wrap gap-2">
-            {EXAM_NAMES.map((n) => (
-              <Chip
-                key={n}
-                active={examName === n}
-                onClick={() => setExamName(examName === n ? '' : n)}
+        <details className={library.exam} open={!!subject?.examDate}>
+          <summary>
+            시험 일정 <span>선택</span>
+            <ChevronDown size={16} />
+          </summary>
+          <fieldset className="study-exam">
+            <legend>
+              시험 일정 <small>선택</small>
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {EXAM_NAMES.map((n) => (
+                <Chip
+                  key={n}
+                  active={examName === n}
+                  onClick={() => setExamName(examName === n ? '' : n)}
+                >
+                  {n}
+                </Chip>
+              ))}
+            </div>
+            <input
+              className="field"
+              value={examName}
+              maxLength={20}
+              onChange={(e) => setExamName(e.target.value)}
+              placeholder="시험 이름 (비우면 '시험')"
+              aria-label="시험 이름"
+            />
+            <DateField
+              label="시험 날짜"
+              name="exam-date"
+              value={examDate}
+              onChange={setExamDate}
+              clearable
+            />
+            {past && <p className="study-exam-note">지난 날짜라 D-day 가 보이지 않아요.</p>}
+            {examDate && (
+              <button
+                type="button"
+                className="study-exam-clear"
+                onClick={() => {
+                  setExamDate('');
+                  setExamName('');
+                }}
               >
-                {n}
-              </Chip>
-            ))}
-          </div>
-          <input
-            className="field"
-            value={examName}
-            maxLength={20}
-            onChange={(e) => setExamName(e.target.value)}
-            placeholder="시험 이름 (비우면 '시험')"
-            aria-label="시험 이름"
-          />
-          <DateField
-            label="시험 날짜"
-            name="exam-date"
-            value={examDate}
-            onChange={setExamDate}
-            clearable
-          />
-          {past && <p className="study-exam-note">지난 날짜라 D-day 가 보이지 않아요.</p>}
-          {examDate && (
-            <button
-              type="button"
-              className="study-exam-clear"
-              onClick={() => {
-                setExamDate('');
-                setExamName('');
-              }}
-            >
-              시험 일정 지우기
-            </button>
-          )}
-        </fieldset>
+                시험 일정 지우기
+              </button>
+            )}
+          </fieldset>
+        </details>
         <ErrorNote error={action.error} />
         <Button
           className="w-full"
@@ -464,18 +719,31 @@ function SubjectEditor({
                 : subject?.examDate
                   ? { examDate: null }
                   : {};
-              await api(
+              const savedSubject = await api<Subject>(
                 subject ? `/subjects/${subject.id}` : '/subjects',
                 { name: name.trim(), ...exam },
                 subject ? 'PATCH' : 'POST',
               );
               await props.refresh();
-              onClose();
+              if (!subject && onCreated) onCreated(savedSubject);
+              else onClose();
               props.toast(subject ? '과목 설정을 저장했어요' : '새 과목을 만들었어요');
             })
           }
         >
-          {action.busy ? <BusyText>저장 중</BusyText> : subject ? '변경 사항 저장' : '과목 만들기'}
+          {action.busy ? (
+            <BusyText>저장 중</BusyText>
+          ) : subject ? (
+            '변경 사항 저장'
+          ) : onCreated ? (
+            nextStep === 'card' ? (
+              '과목 만들고 카드 작성'
+            ) : (
+              '과목 만들고 자료 추가'
+            )
+          ) : (
+            '과목 만들기'
+          )}
         </Button>
         {subject && (
           <>
@@ -494,7 +762,7 @@ function SubjectEditor({
                     취소
                   </Button>
                   <Button
-                    className="flex-1"
+                    className="flex-1 !bg-danger"
                     disabled={action.busy}
                     onClick={() =>
                       action.run(async () => {
@@ -524,9 +792,11 @@ export function SubjectDetail(props: ScreenProps) {
   const [settings, setSettings] = useState(false);
   const [upload, setUpload] = useState(params(props.path).get('upload') === '1');
   const [selectedId, setSelectedId] = useJourneyState<string | null>(
-    'subject.material', params(props.path).get('material'),
+    'subject.material',
+    params(props.path).get('material'),
   );
-  const selected = props.data.materials.find((m) => m.id === selectedId && m.subjectId === subjectId) ?? null;
+  const selected =
+    props.data.materials.find((m) => m.id === selectedId && m.subjectId === subjectId) ?? null;
   const setSelected = (material: Material | null) => setSelectedId(material?.id ?? null);
   const [view, setView] = useState(false);
   const [edit, setEdit] = useState(params(props.path).get('edit') === '1');
@@ -547,6 +817,7 @@ export function SubjectDetail(props: ScreenProps) {
   const now = Date.now();
   const materials = props.data.materials.filter((m) => m.subjectId === subject.id);
   const questions = props.data.questions.filter((q) => q.subjectId === subject.id);
+  const essays = props.data.essays.filter((essay) => essay.subjectId === subject.id);
   const cards = props.data.cards.filter((c) => c.subjectId === subject.id && !c.deleted);
   const summary = subjectSummary(props.data, subject.id, now);
   const exam = examCountdown(subject, new Date(now));
@@ -554,7 +825,7 @@ export function SubjectDetail(props: ScreenProps) {
   return (
     <>
       <StudyHeader
-        back={() => props.back('/study')}
+        back={() => props.back('/subjects')}
         action={
           <IconButton label="과목 설정" onClick={() => setSettings(true)}>
             <MoreHorizontal size={24} />
@@ -562,13 +833,21 @@ export function SubjectDetail(props: ScreenProps) {
         }
       />
       <div className={`page-inset subject-detail${tab === '자료' ? ' has-fixed-cta' : ''}`}>
+        <nav className={library.folderPath} aria-label="과목 폴더 경로">
+          <button type="button" onClick={() => props.navigate('/subjects')}>
+            내 과목·자료
+          </button>
+          <ChevronRight size={14} aria-hidden="true" />
+          <span aria-current="location">{subject.name}</span>
+        </nav>
         <p className="subject-detail-eyebrow">
           {subject.semester}
           {exam && <span className="study-dday">{exam.label}</span>}
         </p>
         <h1 className="subject-detail-title">{subject.name}</h1>
         <p className="subject-detail-meta">
-          자료 {summary.materials} · 문제 {summary.questions} · 카드 {summary.cards}
+          자료 {summary.materials} · 문제 {summary.questions + summary.essays} · 카드{' '}
+          {summary.cards}
           {summary.due > 0 && (
             <>
               {' · '}
@@ -579,7 +858,7 @@ export function SubjectDetail(props: ScreenProps) {
         <div className="subject-tabs">
           {[
             ['자료', materials.length],
-            ['문제', questions.length],
+            ['문제', questions.length + essays.length],
             ['카드', cards.length],
           ].map(([label, n]) => (
             <Chip key={label} active={tab === label} onClick={() => setTab(String(label))}>
@@ -637,8 +916,7 @@ export function SubjectDetail(props: ScreenProps) {
             {questions.length ? (
               <>
                 <p className="text-sm text-muted">
-                  총 {questions.length}문제 · 서술형{' '}
-                  {props.data.essays.filter((e) => e.subjectId === subject.id).length}문제
+                  객관식 {questions.length}문제 · 서술형 {essays.length}문제
                 </p>
                 {questions.slice(0, 8).map((q, i) => (
                   <button
@@ -664,8 +942,14 @@ export function SubjectDetail(props: ScreenProps) {
               </>
             ) : (
               <EmptyState
-                title="아직 만든 문제가 없어요"
-                description="자료를 선택하고 AI로 문제를 만들어 보세요."
+                title={
+                  essays.length ? `서술형 ${essays.length}문제가 있어요` : '아직 만든 문제가 없어요'
+                }
+                description={
+                  essays.length
+                    ? '아래 서술형 도우미에서 문제를 확인할 수 있어요.'
+                    : '자료를 선택하고 AI로 문제를 만들어 보세요.'
+                }
               />
             )}
             <Button variant="secondary" className="w-full" onClick={() => setGeneration('quiz')}>
@@ -676,35 +960,17 @@ export function SubjectDetail(props: ScreenProps) {
               className="w-full"
               onClick={() => props.navigate(`/essay?subject=${subject.id}`)}
             >
-              서술형 코칭으로
+              서술형 도우미{essays.length ? ` · ${essays.length}문제` : ''}
             </Button>
           </div>
         ) : (
-          <div className="mt-6 space-y-3">
-            <p className="text-sm text-muted">
-              오늘 복습 {dueCards(cards, now).length}장 · 전체 {cards.length}장
-            </p>
-            <Button
-              className="w-full"
-              onClick={() => props.navigate(`/flashcards?subject=${subject.id}`)}
-            >
-              카드 보관함 열기
-            </Button>
-            <Button
-              variant="secondary"
-              className="w-full"
-              onClick={() => props.navigate(`/create-card?subject=${subject.id}`)}
-            >
-              직접 카드 만들기
-            </Button>
-          </div>
+          <CardLibrary props={props} subjectId={subject.id} />
         )}
       </div>
       {tab === '자료' && (
         <div className="study-fixed-cta above-nav">
           <Button className="w-full" onClick={() => setUpload(true)}>
-            <Upload size={18} />
-            자료 올리기
+            <Upload size={18} />이 폴더에 자료 추가
           </Button>
         </div>
       )}
@@ -728,67 +994,65 @@ export function SubjectDetail(props: ScreenProps) {
         title={selected?.title || '자료'}
       >
         {selected && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-surface p-4 text-center">
-              <div>
-                <strong className="text-xl">
-                  {questions.filter((q) => q.materialId === selected.id).length}
-                </strong>
-                <p className="text-xs text-muted">객관식 문제</p>
-              </div>
-              <div>
-                <strong className="text-xl">
-                  {props.data.essays.filter((q) => q.materialId === selected.id).length}
-                </strong>
-                <p className="text-xs text-muted">서술형 문제</p>
-              </div>
-            </div>
-            <Button
-              className="w-full"
-              variant="secondary"
-              data-material-open
-              onClick={() => setView(true)}
-            >
-              원본 보기
-            </Button>
-            <Button className="w-full" variant="secondary" onClick={() => setEdit(true)}>
-              제목 · 본문 수정
-            </Button>
-            <div className="grid grid-cols-2 gap-2">
-              <Button onClick={() => questions.some((q) => q.materialId === selected.id)
-                ? props.navigate(`/quiz?material=${selected.id}`) : setGeneration('quiz')}>
-                {questions.some((q) => q.materialId === selected.id) ? '문제 풀기' : '문제 만들기'}
-              </Button>
+          <div className="space-y-5">
+            <div>
+              <p className="mb-4 text-sm text-muted">
+                객관식 {questions.filter((q) => q.materialId === selected.id).length}개{' · '}서술형{' '}
+                {props.data.essays.filter((q) => q.materialId === selected.id).length}개
+              </p>
               <Button
-                variant="secondary"
-                onClick={() => props.data.essays.some((e) => e.materialId === selected.id)
-                  ? props.navigate(`/essay?material=${selected.id}`) : setGeneration('essay')}
+                className="w-full"
+                onClick={() =>
+                  questions.some((q) => q.materialId === selected.id)
+                    ? props.navigate(`/quiz?material=${selected.id}`)
+                    : setGeneration('quiz')
+                }
               >
-                {props.data.essays.some((e) => e.materialId === selected.id) ? '서술형 코칭' : '서술형 만들기'}
+                <BookOpen size={18} />
+                {questions.some((q) => q.materialId === selected.id)
+                  ? '문제 풀기'
+                  : '첫 문제 만들기'}
               </Button>
-            </div>
-            <div className="space-y-1">
-              {(
-                [
-                  ['quiz', '문제 더 만들기'],
-                  ['essay', '서술형 더 만들기'],
-                  ['cards', '복습 카드 만들기'],
-                ] as const
-              ).filter(([mode]) =>
-                mode === 'cards' || (mode === 'quiz'
-                  ? questions.some((q) => q.materialId === selected.id)
-                  : props.data.essays.some((e) => e.materialId === selected.id))
-              ).map(([mode, label]) => (
-                <button
-                  key={mode}
-                  className="flex min-h-12 w-full items-center justify-between text-sm font-semibold"
-                  onClick={() => setGeneration(mode)}
+              {props.data.essays.some((e) => e.materialId === selected.id) && (
+                <Button
+                  className="mt-2 w-full"
+                  variant="secondary"
+                  onClick={() => props.navigate(`/essay?material=${selected.id}`)}
                 >
-                  {label}
-                  <ChevronRight size={18} />
-                </button>
-              ))}
+                  <PencilLine size={18} />
+                  서술형 코칭
+                </Button>
+              )}
             </div>
+            <ActionGroup label="자료 관리">
+              <ActionRow
+                icon={<FileText size={19} />}
+                data-material-open
+                onClick={() => setView(true)}
+              >
+                원본 보기
+              </ActionRow>
+              {selected.extraction !== 'combined' && (
+                <ActionRow icon={<PencilLine size={19} />} onClick={() => setEdit(true)}>
+                  제목 · 본문 수정
+                </ActionRow>
+              )}
+            </ActionGroup>
+            <ActionGroup label="학습 콘텐츠 만들기">
+              {questions.some((q) => q.materialId === selected.id) && (
+                <ActionRow icon={<BookOpen size={19} />} onClick={() => setGeneration('quiz')}>
+                  문제 더 만들기
+                </ActionRow>
+              )}
+              <ActionRow icon={<PencilLine size={19} />} onClick={() => setGeneration('essay')}>
+                {props.data.essays.some((q) => q.materialId === selected.id)
+                  ? '서술형 더 만들기'
+                  : '서술형 만들기'}
+              </ActionRow>
+              <ActionRow icon={<Layers size={19} />} onClick={() => setGeneration('cards')}>
+                복습 카드 만들기
+              </ActionRow>
+            </ActionGroup>
             <ErrorNote error={action.error} />
             {deleteMaterial ? (
               <div className="rounded-2xl bg-surface p-4">
@@ -818,10 +1082,15 @@ export function SubjectDetail(props: ScreenProps) {
                 </div>
               </div>
             ) : (
-              <Button variant="ghost" className="w-full" onClick={() => setDeleteMaterial(true)}>
-                <Trash2 size={17} />
-                자료 삭제
-              </Button>
+              <div className="pt-3">
+                <ActionRow
+                  danger
+                  icon={<Trash2 size={19} />}
+                  onClick={() => setDeleteMaterial(true)}
+                >
+                  자료 삭제
+                </ActionRow>
+              </div>
             )}
           </div>
         )}
@@ -930,6 +1199,7 @@ function UploadSheet({
   props,
   subject,
   capture = false,
+  sourceOnly = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -937,6 +1207,8 @@ function UploadSheet({
   subject: Subject;
   /** Opened from home's "사진 찍기": the camera comes first and reads as the main action. */
   capture?: boolean;
+  /** First-use onboarding separates saving a source from choosing a learning method. */
+  sourceOnly?: boolean;
 }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -1124,14 +1396,16 @@ function UploadSheet({
             }
           />
         </label>
-        <Checkbox
-          name="generate"
-          checked={generate}
-          disabled={!props.data.aiAvailable || action.busy}
-          onChange={setGenerate}
-        >
-          문제와 복습 카드 함께 만들기
-        </Checkbox>
+        {!sourceOnly && (
+          <Checkbox
+            name="generate"
+            checked={generate}
+            disabled={!props.data.aiAvailable || action.busy}
+            onChange={setGenerate}
+          >
+            문제와 복습 카드 함께 만들기
+          </Checkbox>
+        )}
         {generate && (
           <Checkbox
             name="essay"
@@ -1188,7 +1462,12 @@ function UploadSheet({
         <ErrorNote error={action.error} />
         <Button
           className="w-full"
-          disabled={action.busy || (!uncertainStage && retryIn > 0) || !title.trim() || (!file && !content.trim())}
+          disabled={
+            action.busy ||
+            (!uncertainStage && retryIn > 0) ||
+            !title.trim() ||
+            (!file && !content.trim())
+          }
           onClick={() => action.run(save)}
         >
           {action.busy ? (

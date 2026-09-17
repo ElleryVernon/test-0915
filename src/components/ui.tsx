@@ -11,7 +11,7 @@ export function Button({
   children,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'outline';
+  variant?: 'primary' | 'neutral' | 'secondary' | 'ghost' | 'outline';
   size?: 'default' | 'compact';
 }) {
   return (
@@ -64,6 +64,8 @@ export function Sheet({
   children,
   fullScreen = false,
   adaptiveHeight = false,
+  workspace = false,
+  headerAction,
 }: {
   open: boolean;
   onClose: () => void;
@@ -72,12 +74,15 @@ export function Sheet({
   children: ReactNode;
   fullScreen?: boolean;
   adaptiveHeight?: boolean;
+  /** A stable height for multi-step selection and creation workspaces. */
+  workspace?: boolean;
+  headerAction?: ReactNode;
 }) {
   const close = useJourneyLayer(open, onClose);
   const [surface, setSurface] = useState<HTMLDivElement | null>(null);
   const [height, setHeight] = useState<number>();
   useLayoutEffect(() => {
-    if (!surface || !adaptiveHeight || fullScreen) return;
+    if (!surface || !adaptiveHeight || fullScreen || workspace) return;
     const body = surface.querySelector<HTMLElement>('.sheet-body');
     const content = surface.querySelector<HTMLElement>('.sheet-body-content');
     const heading = surface.querySelector<HTMLElement>('.sheet-heading');
@@ -115,7 +120,7 @@ export function Sheet({
       observer.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [surface, adaptiveHeight, fullScreen]);
+  }, [surface, adaptiveHeight, fullScreen, workspace]);
   return (
     <Dialog.Root
       open={open}
@@ -127,7 +132,7 @@ export function Sheet({
         <Dialog.Overlay className="sheet-overlay" />
         <Dialog.Content
           ref={setSurface}
-          style={adaptiveHeight && !fullScreen && surface ? { height } : undefined}
+          style={adaptiveHeight && !fullScreen && !workspace && surface ? { height } : undefined}
           onEscapeKeyDown={(event) => {
             // Collapse a date field before dismissing its containing form.
             const target = event.target;
@@ -145,11 +150,18 @@ export function Sheet({
               expandedDate.focus();
             }
           }}
-          className={`sheet-content${fullScreen ? ' sheet-content-full' : ''}${adaptiveHeight && !fullScreen ? ' sheet-content-adaptive' : ''}`}
+          className={`sheet-content${fullScreen ? ' sheet-content-full' : ''}${workspace && !fullScreen ? ' sheet-content-workspace' : ''}${adaptiveHeight && !fullScreen && !workspace ? ' sheet-content-adaptive' : ''}`}
           {...(description ? {} : { 'aria-describedby': undefined })}
         >
           <div className="sheet-handle" />
-          <div className="sheet-heading">
+          <div className={`sheet-heading${headerAction ? ' sheet-heading-actions' : ''}`}>
+            {headerAction && (
+              <Dialog.Close asChild>
+                <IconButton label="닫기" data-close-sheet>
+                  <X size={22} />
+                </IconButton>
+              </Dialog.Close>
+            )}
             {description ? (
               <div className="sheet-heading-copy">
                 <Dialog.Title>{title}</Dialog.Title>
@@ -160,14 +172,18 @@ export function Sheet({
             ) : (
               <Dialog.Title>{title}</Dialog.Title>
             )}
-            <Dialog.Close asChild>
-              <IconButton label="닫기" data-close-sheet>
-                <X size={22} />
-              </IconButton>
-            </Dialog.Close>
+            {headerAction ? (
+              <div className="sheet-header-action">{headerAction}</div>
+            ) : (
+              <Dialog.Close asChild>
+                <IconButton label="닫기" data-close-sheet>
+                  <X size={22} />
+                </IconButton>
+              </Dialog.Close>
+            )}
           </div>
           <div className="sheet-body">
-            {adaptiveHeight && !fullScreen ? (
+            {adaptiveHeight && !fullScreen && !workspace ? (
               <div className="sheet-body-content">{children}</div>
             ) : (
               children

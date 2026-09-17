@@ -26,6 +26,29 @@ func TestLoadDevelopmentDefaults(t *testing.T) {
 	if c.AIAvailable() || c.Secure() {
 		t.Fatal("no AI key and no https expected")
 	}
+	if !c.AIQualityReview {
+		t.Fatal("semantic review must be enabled by default")
+	}
+}
+
+func TestQualityReviewExplicitRollback(t *testing.T) {
+	c, err := Load(lookup(map[string]string{"DATABASE_URL": "postgres://x", "AI_QUALITY_REVIEW": "false"}))
+	if err != nil || c.AIQualityReview {
+		t.Fatalf("explicit rollback: %v", err)
+	}
+}
+
+func TestQualityModelConfiguration(t *testing.T) {
+	for _, model := range []string{"", "openai/gpt-6-astra", "invalid model"} {
+		c, err := Load(lookup(map[string]string{"DATABASE_URL": "postgres://x", "OPENROUTER_QUALITY_MODEL": model}))
+		if model == "invalid model" {
+			if err == nil || !strings.Contains(err.Error(), "OPENROUTER_QUALITY_MODEL") {
+				t.Fatal("invalid reviewer accepted")
+			}
+		} else if err != nil || c.OpenRouterQualityModel != model {
+			t.Fatalf("review model not preserved: %v", err)
+		}
+	}
 }
 
 func TestLoadProductionRequiresSecrets(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/klippa-app/go-pdfium"
 	"github.com/klippa-app/go-pdfium/enums"
@@ -47,10 +48,12 @@ const (
 	MethodMixed = "pdf-mixed"
 )
 
-// Warning texts, byte-identical to the TypeScript extractor.
+// Upload warnings retain the scan/OCR messages and add evidence-based notation
+// coverage warnings without claiming that extracted images were understood.
 const (
-	warningNoTextLayer = "글자 층이 없는 스캔 PDF예요. 본문을 직접 입력하거나 페이지를 사진으로 올려 주세요."
-	warningUnreadPages = "%d쪽은 이미지로만 되어 있어 본문에 넣지 못했어요."
+	warningNoTextLayer       = "글자 층이 없는 스캔 PDF예요. 본문을 직접 입력하거나 페이지를 사진으로 올려 주세요."
+	warningUnreadPages       = "%d쪽은 이미지로만 되어 있어 본문에 넣지 못했어요."
+	warningScientificSymbols = "일부 수식·특수기호를 정확히 읽지 못했을 수 있어요. 수식·반응식·입체 구조는 원본과 함께 확인해 주세요."
 )
 
 var (
@@ -91,6 +94,25 @@ type Extraction struct {
 	Images     []Image
 	Method     string
 	Warning    string
+	// Diagnostics describe extraction coverage, not whether a visual diagram was
+	// understood. In particular, zero invalid glyphs does not prove fidelity.
+	Diagnostics          []PageDiagnostics
+	ImagesOmittedByLimit int
+}
+
+// PageDiagnostics retains problems before clean() drops unmapped/control glyphs.
+// VectorPaths counts painted PDF paths, which may be diagrams or decoration.
+type PageDiagnostics struct {
+	Page                    int  `json:"page"`
+	RawCharacters           int  `json:"rawCharacters"`
+	UnmappedCharacters      int  `json:"unmappedCharacters"`
+	ControlCharacters       int  `json:"controlCharacters"`
+	ReplacementCharacters   int  `json:"replacementCharacters"`
+	PrivateUseCharacters    int  `json:"privateUseCharacters"`
+	TwoColumns              bool `json:"twoColumns"`
+	ImageObjects            int  `json:"imageObjects"`
+	VectorPaths             int  `json:"vectorPaths"`
+	ImageTraversalTruncated bool `json:"imageTraversalTruncated"`
 }
 
 // Config sizes the pdfium WebAssembly worker pool. Every worker is a pdfium instance with its own
@@ -204,10 +226,11 @@ func (e *Extractor) Extract(ctx context.Context, data []byte, opts Options) (*Ex
 
 // job is one extraction on one pdfium instance.
 type job struct {
-	ctx  context.Context
-	inst pdfium.Pdfium
-	doc  references.FPDF_DOCUMENT
-	opts Options
+	ctx         context.Context
+	inst        pdfium.Pdfium
+	doc         references.FPDF_DOCUMENT
+	opts        Options
+	diagnostics []PageDiagnostics
 }
 
 // candidate is a painted image with its encoded pixels when it may be kept.
@@ -292,6 +315,7 @@ func (j *job) run() (*Extraction, error) {
 		all2[i] = c.Placement
 	}
 	kept := KeepImages(all2, pages)
+	omittedByLimit := max(0, len(kept)-MaxImages)
 	if len(kept) > MaxImages {
 		kept = kept[:MaxImages]
 	}
@@ -332,6 +356,7 @@ func (j *job) run() (*Extraction, error) {
 	case unread > 0:
 		warning = fmt.Sprintf(warningUnreadPages, unread)
 	}
+	warning = withSymbolWarning(warning, j.diagnostics)
 	method := MethodMixed
 	switch {
 	case read == 0:
@@ -340,13 +365,27 @@ func (j *job) run() (*Extraction, error) {
 		method = MethodOCR
 	}
 	return &Extraction{
-		Text:       assembled.Text,
-		Pages:      pages,
-		PageBreaks: assembled.PageBreaks,
-		Images:     images,
-		Method:     method,
-		Warning:    warning,
+		Text:                 assembled.Text,
+		Pages:                pages,
+		PageBreaks:           assembled.PageBreaks,
+		Images:               images,
+		Method:               method,
+		Warning:              warning,
+		Diagnostics:          j.diagnostics,
+		ImagesOmittedByLimit: omittedByLimit,
 	}, nil
+}
+
+func withSymbolWarning(warning string, diagnostics []PageDiagnostics) string {
+	for _, page := range diagnostics {
+		if page.UnmappedCharacters+page.ControlCharacters+page.ReplacementCharacters+page.PrivateUseCharacters > 0 {
+			if warning != "" {
+				return warning + " " + warningScientificSymbols
+			}
+			return warningScientificSymbols
+		}
+	}
+	return warning
 }
 
 // frame maps pdfium's user space (origin bottom-left, unrotated) to the viewport the layout rules
@@ -421,15 +460,19 @@ func (j *job) page(index int) (PageLayout, []candidate, error) {
 	if err != nil {
 		return PageLayout{}, nil, err
 	}
-	pieces, err := j.pieces(page, f)
+	diagnostic := PageDiagnostics{Page: index + 1}
+	pieces, err := j.pieces(page, f, &diagnostic)
 	if err != nil {
 		return PageLayout{}, nil, err
 	}
-	images, err := j.images(page, f, index+1)
+	images, err := j.images(page, f, index+1, &diagnostic)
 	if err != nil {
 		return PageLayout{}, nil, err
 	}
-	return PageLayout{Width: f.width, Height: f.height, Lines: ToLines(pieces)}, images, nil
+	lines := readingLines(pieces, f.width, f.height)
+	diagnostic.TwoColumns = len(lines) > 0 && lines[0].readingGroup > 0
+	j.diagnostics = append(j.diagnostics, diagnostic)
+	return PageLayout{Width: f.width, Height: f.height, Lines: lines}, images, nil
 }
 
 // textRun accumulates consecutive characters of one text piece, in user space.
@@ -455,7 +498,7 @@ func (r *textRun) piece(f frame) Piece {
 // pen advance, with pdf.js's thresholds: a gap of 0.102-0.6 em becomes a space inside the run, a
 // bigger one (or a backward jump, a vertical shift, a font change) starts a new run, the
 // 0.102-0.6 em gap then written as a leading space like pdf.js's whitespace item.
-func (j *job) pieces(page requests.Page, f frame) ([]Piece, error) {
+func (j *job) pieces(page requests.Page, f frame, diagnostic *PageDiagnostics) ([]Piece, error) {
 	structured, err := j.inst.GetPageTextStructured(&requests.GetPageTextStructured{
 		Page:                   page,
 		Mode:                   requests.GetPageTextStructuredModeChars,
@@ -481,10 +524,27 @@ func (j *job) pieces(page requests.Page, f frame) ([]Piece, error) {
 		}
 	}
 	for i, ch := range structured.Chars {
+		tight := ch.PointPosition
+		painted := tight.Right != tight.Left || tight.Top != tight.Bottom
+		if painted {
+			diagnostic.RawCharacters++
+			if ch.Text == "" {
+				diagnostic.UnmappedCharacters++
+			}
+			for _, r := range ch.Text {
+				switch {
+				case r == unicode.ReplacementChar:
+					diagnostic.ReplacementCharacters++
+				case unicode.Is(unicode.Co, r):
+					diagnostic.PrivateUseCharacters++
+				case unicode.IsControl(r) && !unicode.IsSpace(r):
+					diagnostic.ControlCharacters++
+				}
+			}
+		}
 		if ch.Text == "" {
 			continue
 		}
-		tight := ch.PointPosition
 		if tight.Right == tight.Left && tight.Top == tight.Bottom {
 			continue // generated by pdfium: whitespace or a line break, not a glyph
 		}
@@ -570,7 +630,7 @@ func (j *job) advance(textPage references.FPDF_TEXTPAGE, index int, ox, oy, dx, 
 }
 
 // images walks the page objects (into form XObjects) in paint order and records every image.
-func (j *job) images(page requests.Page, f frame, number int) ([]candidate, error) {
+func (j *job) images(page requests.Page, f frame, number int, diagnostic *PageDiagnostics) ([]candidate, error) {
 	count, err := j.inst.FPDFPage_CountObjects(&requests.FPDFPage_CountObjects{Page: page})
 	if err != nil {
 		return nil, err
@@ -582,6 +642,7 @@ func (j *job) images(page requests.Page, f frame, number int) ([]candidate, erro
 	visit = func(object references.FPDF_PAGEOBJECT, depth int) error {
 		visited++
 		if visited > maxObjectsPerPage {
+			diagnostic.ImageTraversalTruncated = true
 			return errTooManyObjects
 		}
 		kind, err := j.inst.FPDFPageObj_GetType(&requests.FPDFPageObj_GetType{PageObject: object})
@@ -589,8 +650,11 @@ func (j *job) images(page requests.Page, f frame, number int) ([]candidate, erro
 			return nil
 		}
 		switch kind.Type {
+		case enums.FPDF_PAGEOBJ_PATH:
+			diagnostic.VectorPaths++
 		case enums.FPDF_PAGEOBJ_FORM:
 			if depth >= maxFormDepth {
+				diagnostic.ImageTraversalTruncated = true
 				return nil
 			}
 			children, err := j.inst.FPDFFormObj_CountObjects(&requests.FPDFFormObj_CountObjects{PageObject: object})
@@ -607,6 +671,7 @@ func (j *job) images(page requests.Page, f frame, number int) ([]candidate, erro
 				}
 			}
 		case enums.FPDF_PAGEOBJ_IMAGE:
+			diagnostic.ImageObjects++
 			if err := j.ctx.Err(); err != nil {
 				return err
 			}

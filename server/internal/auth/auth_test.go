@@ -353,7 +353,7 @@ func TestGoogleLogin(t *testing.T) {
 	}
 	issuer.nonce = query.Get("nonce")
 	rec := callback(t, a, "google", "code=good&state="+url.QueryEscape(query.Get("state")), cookie, "")
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "http://127.0.0.1:8080/onboarding" {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "http://127.0.0.1:8080/onboarding?signedIn=1" {
 		t.Fatalf("new user: %d %s", rec.Code, rec.Header().Get("Location"))
 	}
 	if issuer.form.Get("code_verifier") == "" || issuer.form.Get("state") != query.Get("state") {
@@ -383,11 +383,22 @@ func TestGoogleLogin(t *testing.T) {
 	}
 	f.ids = append(f.ids, user.ID)
 
+	// Leaving setup does not silently complete it on the next sign-in.
+	query, cookie = start(t, a, "google", "STUDENT")
+	issuer.nonce = query.Get("nonce")
+	rec = callback(t, a, "google", "code=good&state="+url.QueryEscape(query.Get("state")), cookie, "")
+	if rec.Header().Get("Location") != "http://127.0.0.1:8080/onboarding?signedIn=1" {
+		t.Fatal("pending account skipped onboarding")
+	}
+	if _, err := f.pool.Exec(context.Background(), `UPDATE "AccountOnboarding" SET "completedAt"=CURRENT_TIMESTAMP WHERE "userId"=$1`, user.ID); err != nil {
+		t.Fatal(err)
+	}
+
 	// Same identity again: existing account, straight home.
 	query, cookie = start(t, a, "google", "STUDENT")
 	issuer.nonce = query.Get("nonce")
 	rec = callback(t, a, "google", "code=good&state="+url.QueryEscape(query.Get("state")), cookie, "")
-	if rec.Header().Get("Location") != "http://127.0.0.1:8080/" {
+	if rec.Header().Get("Location") != "http://127.0.0.1:8080/?signedIn=1" {
 		t.Fatalf("existing user: %s", rec.Header().Get("Location"))
 	}
 
@@ -434,13 +445,16 @@ func TestGoogleLogin(t *testing.T) {
 	query, cookie = start(t, a, "google", "PARENT")
 	issuer.nonce = query.Get("nonce")
 	rec = callback(t, a, "google", "code=good&state="+url.QueryEscape(query.Get("state")), cookie, "")
-	if rec.Header().Get("Location") != "http://127.0.0.1:8080/onboarding" {
+	if rec.Header().Get("Location") != "http://127.0.0.1:8080/onboarding?signedIn=1" {
 		t.Fatalf("new parent: %s", rec.Header().Get("Location"))
+	}
+	if _, err := f.pool.Exec(context.Background(), `UPDATE "AccountOnboarding" SET "completedAt"=CURRENT_TIMESTAMP WHERE "userId"=(SELECT "userId" FROM "OAuthAccount" WHERE "provider"='google' AND "providerId"=$1)`, issuer.sub); err != nil {
+		t.Fatal(err)
 	}
 	query, cookie = start(t, a, "google", "PARENT")
 	issuer.nonce = query.Get("nonce")
 	rec = callback(t, a, "google", "code=good&state="+url.QueryEscape(query.Get("state")), cookie, "")
-	if rec.Header().Get("Location") != "http://127.0.0.1:8080/parent" {
+	if rec.Header().Get("Location") != "http://127.0.0.1:8080/parent?signedIn=1" {
 		t.Fatalf("existing parent: %s", rec.Header().Get("Location"))
 	}
 	if _, err := a.provider("naver"); !errors.Is(err, ErrProviderOff) {
@@ -466,7 +480,7 @@ func TestKakaoLogin(t *testing.T) {
 		t.Fatalf("kakao query: %v", query)
 	}
 	rec := callback(t, f.auth, "kakao", "code=good&state="+url.QueryEscape(query.Get("state")), cookie, "")
-	if rec.Header().Get("Location") != "http://127.0.0.1:8080/onboarding" {
+	if rec.Header().Get("Location") != "http://127.0.0.1:8080/onboarding?signedIn=1" {
 		t.Fatalf("kakao: %s", rec.Header().Get("Location"))
 	}
 	user, err := f.auth.CurrentUser(context.Background(), withCookie(CookieName, sessionCookie(rec)))
@@ -495,7 +509,7 @@ func TestAppleLogin(t *testing.T) {
 	issuer.nonce = query.Get("nonce")
 	form := url.Values{"code": {"good"}, "state": {query.Get("state")}, "user": {`{"name":{"firstName":"지우","lastName":"김"}}`}}
 	rec := callback(t, f.auth, "apple", "", cookie, form.Encode())
-	if rec.Header().Get("Location") != "http://127.0.0.1:8080/onboarding" {
+	if rec.Header().Get("Location") != "http://127.0.0.1:8080/onboarding?signedIn=1" {
 		t.Fatalf("apple: %s", rec.Header().Get("Location"))
 	}
 	user, err := f.auth.CurrentUser(context.Background(), withCookie(CookieName, sessionCookie(rec)))
@@ -552,4 +566,31 @@ func TestGateHTML(t *testing.T) {
 		t.Fatalf("passed %d", passed)
 	}
 	_ = slog.Default()
+}
+
+func TestNaverLogin(t *testing.T) {
+	f := newFixture(t)
+	issuer := newFakeIssuer(t)
+	issuer.idToken = false
+	id := "qa-naver-" + ids.Token(6)
+	issuer.userinfo = func() map[string]any {
+		return map[string]any{"resultcode": "00", "response": map[string]any{"id": id, "nickname": "네이버학습자"}}
+	}
+	original := Providers["naver"]
+	Providers["naver"] = issuer.provider(false, false, false, true)
+	f.auth.cfg.OAuth["naver"] = config.OAuthClient{ID: testClient, Secret: "test-secret"}
+	t.Cleanup(func() { Providers["naver"] = original })
+	q, c := start(t, f.auth, "naver", "STUDENT")
+	rec := callback(t, f.auth, "naver", "code=good&state="+url.QueryEscape(q.Get("state")), c, "")
+	if rec.Header().Get("Location") != "http://127.0.0.1:8080/onboarding?signedIn=1" {
+		t.Fatal("naver callback failed", rec.Header().Get("Location"))
+	}
+	user, err := f.auth.CurrentUser(context.Background(), withCookie(CookieName, sessionCookie(rec)))
+	if err != nil || user.Name != "네이버학습자" {
+		t.Fatal("naver identity failed", err)
+	}
+	f.ids = append(f.ids, user.ID)
+	if issuer.form.Get("state") != q.Get("state") {
+		t.Fatal("Naver exchange missing state")
+	}
 }

@@ -404,9 +404,9 @@ func (s *Server) acceptCommunityAnswer(w http.ResponseWriter, r *http.Request, u
 		return e
 	}
 	var solved time.Time
+	var author, notified string
 	e = s.locked(ctx, u.ID, func(tx pgx.Tx, q *store.Queries) error {
-		var author string
-		err := tx.QueryRow(ctx, `SELECT c."userId" FROM "Comment" c JOIN "User" u ON u."id"=c."userId" WHERE c."id"=$1 AND c."postId"=$2 AND NOT u."suspended" AND NOT EXISTS(SELECT 1 FROM "Block" b WHERE (b."userId"=$3 AND b."blockedId"=c."userId") OR (b."userId"=c."userId" AND b."blockedId"=$3))`, in.CommentID, p.ID, u.ID).Scan(&author)
+		err := tx.QueryRow(ctx, `SELECT c."userId" FROM "Comment" c JOIN "User" u ON u."id"=c."userId" LEFT JOIN "CommunityComment" cc ON cc."commentId"=c."id" WHERE NOT COALESCE(cc."deleted",false) AND c."id"=$1 AND c."postId"=$2 AND NOT u."suspended" AND NOT EXISTS(SELECT 1 FROM "Block" b WHERE (b."userId"=$3 AND b."blockedId"=c."userId") OR (b."userId"=c."userId" AND b."blockedId"=$3))`, in.CommentID, p.ID, u.ID).Scan(&author)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apierr.New(404, "댓글을 찾을 수 없어요.")
 		}
@@ -435,11 +435,17 @@ func (s *Server) acceptCommunityAnswer(w http.ResponseWriter, r *http.Request, u
 			}
 		}
 		if previous == nil || *previous != in.CommentID {
-			_, err = tx.Exec(ctx, `INSERT INTO "Notification"("id","userId","title","body","href") VALUES($1,$2,'답변이 채택됐어요',$3,$4)`, ids.New(), author, p.Title, communityPostHref(p))
+			_, err = tx.Exec(ctx, `INSERT INTO "Notification"("id","userId","title","body","href","kind") VALUES($1,$2,'답변이 채택됐어요',$3,$4,$5)`, ids.New(), author, p.Title, communityPostHref(p), notifyAccepted)
+			if err == nil {
+				notified = author
+			}
 		}
 		return err
 	})
 	if e == nil {
+		// The answer author is not the caller: their bootstrap key only changes if their own
+		// version moves, so the notification write bumps it here.
+		s.bump(ctx, notified)
 		httpx.OK(w, 200, map[string]any{"acceptedCommentId": in.CommentID, "solvedAt": solved})
 	}
 	return e

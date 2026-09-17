@@ -35,7 +35,7 @@ export function schoolRegistrationError(form: SchoolRegistration, today: string)
   )
     return '시작 날짜를 확인해 주세요.';
   if (form.from < today) return '오늘 이후의 시작 날짜를 골라 주세요.';
-  if (![1, 4].includes(form.weeks)) return '등록 기간을 골라 주세요.';
+  if (![1, 4, 16].includes(form.weeks)) return '등록 기간을 골라 주세요.';
   if (!form.weekdays.length) return '등교하는 요일을 하나 이상 골라 주세요.';
   for (const day of form.weekdays) {
     if (!Number.isInteger(day) || day < 0 || day > 6) return '등교 요일을 확인해 주세요.';

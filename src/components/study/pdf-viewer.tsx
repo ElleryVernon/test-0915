@@ -8,24 +8,30 @@ import { sessionFetch } from '@/lib/session-boundary';
 // are reported precisely instead of as pdf.js's generic loading error.
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, LoaderCircle, Minus, Plus, RotateCw } from '@/components/icons';
-import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
+import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import { describeFailure, nextZoom, ZOOM_STEPS, type ViewerFailure } from './material-layout';
 import { PDF_ASSET_BASE, renderPdfPage } from './pdf-render';
+import { evidencePdfUrl, matchPdfEvidence, type PdfEvidencePage } from './pdf-evidence';
 
-type PageSize = { width: number; height: number };
+type PageSize = { width: number; height: number; page: number; documentPage: number };
 
 export default function PdfViewer({
   url,
   title,
   initialPage = 1,
   onPageCount,
+  evidence,
 }: {
   url: string;
   title: string;
   /** Page to scroll to once the document is laid out (a citation's page). */
   initialPage?: number;
   onPageCount?: (pages: number) => void;
+  /** Restrict both the downloaded PDF and rendered pages to verified evidence. */
+  evidence?: PdfEvidencePage[];
 }) {
+  const evidenceKey = JSON.stringify(evidence);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const [zoom, setZoom] = useState<number>(ZOOM_STEPS[0]);
@@ -50,6 +56,7 @@ export default function PdfViewer({
   // Load: fetch the bytes (precise HTTP errors), then let pdf.js parse them.
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     let document: PDFDocumentProxy | undefined;
     setPdf(null);
     setSizes([]);
@@ -61,7 +68,9 @@ export default function PdfViewer({
         let response: Response;
         try {
           // jitter: none — one fetch a person starts (45 s deadline); retry is only the manual retry button [site src/components/study/pdf-viewer.tsx:61]
-          response = await sessionFetch(url, { credentials: 'same-origin', signal: AbortSignal.timeout(45_000) });
+          const requestUrl = evidence ? evidencePdfUrl(url, evidence) : url;
+          if (!requestUrl) { setFailure({ pdf: 'invalid' }); return; }
+          response = await sessionFetch(requestUrl, { credentials: 'same-origin', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(45_000)]) });
         } catch (reason) {
           if (!active) return;
           setFailure(reason instanceof Error && reason.name === 'TimeoutError' ? { pdf: 'timeout' } : { network: true });
@@ -90,17 +99,21 @@ export default function PdfViewer({
           void task.destroy().catch(() => {});
         };
         document = await task.promise;
-        if (!active) return;
+        if (!active) { await document.destroy(); return; }
+        if (evidence && document.numPages !== evidence.length) {
+          setFailure({ pdf: 'invalid' });
+          return;
+        }
         const pageSizes: PageSize[] = [];
         for (let n = 1; n <= document.numPages; n++) {
           const page = await document.getPage(n);
           const { width, height } = page.getViewport({ scale: 1 });
-          pageSizes.push({ width, height });
+          pageSizes.push({ width, height, page: evidence?.[n - 1].page ?? n, documentPage: n });
         }
         if (!active) return;
         setSizes(pageSizes);
         setPdf(document);
-        onPageCount?.(document.numPages);
+        if (!evidence) onPageCount?.(document.numPages);
       } catch (reason) {
         if (!active) return;
         const name = reason instanceof Error ? reason.name : '';
@@ -112,11 +125,12 @@ export default function PdfViewer({
     void load();
     return () => {
       active = false;
+      controller.abort();
       void document?.destroy().catch(() => {});
     };
     // onPageCount is a notification, not an input.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, reload]);
+  }, [url, reload, evidenceKey]);
 
   // Which pages are near the viewport, and which one is being read.
   useEffect(() => {
@@ -140,7 +154,7 @@ export default function PdfViewer({
     slots.forEach((slot) => observer.observe(slot));
     const onScroll = () => {
       const top = viewport.scrollTop + viewport.clientHeight * 0.35;
-      let page = 1;
+      let page = sizes[0]?.page ?? 1;
       for (const slot of slots) if (slot.offsetTop <= top) page = Number(slot.dataset.pageSlot);
       setCurrent(page);
     };
@@ -170,13 +184,20 @@ export default function PdfViewer({
           <Minus size={18} />
         </button>
         <p aria-live="polite" data-page-indicator className="pdf-preview-indicator">
-          {pdf ? `${current} / ${pdf.numPages} 쪽` : 'PDF 미리보기'}
+          {pdf ? evidence ? `PDF ${current}쪽 · 근거 ${sizes.length}쪽` : `${current} / ${pdf.numPages} 쪽` : 'PDF 미리보기'}
           {zoom !== 1 && pdf ? ` · ${Math.round(zoom * 100)}%` : ''}
         </p>
         <button type="button" aria-label="확대" data-zoom-in disabled={!pdf || zoom === ZOOM_STEPS[ZOOM_STEPS.length - 1]} onClick={() => setZoom((z) => nextZoom(z, 1))}>
           <Plus size={18} />
         </button>
       </div>
+      {evidence && sizes.length > 1 && <nav className="pdf-evidence-pages" aria-label="근거 페이지">
+        {sizes.map((size) => <button key={size.page} type="button" aria-current={current === size.page ? 'page' : undefined} onClick={() => {
+          const viewport = viewportRef.current;
+          const slot = viewport?.querySelector<HTMLElement>(`[data-page-slot="${size.page}"]`);
+          if (viewport && slot) viewport.scrollTo({ top: slot.offsetTop });
+        }}>{size.page}쪽</button>)}
+      </nav>}
       <div ref={viewportRef} aria-busy={busy} className="pdf-preview-viewport">
         {busy && !failure && (
           <div role="status" className="pdf-preview-state">
@@ -198,7 +219,7 @@ export default function PdfViewer({
         {pdf && !problem && (
           <div className="pdf-preview-pages" style={{ width: pageWidth }}>
             {sizes.map((size, i) => (
-              <PageSlot key={i} pdf={pdf} page={i + 1} width={pageWidth} height={Math.round((size.height / size.width) * pageWidth)} render={visible.has(i + 1)} title={title} />
+              <PageSlot key={size.page} pdf={pdf} page={size.page} documentPage={size.documentPage} quote={evidence?.[i]?.quote} width={pageWidth} height={Math.round((size.height / size.width) * pageWidth)} render={visible.has(size.page)} title={title} />
             ))}
           </div>
         )}
@@ -207,12 +228,13 @@ export default function PdfViewer({
   );
 }
 
-function PageSlot({ pdf, page, width, height, render, title }: { pdf: PDFDocumentProxy; page: number; width: number; height: number; render: boolean; title: string }) {
+function PageSlot({ pdf, page, documentPage, quote, width, height, render, title }: { pdf: PDFDocumentProxy; page: number; documentPage: number; quote?: string; width: number; height: number; render: boolean; title: string }) {
   const host = useRef<HTMLDivElement>(null);
   const [drawn, setDrawn] = useState(false);
+  const [highlightCount, setHighlightCount] = useState<number | null>(null);
   useEffect(() => {
     const element = host.current;
-    if (!element || !render) return;
+    if (!element || !render) { setDrawn(false); return; }
     let active = true;
     let task: RenderTask | undefined;
     const canvas = document.createElement('canvas');
@@ -221,9 +243,10 @@ function PageSlot({ pdf, page, width, height, render, title }: { pdf: PDFDocumen
     canvas.dataset.pageCanvas = String(page);
     canvas.className = 'pdf-preview-canvas';
     setDrawn(false);
+    setHighlightCount(null);
     (async () => {
       try {
-        const proxy = await pdf.getPage(page);
+        const proxy = await pdf.getPage(documentPage);
         if (!active) return;
         task = renderPdfPage(proxy, canvas, width, window.devicePixelRatio || 1);
         await task.promise;
@@ -231,20 +254,70 @@ function PageSlot({ pdf, page, width, height, render, title }: { pdf: PDFDocumen
           element.replaceChildren(canvas);
           setDrawn(true);
         }
+        if (quote && active) {
+          const layer = await evidenceHighlights(proxy, width, quote);
+          if (active) {
+            element.append(layer);
+            setHighlightCount(layer.childElementCount);
+          }
+        }
       } catch {
+        if (active && quote) setHighlightCount(0);
         /* a cancelled render (zoom, unmount) draws nothing; the slot keeps its size */
       }
     })();
     return () => {
       active = false;
       task?.cancel();
-      canvas.remove();
+      element.replaceChildren();
     };
-  }, [pdf, page, width, render, title]);
+  }, [pdf, page, documentPage, quote, width, render, title]);
   return (
     <div data-page-slot={page} data-page-drawn={drawn ? 'true' : 'false'} className="pdf-preview-slot" style={{ width, height }}>
       <div ref={host} className="pdf-preview-slot-host" />
       <span className="pdf-preview-page-badge">{page}</span>
+      {quote && drawn && highlightCount === 0 && <span className="pdf-evidence-unmatched">강조 위치를 확인하지 못했어요 · 원본으로 확인해 주세요</span>}
     </div>
   );
+}
+
+async function evidenceHighlights(page: PDFPageProxy, width: number, quote: string): Promise<HTMLDivElement> {
+  const content = await page.getTextContent();
+  const items = content.items.filter((item): item is TextItem => 'str' in item);
+  const matches = matchPdfEvidence(items, quote);
+  const natural = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: width / natural.width });
+  const layer = document.createElement('div');
+  layer.className = 'pdf-evidence-highlights';
+  layer.setAttribute('aria-hidden', 'true');
+  const measuring = document.createElement('canvas').getContext('2d');
+  if (!measuring) return layer;
+  for (const match of matches) {
+    const item = items[match.item];
+    const [a, b, c, d, e, f] = viewport.transform;
+    const tx = item.transform;
+    // Horizontal text: the actual PDF glyph run determines the rectangle.
+    // Do not invent rectangles for rotated labels whose geometry is ambiguous.
+    if (Math.abs(b * tx[0] + d * tx[1]) > 0.1) continue;
+    const x = a * tx[4] + c * tx[5] + e;
+    const y = b * tx[4] + d * tx[5] + f;
+    const fontHeight = Math.hypot(a * tx[2] + c * tx[3], b * tx[2] + d * tx[3]);
+    const style = content.styles[item.fontName];
+    measuring.font = `${fontHeight}px ${style?.fontFamily || 'sans-serif'}`;
+    const full = measuring.measureText(item.str).width;
+    if (!full || !fontHeight) continue;
+    const from = measuring.measureText(item.str.slice(0, match.start)).width / full;
+    const to = measuring.measureText(item.str.slice(0, match.end)).width / full;
+    const mark = document.createElement('span');
+    mark.dataset.evidenceHighlight = '';
+    mark.title = item.str.slice(match.start, match.end);
+    Object.assign(mark.style, {
+      left: `${x + item.width * viewport.scale * from}px`,
+      top: `${y - fontHeight * (style?.ascent ?? 0.8)}px`,
+      width: `${item.width * viewport.scale * (to - from)}px`,
+      height: `${fontHeight * 1.12}px`,
+    });
+    layer.append(mark);
+  }
+  return layer;
 }

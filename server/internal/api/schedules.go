@@ -2,7 +2,9 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -16,6 +18,7 @@ import (
 
 func init() {
 	register(func(s *Server, mux *http.ServeMux) {
+		mux.Handle("/api/schedules/batch", httpx.Methods{http.MethodPost: s.withUser(s.saveScheduleBatch, store.RoleSTUDENT)})
 		mux.Handle("/api/schedules", httpx.Methods{http.MethodPost: s.withUser(s.saveSchedule, store.RoleSTUDENT)})
 		mux.Handle("/api/schedules/{id}", httpx.Methods{
 			http.MethodPatch:  s.withUser(s.saveSchedule, store.RoleSTUDENT),
@@ -172,5 +175,67 @@ func (s *Server) saveSchedule(w http.ResponseWriter, r *http.Request, user store
 		status = http.StatusCreated
 	}
 	httpx.OK(w, status, scheduleRow{ID: saved.ID, UserID: saved.UserID, Title: saved.Title, Date: saved.Date, Start: saved.Start, End: saved.End, Kind: string(saved.Kind), SubjectID: saved.SubjectID, Done: saved.Done, CreatedAt: jsonx.Time(saved.CreatedAt)})
+	return nil
+}
+
+// saveScheduleBatch is atomic and additive. Retrying an identical batch skips exact
+// existing events; a new conflict rejects the entire batch, never a partial save.
+func (s *Server) saveScheduleBatch(w http.ResponseWriter, r *http.Request, user store.User) error {
+	var in struct {
+		Blocks []planner.BatchBlock `json:"blocks"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	if err := planner.ValidateBatch(in.Blocks); err != nil {
+		return apierr.New(400, err.Error())
+	}
+	for i := range in.Blocks {
+		in.Blocks[i].Title = strings.TrimSpace(in.Blocks[i].Title)
+		if in.Blocks[i].SubjectID != nil && *in.Blocks[i].SubjectID != "" {
+			if _, err := s.ownedSubject(r.Context(), user, *in.Blocks[i].SubjectID); err != nil {
+				return err
+			}
+		} else {
+			in.Blocks[i].SubjectID = nil
+		}
+	}
+	added, existing := 0, 0
+	err := s.locked(r.Context(), user.ID, func(tx pgx.Tx, q *store.Queries) error {
+		pending := []planner.BatchBlock{}
+		for _, block := range in.Blocks {
+			others, err := q.ListSchedulesOnDate(r.Context(), store.ListSchedulesOnDateParams{UserID: user.ID, Date: block.Date, ID: ""})
+			if err != nil {
+				return err
+			}
+			matched := false
+			for _, other := range others {
+				row := planner.BatchBlock{Title: other.Title, Date: other.Date, Start: other.Start, End: other.End, Kind: string(other.Kind), SubjectID: other.SubjectID}
+				if planner.SameBatchBlock(block, row) {
+					matched = true
+					continue
+				}
+				if planner.Conflict(planner.Dated{Date: block.Date, Start: block.Start, End: block.End}, planner.Dated{Date: row.Date, Start: row.Start, End: row.End}) {
+					return apierr.New(409, fmt.Sprintf("%s %s에 %s 일정이 생겼어요. 아직 아무 일정도 추가하지 않았어요. 다시 배치해 주세요.", block.Date, block.Start, row.Title))
+				}
+			}
+			if matched {
+				existing++
+			} else {
+				pending = append(pending, block)
+			}
+		}
+		for _, block := range pending {
+			if _, err := q.CreateSchedule(r.Context(), store.CreateScheduleParams{ID: ids.New(), UserID: user.ID, Title: block.Title, Date: block.Date, Start: block.Start, End: block.End, Kind: store.ScheduleKind(block.Kind), SubjectID: block.SubjectID}); err != nil {
+				return err
+			}
+			added++
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	httpx.OK(w, http.StatusOK, map[string]int{"added": added, "existing": existing})
 	return nil
 }

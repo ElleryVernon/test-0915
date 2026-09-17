@@ -39,3 +39,18 @@ export function essayPracticeStart(
     answer: draft?.answer ?? revisionAnswer ?? '',
   };
 }
+
+export type EssayKeywordState = 'idle' | 'selected' | 'correct' | 'incorrect' | 'missed';
+
+/** Correctness is disclosed only for a checked attempt, never while choosing. */
+export function essayKeywordState(
+  word: string,
+  selected: string[],
+  correct: string[],
+  checked: boolean,
+): EssayKeywordState {
+  const chosen = selected.includes(word);
+  if (!checked) return chosen ? 'selected' : 'idle';
+  if (chosen) return correct.includes(word) ? 'correct' : 'incorrect';
+  return correct.includes(word) ? 'missed' : 'idle';
+}

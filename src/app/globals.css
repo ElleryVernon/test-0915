@@ -1,5 +1,4 @@
 @import 'tailwindcss';
-@import './layout-system.css';
 @font-face {
   font-family: Pretendard;
   src: url('/fonts/Pretendard-Regular.woff2') format('woff2');
@@ -56,12 +55,16 @@
   --text-disabled: #a5a5a8;
   --surface-muted: #f3f3f3;
   --surface-canvas: #fafafa;
+  --surface-raised: #fff;
+  --surface-sheet: var(--surface-raised);
+  --control-fill: var(--surface-muted);
   --border-subtle: #ededed;
   --border-strong: #d6d6d8;
   --brand: #ff6f0f;
   --on-primary: #fff;
   --brand-strong: #c94d09;
   --brand-pressed: #ee6500;
+  --source-highlight: color-mix(in srgb, var(--brand) 32%, transparent);
   --danger: #c73d32;
   --danger-surface: #fff4f2;
   --notice-text: #885114;
@@ -80,6 +83,10 @@
 html {
   background: var(--surface-muted);
   scrollbar-gutter: stable;
+}
+html.app-pull-refresh,
+html.app-pull-refresh body {
+  overscroll-behavior-y: contain;
 }
 body {
   margin: 0;
@@ -217,10 +224,10 @@ svg {
     background 0.18s,
     transform 0.18s;
 }
-.icon-button:hover {
+.icon-button:enabled:hover {
   background: var(--surface-muted);
 }
-.icon-button:active {
+.icon-button:enabled:active {
   transform: scale(0.93);
 }
 .avatar {
@@ -274,10 +281,18 @@ svg {
   align-items: center;
   gap: var(--gap-related);
 }
+/* Raised/white surfaces reset inherited control fill before muted surfaces invert it. */
+:where(.bg-white, .sheet-content, [data-surface='raised']) {
+  --control-fill: var(--surface-muted);
+}
+/* Muted content surfaces provide a raised fill to their interactive children. */
+:where(.bg-surface, .bg-canvas, .panel, [data-surface='muted']) {
+  --control-fill: var(--surface-raised);
+}
 .field {
   display: block;
   width: 100%;
-  background: var(--surface-muted);
+  background: var(--control-fill);
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   min-height: var(--control-height);
@@ -329,57 +344,6 @@ svg {
   font-size: 13px;
   color: var(--text-muted);
   min-height: var(--control-size);
-}
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--gap-inline);
-  min-height: var(--control-height);
-  padding: var(--space-3) var(--space-5);
-  border-radius: var(--radius-control);
-  font-size: 16px;
-  line-height: 1.4;
-  font-weight: 600;
-  border: 0;
-  transition:
-    transform 0.16s,
-    filter 0.16s,
-    background 0.16s;
-  word-break: keep-all;
-}
-.btn:active {
-  transform: scale(0.98);
-}
-.btn-primary {
-  color: #fff;
-  background: var(--brand);
-  font-weight: 700;
-}
-.btn-primary:hover {
-  background: var(--brand-pressed);
-}
-.btn:disabled {
-  opacity: 1;
-  background: var(--surface-muted);
-  color: var(--text-disabled);
-}
-.btn:disabled:hover {
-  background: var(--surface-muted);
-}
-.btn-secondary {
-  color: var(--text-primary);
-  background: var(--surface-muted);
-}
-.btn-secondary:hover {
-  background: var(--border-subtle);
-}
-.btn-ghost {
-  color: var(--text-secondary);
-  background: transparent;
-}
-.btn-ghost:hover {
-  background: var(--surface-canvas);
 }
 .primary-surface {
   position: relative;
@@ -527,6 +491,30 @@ svg {
   line-height: 20px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+.home-review-empty h2 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 750;
+  line-height: 1.45;
+  letter-spacing: -0.035em;
+}
+.home-review-empty > p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.home-review-symbol {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+}
+.home-review-empty .btn {
+  margin-top: var(--space-2);
 }
 .home-review-head small {
   font-size: 13px;
@@ -875,8 +863,8 @@ svg {
   background: #fffffff2;
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--border-subtle);
-  padding: calc(var(--space-unit) * 1.25) var(--space-3) env(safe-area-inset-bottom, 0);
-  min-height: calc(49px + env(safe-area-inset-bottom, 0px));
+  padding: var(--bottom-nav-padding-top) var(--space-3) var(--bottom-nav-padding-bottom);
+  height: var(--bottom-nav-height);
 }
 .nav-item {
   position: relative;
@@ -963,6 +951,27 @@ svg {
 .sheet-heading .icon-button {
   margin-right: calc(-1 * var(--space-3));
 }
+.sheet-heading-actions {
+  gap: var(--space-2);
+  min-height: var(--control-size);
+  padding-bottom: var(--space-3);
+}
+.sheet-heading-actions h2 {
+  flex: 1;
+  font-size: 17px;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+}
+.sheet-heading-actions .icon-button {
+  margin: 0 0 0 calc(-1 * var(--space-3));
+  flex-shrink: 0;
+}
+.sheet-header-action {
+  flex-shrink: 0;
+}
+.sheet-header-action .button {
+  min-height: var(--control-size);
+}
 .sheet-body {
   min-height: 0;
   overflow-y: auto;
@@ -1020,6 +1029,20 @@ svg {
   text-align: center;
   box-shadow: 0 4px 24px color-mix(in srgb, var(--ink) 8%, transparent);
   animation: fade-in 0.16s;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 3);
+}
+.toast-action {
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 0 calc(var(--space-unit) * 1);
+  min-height: 44px;
+  margin: calc(var(--space-unit) * -3.5) 0;
+  white-space: nowrap;
 }
 .empty-state {
   text-align: center;
@@ -2653,9 +2676,6 @@ button.recall-card:active {
     border-radius: 28px;
     max-height: calc(100dvh - 48px);
   }
-  .bottom-nav {
-    padding-bottom: var(--space-4);
-  }
   .app-main {
     padding-bottom: calc(var(--space-unit) * 30);
   }
@@ -3684,7 +3704,7 @@ body:has(.planner-cta) .toast {
   flex-direction: column;
   overflow: hidden;
   border-radius: var(--radius);
-  border: 1px solid var(--border-subtle);
+  border: 0;
   background: var(--surface);
 }
 .pdf-preview-bar {
@@ -3734,6 +3754,30 @@ body:has(.planner-cta) .toast {
   position: relative;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.pdf-evidence-highlights {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+.pdf-evidence-pages { display: flex; gap: 8px; padding: 8px; overflow-x: auto; flex-shrink: 0; }
+.pdf-evidence-pages button { min-height: 36px; padding: 6px 14px; border-radius: 999px; background: var(--surface-raised); color: var(--text-secondary); font-size: 13px; white-space: nowrap; }
+.pdf-evidence-pages button[aria-current="page"] { background: var(--text-primary); color: var(--surface-raised); font-weight: 700; }
+.pdf-evidence-highlights > span {
+  position: absolute;
+  background: var(--source-highlight);
+  border-radius: 2px;
+}
+.pdf-evidence-unmatched {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 32px;
+  padding: 8px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 .pdf-preview-canvas {
   display: block;
@@ -4018,6 +4062,71 @@ body:has(.planner-cta) .toast {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
   border-radius: 8px;
+}
+.choice-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: var(--control-size);
+  padding: var(--space-4) 0;
+  text-align: left;
+}
+.choice-switch-copy {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.choice-switch-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.choice-switch-description {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.choice-switch-track {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background 160ms ease;
+}
+.choice-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px #0002;
+  transition: transform 160ms ease;
+}
+.choice-switch[aria-checked='true'] .choice-switch-track {
+  background: var(--text-primary);
+}
+.choice-switch[aria-checked='true'] .choice-switch-thumb {
+  transform: translateX(20px);
+}
+.choice-switch:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.choice-switch:disabled {
+  opacity: 0.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  .choice-switch-track,
+  .choice-switch-thumb {
+    transition: none;
+  }
 }
 .choice-stepper {
   display: inline-flex;
@@ -4762,7 +4871,7 @@ a.pill {
     gap: var(--space-1);
   }
   .community-spaces button {
-    font-size: 14px;
+    font-size: 13px;
   }
 }
 .community-profile {
@@ -4858,4 +4967,37 @@ a.pill {
 .community-conversation time {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+/* Session-end community surface: unread answer notices arrive after the session, not during. */
+.session-answer-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: calc(var(--space-unit) * 2.5);
+  min-height: var(--control-size, 44px);
+  padding: calc(var(--space-unit) * 3.5) calc(var(--space-unit) * 4);
+  margin-bottom: calc(var(--space-unit) * 4);
+  border-radius: 14px;
+  background: var(--surface-muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+.session-answer-row > svg:last-child {
+  margin-left: auto;
+  color: var(--text-secondary, var(--text-muted));
+}
+
+/* All source-selection and generation stages share a viewport-bounded frame. */
+.sheet-content-workspace {
+  height: min(760px, 90dvh);
+}
+.sheet-content-workspace .sheet-handle { flex-shrink: 0; }
+.sheet-content-workspace .sheet-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: max(var(--gap-related), env(safe-area-inset-bottom));
 }

@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"memoryz/server/internal/ai"
+	"memoryz/server/internal/apierr"
 	"memoryz/server/internal/auth"
 	"memoryz/server/internal/blob"
 	"memoryz/server/internal/cache"
@@ -32,16 +33,17 @@ import (
 
 // Server is the set of endpoints and their dependencies.
 type Server struct {
-	cfg      *config.Config
-	pool     *pgxpool.Pool
-	q        *store.Queries
-	cache    cache.Cache
-	auth     *auth.Auth
-	blobs    blob.Store
-	ai       *ai.Provider
-	log      *slog.Logger
-	now      func() time.Time
-	pdfSlots chan struct{} // bounds concurrent PDF extractions per instance
+	cfg         *config.Config
+	pool        *pgxpool.Pool
+	q           *store.Queries
+	cache       cache.Cache
+	auth        *auth.Auth
+	blobs       blob.Store
+	ai          *ai.Provider
+	log         *slog.Logger
+	paymentHTTP *http.Client // tests substitute a transport; provider origin remains fixed
+	now         func() time.Time
+	pdfSlots    chan struct{} // bounds concurrent PDF extractions per instance
 	// rand is the jitter source (docs/JITTER.md); pause waits on a timer or the context. Tests pin both.
 	rand    jitter.Rand
 	pause   func(context.Context, time.Duration) bool
@@ -74,6 +76,17 @@ func (s *Server) withUser(h userHandler, roles ...store.Role) httpx.Handler {
 		user, sess, err := s.auth.CurrentSession(r.Context(), r)
 		if err != nil {
 			return err
+		}
+		// Pending accounts may resume setup and sign out, but cannot create role-
+		// specific data before choosing the role that will own it.
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.URL.Path != "/api/onboarding" {
+			pending, err := s.auth.NeedsOnboarding(r.Context(), user.ID)
+			if err != nil {
+				return err
+			}
+			if pending {
+				return apierr.WithCode(409, "가입 설정을 먼저 마쳐 주세요.", "ONBOARDING_REQUIRED")
+			}
 		}
 		if len(roles) > 0 {
 			if err := auth.RequireRole(user, roles...); err != nil {

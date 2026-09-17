@@ -1,6 +1,7 @@
 'use client';
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import { ArrowRight, Trash2, TriangleAlert, X } from '@/components/icons';
+import { Switch } from '@/components/ui-choice';
 import { DateField, TimeField } from '@/components/ui-date';
 import { api } from '@/lib/api';
 import type { AppData, Schedule } from '@/lib/contracts';
@@ -12,11 +13,21 @@ import {
   overlapMinutes,
   timeString,
 } from '@/lib/schedule';
+import {
+  WEEKDAYS,
+  planWeekday,
+  previewPlan,
+  recurrenceError,
+  recurringBlocks,
+  shiftPlanDate,
+} from '@/lib/planner-workspace';
+import workspaceStyles from './planner-workspace.module.css';
 import { Button, Sheet } from '@/components/ui';
 import { dayLabel, josa, particle, recentSchedules, scheduleError } from './helpers';
 
 export type ScheduleDraft = Pick<Schedule, 'title' | 'date' | 'start' | 'end' | 'kind'> & {
   subjectId: string;
+  repeat?: { until: string; weekdays: number[] };
 };
 export type ScheduleReceipt = { date: string; message: string };
 const DURATIONS = [25, 50, 60, 90];
@@ -84,6 +95,7 @@ export default function ScheduleEditor({
   const [form, setForm] = useState<ScheduleDraft>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [skipConflicts, setSkipConflicts] = useState(false);
   const [receipt, setReceipt] = useState(initialReceipt);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const set = (patch: Partial<ScheduleDraft>) => {
@@ -92,6 +104,7 @@ export default function ScheduleEditor({
     if ((Object.keys(patch) as (keyof ScheduleDraft)[]).every((key) => form[key] === next[key]))
       return;
     setForm(next);
+    setSkipConflicts(false);
     onDraft(next);
     setError('');
   };
@@ -112,13 +125,32 @@ export default function ScheduleEditor({
     : recentSchedules(data.schedules, 6)
         .filter((s) => s.title.trim() !== form.title.trim())
         .slice(0, 4);
-  const blocked = validation
-    ? form.title.trim()
-      ? validation
-      : '일정 이름을 적으면 담을 수 있어요'
-    : overlapping.length
-      ? '겹치는 시간을 위에서 바꾸면 담을 수 있어요'
-      : '';
+  const recurrence = form.repeat ? { from: form.date, ...form.repeat } : null;
+  const repeatError = recurrence ? recurrenceError(recurrence) : '';
+  const repeated = recurrence
+    ? previewPlan(
+        recurringBlocks({ ...form, subjectId: form.subjectId || undefined }, recurrence),
+        data.schedules,
+      )
+    : [];
+  const repeatConflicts = repeated.filter((row) => row.status === 'conflict');
+  const repeatTargets = repeated.filter((row) => row.status === 'new');
+  const blocked =
+    repeatError ||
+    (recurrence &&
+      !repeatError &&
+      (!repeatTargets.length
+        ? '새로 등록할 날짜가 없어요'
+        : repeatConflicts.length && !skipConflicts
+          ? '겹치는 날짜를 확인하거나 제외해 주세요'
+          : '')) ||
+    (validation
+      ? form.title.trim()
+        ? validation
+        : '일정 이름을 적으면 담을 수 있어요'
+      : !recurrence && overlapping.length
+        ? '겹치는 시간을 위에서 바꾸면 담을 수 있어요'
+        : '');
   const range = `${form.start}–${form.end}`;
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -137,16 +169,27 @@ export default function ScheduleEditor({
         end: form.end,
         kind: form.kind,
       };
+      let batchReceipt: { added: number; existing: number } | undefined;
       if (editing)
         await api(
           `/schedules/${editing.id}`,
           { ...payload, subjectId: form.subjectId || null },
           'PATCH',
         );
+      else if (recurrence)
+        batchReceipt = await api<{ added: number; existing: number }>('/schedules/batch', {
+          blocks: repeatTargets.map((row) => row.block),
+        });
       else await api('/schedules', { ...payload, subjectId: form.subjectId || undefined });
       const saved = {
         date: form.date,
-        message: editing ? `${josa(range, '으로')} 바꿨어요` : `${range}에 담았어요`,
+        message: editing
+          ? `${josa(range, '으로')} 바꿨어요`
+          : recurrence
+            ? batchReceipt?.added
+              ? `반복 일정 ${batchReceipt.added}개를 담았어요`
+              : '이미 등록한 반복 일정을 확인했어요'
+            : `${range}에 담았어요`,
       };
       setReceipt(saved);
       onDraft(form, saved);
@@ -255,7 +298,9 @@ export default function ScheduleEditor({
                 </div>
                 <p className="planner-help">
                   {form.kind === 'FIXED'
-                    ? '선택한 날짜의 고정 일정이에요 · 다른 날짜는 함께 바뀌지 않아요'
+                    ? form.repeat
+                      ? '선택한 요일마다 같은 시간에 등록해요 · 기존 일정은 유지해요'
+                      : '선택한 날짜의 고정 일정이에요 · 다른 날짜는 함께 바뀌지 않아요'
                     : '완료를 체크하면 이 날짜의 공부 시간에 쌓여요'}
                 </p>
               </div>
@@ -381,6 +426,120 @@ export default function ScheduleEditor({
                   )
                 )}
               </div>
+              {!editing && (
+                <section className={workspaceStyles.section} aria-label="일정 반복">
+                  <div className="segmented-control" role="group" aria-label="반복 방식">
+                    <button
+                      type="button"
+                      className="segment-option"
+                      aria-pressed={!form.repeat}
+                      onClick={() => set({ repeat: undefined })}
+                    >
+                      한 번만
+                    </button>
+                    <button
+                      type="button"
+                      className="segment-option"
+                      aria-pressed={!!form.repeat}
+                      onClick={() =>
+                        set({
+                          repeat: {
+                            until: shiftPlanDate(form.date, 111),
+                            weekdays: [planWeekday(form.date)],
+                          },
+                        })
+                      }
+                    >
+                      매주 반복
+                    </button>
+                  </div>
+                  {form.repeat && (
+                    <>
+                      <div className={workspaceStyles.weekdays} role="group" aria-label="반복 요일">
+                        {WEEKDAYS.map((label, index) => (
+                          <button
+                            type="button"
+                            key={label}
+                            aria-pressed={form.repeat!.weekdays.includes(index)}
+                            onClick={() =>
+                              set({
+                                repeat: {
+                                  ...form.repeat!,
+                                  weekdays: form.repeat!.weekdays.includes(index)
+                                    ? form.repeat!.weekdays.filter((d) => d !== index)
+                                    : [...form.repeat!.weekdays, index],
+                                },
+                              })
+                            }
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <DateField
+                        label="반복 종료일"
+                        name="repeatUntil"
+                        value={form.repeat.until}
+                        onChange={(until) => set({ repeat: { ...form.repeat!, until } })}
+                      />
+                      <div className="planner-chip-row">
+                        {[4, 16].map((weeks) => (
+                          <button
+                            type="button"
+                            className="planner-choice"
+                            key={weeks}
+                            onClick={() =>
+                              set({
+                                repeat: {
+                                  ...form.repeat!,
+                                  until: shiftPlanDate(form.date, weeks * 7 - 1),
+                                },
+                              })
+                            }
+                          >
+                            {weeks === 16 ? '한 학기 · 16주' : '4주'}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="planner-help">
+                        {dayLabel(form.date)}부터 {dayLabel(form.repeat.until)}까지 · 저장 후에는
+                        날짜별로 바꿀 수 있어요.
+                      </p>
+                      {!repeatError && (
+                        <details className={workspaceStyles.preview}>
+                          <summary>
+                            등록 날짜 확인 · 새 일정 {repeatTargets.length}개
+                            {repeatConflicts.length ? ` · 겹침 ${repeatConflicts.length}개` : ''}
+                          </summary>
+                          <ul>
+                            {repeated.map(({ block, status }) => (
+                              <li key={block.date}>
+                                <span>
+                                  {dayLabel(block.date)} · {block.start}–{block.end}
+                                </span>
+                                <strong>
+                                  {status === 'new'
+                                    ? '등록 예정'
+                                    : status === 'existing'
+                                      ? '이미 등록'
+                                      : '시간 겹침'}
+                                </strong>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                      {repeatConflicts.length > 0 && (
+                        <Switch
+                          label={`겹치는 ${repeatConflicts.length}일은 제외하고 등록`}
+                          checked={skipConflicts}
+                          onChange={setSkipConflicts}
+                        />
+                      )}
+                    </>
+                  )}
+                </section>
+              )}
               {data.subjects.length > 0 && (
                 <div className="planner-editor-group">
                   <div className="planner-editor-label">
@@ -419,7 +578,9 @@ export default function ScheduleEditor({
                     ? '저장한 일정 다시 불러오기'
                     : editing
                       ? `${josa(range, '으로')} 바꾸기`
-                      : `${range}에 담기`}
+                      : recurrence
+                        ? `${repeatTargets.length}개 일정 등록하기`
+                        : `${range}에 담기`}
               </Button>
               {!receipt && blocked && <p className="planner-help text-center">{blocked}</p>}
               {!receipt && hasDraft && (

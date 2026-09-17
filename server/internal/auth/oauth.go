@@ -273,12 +273,19 @@ func (a *Auth) finish(r *http.Request, name string, spec *Provider) (string, []s
 	if who.providerID == "" || who.providerID == "undefined" {
 		return "", nil, errors.New("invalid-identity")
 	}
-	user, created, err := a.account(ctx, name, who, state.Role)
+	user, _, err := a.account(ctx, name, who, state.Role)
 	if err != nil {
 		return "", nil, err
 	}
 	if user.Suspended {
 		return "", nil, errors.New("suspended")
+	}
+	pending, err := a.NeedsOnboarding(ctx, user.ID)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := a.Delete(ctx, ReadToken(r)); err != nil {
+		return "", nil, err
 	}
 	session, hint, err := a.Create(ctx, user.ID)
 	if err != nil {
@@ -286,12 +293,12 @@ func (a *Auth) finish(r *http.Request, name string, spec *Provider) (string, []s
 	}
 	cookies := []string{session, hint}
 	switch {
-	case created:
-		return "/onboarding", cookies, nil
+	case pending:
+		return "/onboarding?signedIn=1", cookies, nil
 	case user.Role == store.RolePARENT:
-		return "/parent", cookies, nil
+		return "/parent?signedIn=1", cookies, nil
 	default:
-		return "/", cookies, nil
+		return "/?signedIn=1", cookies, nil
 	}
 }
 
@@ -468,7 +475,11 @@ func (a *Auth) account(ctx context.Context, provider string, who identity, role 
 		if err != nil {
 			return err
 		}
-		return q.CreateOAuthAccount(ctx, store.CreateOAuthAccountParams{ID: ids.New(), Provider: provider, ProviderID: who.providerID, UserID: user.ID})
+		if err := q.CreateOAuthAccount(ctx, store.CreateOAuthAccountParams{ID: ids.New(), Provider: provider, ProviderID: who.providerID, UserID: user.ID}); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO "AccountOnboarding" ("userId") VALUES ($1)`, user.ID)
+		return err
 	})
 	if err != nil {
 		// Two callbacks for the same new identity raced: the other one won; use its account.
