@@ -15,18 +15,20 @@ type Privacy struct {
 
 // Profile is the account as the client sees it (contracts.ts Profile).
 type Profile struct {
-	ID                string   `json:"id"`
-	Name              string   `json:"name"`
-	Nickname          string   `json:"nickname"`
-	Role              string   `json:"role"`
-	School            string   `json:"school"`
-	Grade             string   `json:"grade"`
-	Streak            int32    `json:"streak"`
-	Points            int32    `json:"points"`
-	Privacy           Privacy  `json:"privacy"`
-	CompletedSubjects []string `json:"completedSubjects"`
-	SrsMode           string   `json:"srsMode"`
-	DesiredRetention  float64  `json:"desiredRetention"`
+	OnboardingRequired bool     `json:"onboardingRequired"`
+	ID                 string   `json:"id"`
+	AvatarURL          string   `json:"avatarUrl,omitempty"`
+	Name               string   `json:"name"`
+	Nickname           string   `json:"nickname"`
+	Role               string   `json:"role"`
+	School             string   `json:"school"`
+	Grade              string   `json:"grade"`
+	Streak             int32    `json:"streak"`
+	Points             int32    `json:"points"`
+	Privacy            Privacy  `json:"privacy"`
+	CompletedSubjects  []string `json:"completedSubjects"`
+	SrsMode            string   `json:"srsMode"`
+	DesiredRetention   float64  `json:"desiredRetention"`
 }
 
 // privacyOf reads the stored JSON; only an explicit true counts, as before.

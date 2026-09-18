@@ -1,910 +1,924 @@
 {
- "spec": "docs/JITTER.md",
- "frozen": "2026-09-16",
- "note": "The 129 timing sites of the jitter audit (workflow wf_f151c3cb-59a). Each id is a file:line of the code as audited; the code carries one marker per id: `jitter: <token> … [site <id>]` (token = none for a site that needs no jitter).",
- "sites": [
-  {
-   "id": "docs/CACHING.md:22",
-   "token": "none",
-   "kind": "other",
-   "what": "The documented table of keys, TTLs and invalidation: sess/user 60 s, ver 7 d, boot 60 s, posts 15 s, schools 1 h, rl = window length, lock = lease.",
-   "reason": "Documentation"
-  },
-  {
-   "id": "public/sw.js:2",
-   "token": "none",
-   "kind": "event",
-   "what": "Service worker install: caches.addAll of '/', '/aurora.svg', '/icon.svg' and '/manifest.webmanifest', then skipWaiting().",
-   "reason": "Install caches 4 small files once per service-worker version, on each device's own next page load."
-  },
-  {
-   "id": "public/sw.js:3",
-   "token": "none",
-   "kind": "event",
-   "what": "Service worker activate: deletes the other memoryz-shell-* caches, then clients.claim()",
-   "reason": "Activate only deletes local caches: no network and no reload."
-  },
-  {
-   "id": "public/sw.js:4",
-   "token": "none",
-   "kind": "other",
-   "what": "Service-worker navigation handler: network first, falling back to the cached '/' only when fetch rejects.",
-   "reason": "There is no retry loop to jitter"
-  },
-  {
-   "id": "scripts/deploy.mjs:130",
-   "token": "none",
-   "kind": "other",
-   "what": "The deploy step runs migrations against the live database with no lock_timeout and no class-hours guard",
-   "reason": "A single migrator (now deploy.mjs:161)."
-  },
-  {
-   "id": "scripts/deploy.mjs:152",
-   "token": "none",
-   "kind": "other",
-   "what": "Cloud Run service deploy: min 1, max 3, concurrency 80, timeout 300 s, cpu-boost, gen2 (lines 151-156)",
-   "reason": "Clients hold no persistent connections to re-establish"
-  },
-  {
-   "id": "scripts/deploy.mjs:154",
-   "token": "none",
-   "kind": "other",
-   "what": "Startup probe: /api/health with initialDelay 2 s, period 3 s, failureThreshold 20, timeout 3 s (about a 62 s budget).",
-   "reason": "A startup probe per instance, at its own pace (now deploy.mjs:185)"
-  },
-  {
-   "id": "scripts/deploy.mjs:155",
-   "token": "none",
-   "kind": "periodic",
-   "what": "Cloud Run liveness probe: GET /api/health every 30 s, failureThreshold 3, timeout 3 s",
-   "reason": "A liveness check that depends on the shared database restarts every instance together; the fix is structural, not jitter"
-  },
-  {
-   "id": "scripts/deploy.mjs:208",
-   "token": "none",
-   "kind": "periodic",
-   "what": "Cloud Scheduler memoryz-sweep: '0 4 * * *' Asia/Seoul triggers the memoryz-sweep Cloud Run job (task timeout 900 s, --max-retries=0, line 84)",
-   "reason": "One scheduler job at 04:00 KST (now deploy.mjs:239)."
-  },
-  {
-   "id": "scripts/deploy.mjs:228",
-   "token": "none",
-   "kind": "periodic",
-   "what": "Cloud Monitoring uptime check memoryz-health: GET https://<host>/api/health with period 60 s and timeout 10 s, from ASIA_PACIFIC, USA_OREGON and EUROPE (lines 2",
-   "reason": "About 3 external checks per minute (now deploy.mjs:259-260), unrelated to class timing."
-  },
-  {
-   "id": "scripts/deploy.mjs:249",
-   "token": "none",
-   "kind": "periodic",
-   "what": "The 5xx-ratio, p95-latency and pool-saturation alert policies use 300 s windows",
-   "reason": "An alerting window"
-  },
-  {
-   "id": "server/bench/internal/app/app.go:115",
-   "token": "none",
-   "kind": "other",
-   "what": "The benchmark harness maps ErrNoDB to 503.",
-   "reason": "Not deployed."
-  },
-  {
-   "id": "server/bench/internal/pgbench/pgbench.go:285",
-   "token": "none",
-   "kind": "poll",
-   "what": "Benchmark Postgres readiness poll",
-   "reason": "Development tooling."
-  },
-  {
-   "id": "server/bench/orchestrate.go:135",
-   "token": "none",
-   "kind": "timer",
-   "what": "Benchmark pauses after the go test microbench so the compile burst settles",
-   "reason": "Development tooling."
-  },
-  {
-   "id": "server/bench/orchestrate.go:473",
-   "token": "none",
-   "kind": "timer",
-   "what": "Benchmark harness stops child processes by escalating from stdin close to SIGTERM to SIGKILL",
-   "reason": "Development tooling."
-  },
-  {
-   "id": "server/bench/orchestrate.go:519",
-   "token": "none",
-   "kind": "poll",
-   "what": "Benchmark harness waitReady: polls the child server every 100 ms",
-   "reason": "Development tooling with a single actor."
-  },
-  {
-   "id": "server/cmd/server/main.go:107",
-   "token": "none",
-   "kind": "timer",
-   "what": "verify-provider CLI with a 5-minute context",
-   "reason": "An operator CLI command, not on the serving path."
-  },
-  {
-   "id": "server/cmd/server/main.go:150",
-   "token": "none",
-   "kind": "timer",
-   "what": "Telemetry flush on shutdown with a 5s timeout",
-   "reason": "Runs once per instance"
-  },
-  {
-   "id": "server/cmd/server/main.go:212",
-   "token": "none",
-   "kind": "periodic",
-   "what": "Daily sweep job (Cloud Scheduler) connecting through db.Connect",
-   "reason": "One scheduled job at 04:00 KST."
-  },
-  {
-   "id": "server/internal/ai/provider.go:31",
-   "token": "none",
-   "kind": "other",
-   "what": "AI 503s: ErrUnavailable (no key or model configured), errModelConfig (bad model or effort, line 32), errQuota (upstream 402, line 34).",
-   "reason": "Configuration or billing states, not load, so a hint would only invite useless retries"
-  },
-  {
-   "id": "server/internal/ai/provider.go:123",
-   "token": "none",
-   "kind": "other",
-   "what": "OpenRouter http.Client: Timeout 175s, DefaultTransport, no retries",
-   "reason": "There is no retry loop, paid calls are never retried, and HTTP/2 shares one connection"
-  },
-  {
-   "id": "server/internal/ai/provider.go:248",
-   "token": "retry-after",
-   "kind": "http-429",
-   "what": "OpenRouter call: an upstream 429 becomes errBusy (429 'AI 요청이 많아요'); a 402 becomes errQuota (503)",
-   "policy": "retry-after"
-  },
-  {
-   "id": "server/internal/ai/tasks.go:168",
-   "token": "none",
-   "kind": "retry",
-   "what": "The server repeats the paid generation immediately when the answer is empty, cut off, unreadable or refused by the validator",
-   "reason": "The regeneration fires when the first answer arrives, and those arrival times already differ by seconds"
-  },
-  {
-   "id": "server/internal/api/airuns.go:238",
-   "token": "none",
-   "kind": "timer",
-   "what": "The write that marks an AI run FAILED runs with no deadline",
-   "reason": "An unbounded wait, not a herd"
-  },
-  {
-   "id": "server/internal/api/api.go:114",
-   "token": "none",
-   "kind": "event",
-   "what": "invalidate() bumps the shared ver:posts after any successful write under /api/posts* or /api/blocks*, and on /api/admin/users/{id}",
-   "reason": "A version change cannot be spread over time"
-  },
-  {
-   "id": "server/internal/api/auth_handlers.go:37",
-   "token": "retry-after",
-   "kind": "rate-limit",
-   "what": "Sign-in limiter: ratelimit.Check(\"session:\"+clientIP, 30, 1m) on POST /api/session (demoLogin, line 37, mounted at api/api.go:124) and on GET /api/auth/{provide",
-   "policy": "retry-after (from ratelimit), plus a limit sized so that an ordinary bell never trips it."
-  },
-  {
-   "id": "server/internal/api/bootstrap.go:163",
-   "token": "none",
-   "kind": "other",
-   "what": "The bootstrap cache key includes the Seoul date (dateKey, bootstrap.go:36), so every boot key rolls over at 00:00 KST.",
-   "reason": "The rollover at midnight KST is needed for correctness (the date is in the key)"
-  },
-  {
-   "id": "server/internal/api/cachelayer.go:18",
-   "token": "coalesce",
-   "kind": "ttl",
-   "what": "bootstrapTTL = 60s for key boot:<user>:<learner>:<SeoulDate>:<ver(user)>:<ver(learner)> (the ETag plus the bootstrap JSON)",
-   "policy": "coalesce: singleflight on the bootstrap fill"
-  },
-  {
-   "id": "server/internal/api/cachelayer.go:19",
-   "token": "coalesce",
-   "kind": "ttl",
-   "what": "postsTTL = 15s for key posts:<user>:<role>:<commented>:<ver(user)>:<ver(posts)>",
-   "policy": "coalesce: singleflight on the posts fill"
-  },
-  {
-   "id": "server/internal/api/cachelayer.go:20",
-   "token": "coalesce",
-   "kind": "ttl",
-   "what": "schoolsTTL = 1h for key schools:<ver(schools)>:<q>",
-   "policy": "coalesce: singleflight on the shared schools key"
-  },
-  {
-   "id": "server/internal/api/cachelayer.go:21",
-   "token": "none",
-   "kind": "ttl",
-   "what": "versionTTL = 7 days for ver:<userId>, ver:posts and ver:schools",
-   "reason": "When a version key expires it costs zero queries, because the entries it versioned live ≤ 1 h"
-  },
-  {
-   "id": "server/internal/api/cachelayer.go:40",
-   "token": "backoff",
-   "kind": "event",
-   "what": "bump(): a GET of the version, then a SET of n+1 with a 7-day TTL, using r.Context()",
-   "policy": "backoff: a bounded full-jitter retry of a write that is idempotent in effect, on a detached context, with values that only increase."
-  },
-  {
-   "id": "server/internal/api/cards.go:195",
-   "token": "none",
-   "kind": "other",
-   "what": "The server only accepts review timestamps inside a fixed window, and one rejected review blocks the rest of the offline queue",
-   "reason": "Affects one device"
-  },
-  {
-   "id": "server/internal/api/parent.go:80",
-   "token": "none",
-   "kind": "ttl",
-   "what": "Creating an invite code also deletes every user's expired invites",
-   "reason": "The table is tiny at PoC scale."
-  },
-  {
-   "id": "server/internal/api/parent.go:138",
-   "token": "retry-after",
-   "kind": "http-429",
-   "what": "Parent invite-code lockout: 5 wrong codes set LinkLockedUntil = now + 30 min, answered with errLinkLocked 429 (lines 35-46, 138-164).",
-   "policy": "retry-after, exact (spread 0)."
-  },
-  {
-   "id": "server/internal/api/study.go:49",
-   "token": "retry-after",
-   "kind": "rate-limit",
-   "what": "Per-student AI budget per minute: ratelimit.Check('ai:m:'+userID, AI_RATE_PER_MINUTE=10, 1m), checked before /api/generate, /api/essay/submit and /api/planner/s",
-   "policy": "retry-after (from ratelimit)"
-  },
-  {
-   "id": "server/internal/api/study.go:52",
-   "token": "retry-after",
-   "kind": "rate-limit",
-   "what": "Per-student AI budget per day: ratelimit.Check('ai:d:'+userID, AI_RATE_PER_DAY=200, 24h).",
-   "policy": "retry-after, exact (spread 0), with its own code."
-  },
-  {
-   "id": "server/internal/api/uploads.go:36",
-   "token": "none",
-   "kind": "timer",
-   "what": "Upload handler deadline: httpx.Deadline(90s), detached from client cancellation",
-   "reason": "A per-request deadline, now aiTimeout 180 s (uploads.go:36-38), causes no synchronized retry"
-  },
-  {
-   "id": "server/internal/api/uploads.go:183",
-   "token": "admission",
-   "kind": "rate-limit",
-   "what": "Upload-time OCR (image files, plus scanned-PDF pages through opts.OCR at line 150) makes paid model calls that are outside the per-student AI budget and have no",
-   "policy": "admission: the same AI semaphore, through Provider.JSON."
-  },
-  {
-   "id": "server/internal/api/uploads.go:199",
-   "token": "none",
-   "kind": "ttl",
-   "what": "Each upload first deletes the same user's unattached uploads older than 24 h",
-   "reason": "Per user, on demand."
-  },
-  {
-   "id": "server/internal/api/uploads.go:262",
-   "token": "admission",
-   "kind": "http-429",
-   "what": "pdfSlot: a per-instance semaphore for PDF extraction, sized by PDF_WORKERS=2 (api/api.go:45, scripts/deploy.mjs:69)",
-   "policy": "admission: keep the fixed 30 s queue wait"
-  },
-  {
-   "id": "server/internal/api/uploads.go:322",
-   "token": "none",
-   "kind": "ttl",
-   "what": "Uploads and upload images are served as HTTP-cacheable for a year",
-   "reason": "The content under an id never changes, so long private caching is correct."
-  },
-  {
-   "id": "server/internal/app/app.go:29",
-   "token": "retry-after",
-   "kind": "timer",
-   "what": "Server-side request deadlines: 15 s for ordinary API routes, 30 s for auth",
-   "policy": "retry-after on the 504 that the request deadline produces."
-  },
-  {
-   "id": "server/internal/auth/gate.go:31",
-   "token": "none",
-   "kind": "timer",
-   "what": "The HTML role gate looks up the session with no deadline",
-   "reason": "A missing time bound, not an alignment problem"
-  },
-  {
-   "id": "server/internal/auth/oauth.go:74",
-   "token": "none",
-   "kind": "ttl",
-   "what": "The OAuth state cookie and signed state live for 10 minutes",
-   "reason": "Each sign-in has its own lifetime, so nothing expires together."
-  },
-  {
-   "id": "server/internal/auth/oauth.go:79",
-   "token": "none",
-   "kind": "other",
-   "what": "ErrProviderOff: 503 for an unknown or unconfigured provider (lines 140-148).",
-   "reason": "A configuration state"
-  },
-  {
-   "id": "server/internal/auth/oauth.go:257",
-   "token": "none",
-   "kind": "timer",
-   "what": "The social-login token exchange and userinfo calls have 15 s timeouts and no retry",
-   "reason": "One attempt per user action."
-  },
-  {
-   "id": "server/internal/auth/oauth.go:305",
-   "token": "none",
-   "kind": "other",
-   "what": "OIDC issuer discovery runs under a global mutex; success is cached forever, failure is not cached",
-   "reason": "On success the mutex already makes callers share one discovery, which is then cached for the life of the process."
-  },
-  {
-   "id": "server/internal/auth/session.go:32",
-   "token": "lifetime",
-   "kind": "ttl",
-   "what": "Session lifetime is exactly 7 x 24 h from creation (Create, lines 105-115)",
-   "policy": "lifetime: sliding renewal"
-  },
-  {
-   "id": "server/internal/auth/session.go:95",
-   "token": "lifetime",
-   "kind": "ttl",
-   "what": "The memoryz_signed_in hint cookie's Max-Age, and its silent re-issue",
-   "policy": "lifetime"
-  },
-  {
-   "id": "server/internal/auth/session.go:111",
-   "token": "none",
-   "kind": "ttl",
-   "what": "Signing in deletes that user's expired sessions",
-   "reason": "Deletes only the signing-in user's rows."
-  },
-  {
-   "id": "server/internal/auth/session.go:210",
-   "token": "none",
-   "kind": "ttl",
-   "what": "sess:<sha256(token)> snapshot holding {userId, expiresAt}",
-   "reason": "A per-device snapshot, refilled on that device's next request by one primary-key join: at most about 50 point queries, spread by people"
-  },
-  {
-   "id": "server/internal/auth/session.go:233",
-   "token": "none",
-   "kind": "ttl",
-   "what": "user:<id> snapshot with a 60 s TTL",
-   "reason": "A per-user snapshot, refilled on the owner's next request by one primary-key query."
-  },
-  {
-   "id": "server/internal/blob/gcs.go:22",
-   "token": "none",
-   "kind": "retry",
-   "what": "Cloud Storage client created with storage.NewClient defaults (retry policy and backoff)",
-   "reason": "gax already applies full jitter to idempotent operations, and 25 writers are far below the bucket's limits"
-  },
-  {
-   "id": "server/internal/blob/gcs.go:35",
-   "token": "library",
-   "kind": "retry",
-   "what": "GCS.Put writes without a precondition, so the write counts as non-idempotent and is never retried",
-   "policy": "library: make the write idempotent so the storage client's full-jitter retry applies."
-  },
-  {
-   "id": "server/internal/cache/memory.go:44",
-   "token": "none",
-   "kind": "periodic",
-   "what": "The in-process cache sweeps expired entries on a 1-minute ticker, scanning the whole map under the global mutex (memory.go:43-61)",
-   "reason": "A process-local ticker that shares nothing"
-  },
-  {
-   "id": "server/internal/cache/memory.go:109",
-   "token": "none",
-   "kind": "rate-limit",
-   "what": "In-process fixed-window Incr, used as the rate-limit fallback when VALKEY_ADDR is empty",
-   "reason": "The fallback for development and tests"
-  },
-  {
-   "id": "server/internal/cache/valkey.go:40",
-   "token": "library",
-   "kind": "retry",
-   "what": "valkey-go client options: default RetryDelay, lazy reconnect, no ConnLifetime, ConnWriteTimeout 3s",
-   "policy": "library: keep valkey-go's equal-jitter retry, but put a deadline on every operation."
-  },
-  {
-   "id": "server/internal/cache/valkey.go:76",
-   "token": "none",
-   "kind": "other",
-   "what": "Startup PING: 5s timeout, no retry; a failure stops serve (server/cmd/server/main.go:184-190)",
-   "reason": "Runs once per instance start, and Cloud Run already spaces out restarts."
-  },
-  {
-   "id": "server/internal/cache/valkey.go:93",
-   "token": "lifetime",
-   "kind": "timer",
-   "what": "IAM re-AUTH timer per connection: RefreshAfter = token expiry - 5m, falling back to now + 30m",
-   "policy": "lifetime: fix the re-AUTH schedule so it always lands before the token expires, with a small spread per connection."
-  },
-  {
-   "id": "server/internal/cache/valkey.go:117",
-   "token": "none",
-   "kind": "ttl",
-   "what": "Valkey.Set stores values with PX ttl exactly as given",
-   "reason": "The driver writes the TTL it is given"
-  },
-  {
-   "id": "server/internal/cache/valkey.go:129",
-   "token": "retry-after",
-   "kind": "ttl",
-   "what": "cache.Valkey.Incr runs INCR, then a separate PEXPIRE only when the result is 1 (lines 129-140)",
-   "policy": "retry-after enabler: one atomic counter step that returns the time left in the window and heals keys that have no TTL."
-  },
-  {
-   "id": "server/internal/cache/valkey.go:134",
-   "token": "retry-after",
-   "kind": "rate-limit",
-   "what": "Valkey.Incr fixed-window counter: INCR, then a separate PEXPIRE only when n == 1 (valkey.go:129-140)",
-   "policy": "retry-after: each response breaks up the window edge"
-  },
-  {
-   "id": "server/internal/cache/valkey.go:145",
-   "token": "none",
-   "kind": "ttl",
-   "what": "Lock lease: SET NX PX ttl, released by a Lua script under a 3 s background context (valkey.go:145-165; in-memory version at memory.go:125-146).",
-   "reason": "Lock is not used in production; only tests call it."
-  },
-  {
-   "id": "server/internal/cache/valkey.go:149",
-   "token": "none",
-   "kind": "ttl",
-   "what": "Valkey.Lock lease (SET NX PX ttl) and a release script with a 3s timeout on context.Background (valkey.go:145-165)",
-   "reason": "An unused lease, so nothing can synchronise on it."
-  },
-  {
-   "id": "server/internal/config/config.go:156",
-   "token": "admission",
-   "kind": "rate-limit",
-   "what": "AI_CONCURRENCY (default 16) is parsed, validated and logged but never enforced, so nothing caps how many model calls run at once",
-   "policy": "admission: a FIFO semaphore in front of every paid model call, instead of a sleep."
-  },
-  {
-   "id": "server/internal/db/db.go:51",
-   "token": "none",
-   "kind": "reconnect",
-   "what": "Cloud SQL connector with WithLazyRefresh (IAM authN, private IP): the ephemeral certificate is fetched when a dial needs it",
-   "reason": "The connector refreshes once per instance under its mutex and already jitters its Admin API retries (cloudsqlconn v1.25.2)."
-  },
-  {
-   "id": "server/internal/db/db.go:78",
-   "token": "none",
-   "kind": "other",
-   "what": "The connection pool size (DB_POOL_MAX=6 per instance) is where the bell burst waits",
-   "reason": "Queuing at the pool is correct, and coalesced fills (cachelayer.go:18-20) remove duplicate work"
-  },
-  {
-   "id": "server/internal/db/db.go:80",
-   "token": "library",
-   "kind": "ttl",
-   "what": "pgxpool MaxConnLifetime = 30m with MaxConnLifetimeJitter left at 0",
-   "policy": "library: pgxpool MaxConnLifetimeJitter."
-  },
-  {
-   "id": "server/internal/db/db.go:81",
-   "token": "none",
-   "kind": "ttl",
-   "what": "Idle culling: MaxConnIdleTime 5m, HealthCheckPeriod 1m, MinConns 1, MinIdleConns unset (db.go:79-82)",
-   "reason": "A cold pool at the bell is a warmth problem, not a phase problem, so jitter would not change it"
-  },
-  {
-   "id": "server/internal/db/db.go:83",
-   "token": "none",
-   "kind": "reconnect",
-   "what": "Per-connection dial and cancel behaviour: ConnectTimeout 15s, pgconn's default context watcher with no DeadlineDelay, PingTimeout unset",
-   "reason": "Re-dials happen on demand and are capped at MaxConns, so a random delay would only add latency"
-  },
-  {
-   "id": "server/internal/db/db.go:99",
-   "token": "none",
-   "kind": "retry",
-   "what": "Startup DB ping retry loop in db.Connect (used by serve, migrate, sweep and seed-demo)",
-   "reason": "At most 3 instances plus 1 job, each opening one connection; retrying in lockstep cannot strain Cloud SQL"
-  },
-  {
-   "id": "server/internal/db/migrate.go:39",
-   "token": "none",
-   "kind": "retry",
-   "what": "goose Postgres session advisory lock that serialises migrators",
-   "reason": "Production has a single migrator."
-  },
-  {
-   "id": "server/internal/demo/seed.go:44",
-   "token": "none",
-   "kind": "other",
-   "what": "Every demo sign-in takes one global Postgres advisory lock",
-   "reason": "The advisory lock is held for one EXISTS query; it is not a timer."
-  },
-  {
-   "id": "server/internal/httpx/health.go:18",
-   "token": "none",
-   "kind": "other",
-   "what": "/api/health uses one 3s budget for both SELECT 1 and a cache GET, and serves as the Cloud Run startup and liveness probe (docs/CLOUD.md:40; route at server/inte",
-   "reason": "Cloud Run decides when probes run"
-  },
-  {
-   "id": "server/internal/httpx/health.go:21",
-   "token": "none",
-   "kind": "other",
-   "what": "/api/health answers 503 ErrDatabase (apierr/apierr.go:48) when SELECT 1 fails within 3 s",
-   "reason": "Only this handler returns ErrDatabase (apierr.go:48), and its callers are platform probes, so it gets no Retry-After."
-  },
-  {
-   "id": "server/internal/httpx/health.go:47",
-   "token": "none",
-   "kind": "timer",
-   "what": "Slow() dev endpoint that sleeps for ms (at most 5000)",
-   "reason": "Development only."
-  },
-  {
-   "id": "server/internal/httpx/json.go:84",
-   "token": "retry-after",
-   "kind": "http-429",
-   "what": "httpx.Fail is the single writer for every apierr response, 429 and 503 included",
-   "policy": "retry-after: the one place that writes it"
-  },
-  {
-   "id": "server/internal/httpx/server.go:13",
-   "token": "retry-after",
-   "kind": "other",
-   "what": "Graceful shutdown: on SIGTERM (cmd/server/main.go:67) srv.Shutdown waits ShutdownGrace=10 s (lines 12-13, 34-41)",
-   "policy": "retry-after"
-  },
-  {
-   "id": "server/internal/httpx/server.go:21",
-   "token": "none",
-   "kind": "timer",
-   "what": "http.Server timeouts: ReadHeaderTimeout 10 s, ReadTimeout 2 min, IdleTimeout 2 min, no WriteTimeout",
-   "reason": "Per-connection bounds with no synchronized retry."
-  },
-  {
-   "id": "server/internal/httpx/static.go:75",
-   "token": "none",
-   "kind": "other",
-   "what": "SPA document loader: 503 'web build missing' when the HTML file can't be read",
-   "reason": "A local 1 s stat cache and a path that only runs on misconfiguration."
-  },
-  {
-   "id": "server/internal/httpx/static.go:154",
-   "token": "none",
-   "kind": "ttl",
-   "what": "Cache-Control rules for the static web build",
-   "reason": "Each device revalidates on its own next navigation, and hashed chunks are immutable."
-  },
-  {
-   "id": "server/internal/pdfx/extract.go:261",
-   "token": "none",
-   "kind": "other",
-   "what": "Scanned-PDF pages are sent to OCR one after another inside the upload deadline while the request holds a pdfSlot, and every failure is reported as an unreadable",
-   "reason": "Serial within one upload and capped by pdfSlot and the AI semaphore"
-  },
-  {
-   "id": "server/internal/ratelimit/ratelimit.go:20",
-   "token": "retry-after",
-   "kind": "rate-limit",
-   "what": "ratelimit.Allow/Check: INCR rl:<key>, with TTL=window set on the first hit; allowed while n<=limit",
-   "policy": "retry-after on every refusal."
-  },
-  {
-   "id": "server/internal/srs/srs.go:123",
-   "token": "none",
-   "kind": "other",
-   "what": "Review intervals are fixed, and FSRS fuzz is disabled",
-   "reason": "Due times are evaluated on the device, and nothing fires at a due time."
-  },
-  {
-   "id": "server/internal/sweep/sweep.go:59",
-   "token": "none",
-   "kind": "periodic",
-   "what": "The sweep's orphan-blob pass can delete the objects of an upload that is still in progress",
-   "reason": "A race with one scheduled job, fixed by a minimum object age in a separate change."
-  },
-  {
-   "id": "server/internal/telemetry/telemetry.go:116",
-   "token": "none",
-   "kind": "retry",
-   "what": "Batch span processor (WithBatchTimeout 2s) and the OTLP gRPC trace and metric exporters with default retry",
-   "reason": "OTLP retries are already randomized, and there are at most 6 export streams."
-  },
-  {
-   "id": "server/internal/telemetry/telemetry.go:118",
-   "token": "none",
-   "kind": "periodic",
-   "what": "Metric PeriodicReader exporting every 60s",
-   "reason": "Three exports a minute running in phase is harmless."
-  },
-  {
-   "id": "server/internal/telemetry/telemetry.go:161",
-   "token": "none",
-   "kind": "periodic",
-   "what": "The pool-occupancy gauge is sampled only when metrics export, every 60 s",
-   "reason": "Measurement, not load"
-  },
-  {
-   "id": "src/components/app.tsx:192",
-   "token": "none",
-   "kind": "periodic",
-   "what": "HomeScreen setInterval every 60 s, plus 'focus' (193) and 'storage' (194) listeners",
-   "reason": "A local 60 s clock that sends no request."
-  },
-  {
-   "id": "src/components/app.tsx:637",
-   "token": "none",
-   "kind": "timer",
-   "what": "Toast auto-clear.",
-   "reason": "A toast timer."
-  },
-  {
-   "id": "src/components/app.tsx:663",
-   "token": "none",
-   "kind": "event",
-   "what": "The App 'offline'/'online' listeners only toggle the offline banner (660-664)",
-   "reason": "These listeners only toggle the offline banner (app.tsx:661-665) and send no request."
-  },
-  {
-   "id": "src/components/app.tsx:679",
-   "token": "cooldown",
-   "kind": "ttl",
-   "what": "The client decides between bootstrap and the Login screen using the memoryz_signed_in hint cookie (src/lib/session-hint.ts:9-14)",
-   "policy": "cooldown on sign-in refusals"
-  },
-  {
-   "id": "src/components/app.tsx:684",
-   "token": "backoff",
-   "kind": "event",
-   "what": "App mount restores the IndexedDB shell (665-674), then runs refresh() (GET /bootstrap, then shellDB put; 645-651)",
-   "policy": "backoff: a bounded automatic retry of the idempotent GET /bootstrap, floored by Retry-After."
-  },
-  {
-   "id": "src/components/app.tsx:701",
-   "token": "none",
-   "kind": "event",
-   "what": "navigator.serviceWorker.register('/sw.js') on every App mount in production (dev builds unregister it and delete the caches, 702-715).",
-   "reason": "One tiny no-store GET of /sw.js per page load, spread by people."
-  },
-  {
-   "id": "src/components/onboarding.tsx:20",
-   "token": "none",
-   "kind": "timer",
-   "what": "School search debounce",
-   "reason": "A debounce paced by keystrokes"
-  },
-  {
-   "id": "src/components/social/account.tsx:40",
-   "token": "none",
-   "kind": "event",
-   "what": "GET /social on Account mount, and again whenever data.posts changes identity, i.e",
-   "reason": "One-shot GETs on navigation, not part of a chain the classroom lines up"
-  },
-  {
-   "id": "src/components/social/account.tsx:421",
-   "token": "none",
-   "kind": "timer",
-   "what": "Profile editor school search debounce through api() (150 s timeout).",
-   "reason": "A debounce paced by keystrokes."
-  },
-  {
-   "id": "src/components/social/account.tsx:550",
-   "token": "none",
-   "kind": "periodic",
-   "what": "Invite code countdown",
-   "reason": "A local countdown; a new code only comes from the button."
-  },
-  {
-   "id": "src/components/social/admin.tsx:30",
-   "token": "none",
-   "kind": "event",
-   "what": "The admin screen fetches GET /admin once on mount",
-   "reason": "Admins only, one fetch per visit."
-  },
-  {
-   "id": "src/components/social/parent.tsx:351",
-   "token": "none",
-   "kind": "event",
-   "what": "ChildLinks fetches GET /children once on mount",
-   "reason": "One fetch per screen visit."
-  },
-  {
-   "id": "src/components/social/planner.tsx:113",
-   "token": "none",
-   "kind": "periodic",
-   "what": "Planner clock: setNow every 60 s, which recomputes due counts and gaps locally.",
-   "reason": "A local clock that sends no request."
-  },
-  {
-   "id": "src/components/social/planner.tsx:171",
-   "token": "none",
-   "kind": "periodic",
-   "what": "Elapsed-time counter while a suggestion is generating.",
-   "reason": "An elapsed-time counter in the UI."
-  },
-  {
-   "id": "src/components/social/planner.tsx:314",
-   "token": "none",
-   "kind": "poll",
-   "what": "inspectSuggestion() polls a stored request up to 45 times, every 1600 ms (312-317)",
-   "reason": "It starts from a tap, errors are thrown to the caller, and no reconnect re-aligns it."
-  },
-  {
-   "id": "src/components/social/planner.tsx:346",
-   "token": "none",
-   "kind": "poll",
-   "what": "resume(): on Planner mount (366-392), a stored RUNNING suggestion is inspected and then polled up to 45 times, every 1600 ms (about 72 s)",
-   "reason": "It starts on each student's own navigation and ends at the first error, and nothing ('online', visibility, a deploy) restarts it, so nothing re-aligns these pollers"
-  },
-  {
-   "id": "src/components/social/planner.tsx:466",
-   "token": "none",
-   "kind": "event",
-   "what": "Planner fill-free-time suggest() calls runAiTask(/planner/suggest) on a user tap",
-   "reason": "A tap at a person's own pace"
-  },
-  {
-   "id": "src/components/social/planner.tsx:488",
-   "token": "none",
-   "kind": "timer",
-   "what": "revealResult keeps the working state visible for at least 900 ms before opening the sheet (487-488).",
-   "reason": "A minimum reveal time for the UI only."
-  },
-  {
-   "id": "src/components/social/planner.tsx:558",
-   "token": "none",
-   "kind": "retry",
-   "what": "When applyPlan fails, it immediately does one GET /bootstrap plus a refresh to recompute which blocks were already saved (556-565)",
-   "reason": "One bounded re-read after a tap."
-  },
-  {
-   "id": "src/components/study/cards.tsx:147",
-   "token": "window",
-   "kind": "reconnect",
-   "what": "Flashcards 'online' listener (plus the update() call on mount, line 146) runs sync() (91-113)",
-   "policy": "window + backoff, through the offline.ts scheduler"
-  },
-  {
-   "id": "src/components/study/cards.tsx:208",
-   "token": "backoff",
-   "kind": "retry",
-   "what": "After every rating, void sync() (208), plus the manual sync buttons (255, 484, 764)",
-   "policy": "backoff, only after a failure"
-  },
-  {
-   "id": "src/components/study/essay.tsx:197",
-   "token": "none",
-   "kind": "event",
-   "what": "On essay screen mount, a stored submission is inspected once with GET /ai-runs (188-222)",
-   "reason": "One GET on navigation, with no loop."
-  },
-  {
-   "id": "src/components/study/essay.tsx:486",
-   "token": "none",
-   "kind": "event",
-   "what": "Essay submit calls runAiTask(/essay/submit)",
-   "reason": "Students finish free-text answers at different times"
-  },
-  {
-   "id": "src/components/study/generation-task.ts:25",
-   "token": "none",
-   "kind": "event",
-   "what": "When the GenerationSheet opens, recoverGenerationTask inspects a stored request once (called from study/shared.tsx:205).",
-   "reason": "One read when the sheet opens; errors fall back to the stored copy."
-  },
-  {
-   "id": "src/components/study/pdf-viewer.tsx:61",
-   "token": "none",
-   "kind": "timer",
-   "what": "Fetches the PDF bytes with a 45 s timeout",
-   "reason": "One fetch a person starts, with a manual retry."
-  },
-  {
-   "id": "src/components/study/shared.tsx:179",
-   "token": "none",
-   "kind": "periodic",
-   "what": "GenerationSheet elapsed-time counter.",
-   "reason": "An elapsed-time counter in the UI."
-  },
-  {
-   "id": "src/components/study/shared.tsx:243",
-   "token": "none",
-   "kind": "event",
-   "what": "GenerationSheet generate() calls runAiTask when the button is pressed (385)",
-   "reason": "The clicks are already spread by people; delaying a student's own click adds latency without lowering the peak"
-  },
-  {
-   "id": "src/components/study/shared.tsx:446",
-   "token": "cooldown",
-   "kind": "other",
-   "what": "uploadFile POSTs /api/upload with no timeout and no abort signal",
-   "policy": "cooldown"
-  },
-  {
-   "id": "src/components/study/subjects.tsx:960",
-   "token": "none",
-   "kind": "event",
-   "what": "UploadSheet save()",
-   "reason": "A serial chain a person starts, whose stages vary in length and already pull devices apart"
-  },
-  {
-   "id": "src/components/ui-date.tsx:204",
-   "token": "none",
-   "kind": "timer",
-   "what": "Time-wheel scroll-settle timer, plus requestAnimationFrame focus restores (src/components/ui-choice.tsx:76, ui-date.tsx:41, 134).",
-   "reason": "A UI settle timer and requestAnimationFrame focus restores."
-  },
-  {
-   "id": "src/lib/ai-task.ts:4",
-   "token": "none",
-   "kind": "timer",
-   "what": "AI_CLIENT_DEADLINE_MS = 190000",
-   "reason": "The deadline only leads to a status read, and only after a tap."
-  },
-  {
-   "id": "src/lib/ai-task.ts:344",
-   "token": "cooldown",
-   "kind": "retry",
-   "what": "How the client treats a POST 4xx (429 included) when no run record exists: the task is marked FAILED locally and not retried (lines 344-361)",
-   "policy": "cooldown on the manual retry"
-  },
-  {
-   "id": "src/lib/ai-task.ts:365",
-   "token": "none",
-   "kind": "timer",
-   "what": "The 190 s client deadline (AI_CLIENT_DEADLINE_MS line 4, set at 313), plus an immediate exit when navigator.onLine === false",
-   "reason": "Reaching the 190 s deadline or going offline only changes UI state"
-  },
-  {
-   "id": "src/lib/ai-task.ts:368",
-   "token": "period",
-   "kind": "poll",
-   "what": "runAiTask status loop: after the POST, GET /api/ai-runs/{id} every 2500 ms until the 190 s deadline (lines 312-370; first wait at line 332, later waits at 368-3",
-   "policy": "period ±25%, a wake window after a failed POST, and a floor-plus-full-jitter backoff on failed reads"
-  },
-  {
-   "id": "src/lib/api.ts:1",
-   "token": "retry-after",
-   "kind": "retry",
-   "what": "Client api(): fetch with a 20 s timeout for /bootstrap and 150 s otherwise",
-   "policy": "retry-after carrier"
-  },
-  {
-   "id": "src/lib/api.ts:4",
-   "token": "none",
-   "kind": "timer",
-   "what": "Shared fetch wrapper: AbortSignal.timeout(20000) for /bootstrap and 150000 for everything else",
-   "reason": "Each timeout starts when its request starts, and people have already spread those"
-  },
-  {
-   "id": "src/lib/materials.ts:17",
-   "token": "none",
-   "kind": "timer",
-   "what": "GET /api/materials/{id} with a 20 s timeout",
-   "reason": "One fetch a person starts, deduplicated in flight per id+hash, with a manual retry."
-  },
-  {
-   "id": "src/lib/materials.ts:31",
-   "token": "none",
-   "kind": "ttl",
-   "what": "The in-memory material detail cache is keyed by id+contentHash with no time-based expiry (26-42)",
-   "reason": "Client caches have no TTLs; events invalidate them, so nothing on the client can expire together."
-  },
-  {
-   "id": "src/lib/offline.ts:70",
-   "token": "none",
-   "kind": "event",
-   "what": "cacheCards image prefetch",
-   "reason": "Each uncached image is fetched once per device (cached ones are skipped at offline.ts:68) and served private/immutable (uploads.go:322)"
-  },
-  {
-   "id": "src/lib/offline.ts:154",
-   "token": "backoff",
-   "kind": "other",
-   "what": "syncReviews drains the IndexedDB review queue",
-   "policy": "backoff"
-  }
- ]
+  "spec": "docs/JITTER.md",
+  "frozen": "2026-09-16",
+  "note": "The 129 timing sites of the jitter audit (workflow wf_f151c3cb-59a). Each id is a file:line of the code as audited; the code carries one marker per id: `jitter: <token> … [site <id>]` (token = none for a site that needs no jitter).",
+  "sites": [
+    {
+      "id": "docs/CACHING.md:22",
+      "token": "none",
+      "kind": "other",
+      "what": "The documented table of keys, TTLs and invalidation: sess/user 60 s, ver 7 d, boot 60 s, posts 15 s, schools 1 h, rl = window length, lock = lease.",
+      "reason": "Documentation"
+    },
+    {
+      "id": "public/sw.js:2",
+      "token": "none",
+      "kind": "event",
+      "what": "Service worker install: caches.addAll of '/', '/aurora.svg', '/icon.svg' and '/manifest.webmanifest', then skipWaiting().",
+      "reason": "Install caches 4 small files once per service-worker version, on each device's own next page load."
+    },
+    {
+      "id": "public/sw.js:3",
+      "token": "none",
+      "kind": "event",
+      "what": "Service worker activate: deletes the other memoryz-shell-* caches, then clients.claim()",
+      "reason": "Activate only deletes local caches: no network and no reload."
+    },
+    {
+      "id": "public/sw.js:4",
+      "token": "none",
+      "kind": "other",
+      "what": "Service-worker navigation handler: network first, falling back to the cached '/' only when fetch rejects.",
+      "reason": "There is no retry loop to jitter"
+    },
+    {
+      "id": "scripts/deploy.mjs:130",
+      "token": "none",
+      "kind": "other",
+      "what": "The deploy step runs migrations against the live database with no lock_timeout and no class-hours guard",
+      "reason": "A single migrator (now deploy.mjs:161)."
+    },
+    {
+      "id": "scripts/deploy.mjs:152",
+      "token": "none",
+      "kind": "other",
+      "what": "Cloud Run service deploy: min 1, max 3, concurrency 80, timeout 300 s, cpu-boost, gen2 (lines 151-156)",
+      "reason": "Clients hold no persistent connections to re-establish"
+    },
+    {
+      "id": "scripts/deploy.mjs:154",
+      "token": "none",
+      "kind": "other",
+      "what": "Startup probe: /api/health with initialDelay 2 s, period 3 s, failureThreshold 20, timeout 3 s (about a 62 s budget).",
+      "reason": "A startup probe per instance, at its own pace (now deploy.mjs:185)"
+    },
+    {
+      "id": "scripts/deploy.mjs:155",
+      "token": "none",
+      "kind": "periodic",
+      "what": "Cloud Run liveness probe: GET /api/health every 30 s, failureThreshold 3, timeout 3 s",
+      "reason": "A liveness check that depends on the shared database restarts every instance together; the fix is structural, not jitter"
+    },
+    {
+      "id": "scripts/deploy.mjs:208",
+      "token": "none",
+      "kind": "periodic",
+      "what": "Cloud Scheduler memoryz-sweep: '0 4 * * *' Asia/Seoul triggers the memoryz-sweep Cloud Run job (task timeout 900 s, --max-retries=0, line 84)",
+      "reason": "One scheduler job at 04:00 KST (now deploy.mjs:239)."
+    },
+    {
+      "id": "scripts/deploy.mjs:228",
+      "token": "none",
+      "kind": "periodic",
+      "what": "Cloud Monitoring uptime check memoryz-health: GET https://<host>/api/health with period 60 s and timeout 10 s, from ASIA_PACIFIC, USA_OREGON and EUROPE (lines 2",
+      "reason": "About 3 external checks per minute (now deploy.mjs:259-260), unrelated to class timing."
+    },
+    {
+      "id": "scripts/deploy.mjs:249",
+      "token": "none",
+      "kind": "periodic",
+      "what": "The 5xx-ratio, p95-latency and pool-saturation alert policies use 300 s windows",
+      "reason": "An alerting window"
+    },
+    {
+      "id": "server/bench/internal/app/app.go:115",
+      "token": "none",
+      "kind": "other",
+      "what": "The benchmark harness maps ErrNoDB to 503.",
+      "reason": "Not deployed."
+    },
+    {
+      "id": "server/bench/internal/pgbench/pgbench.go:285",
+      "token": "none",
+      "kind": "poll",
+      "what": "Benchmark Postgres readiness poll",
+      "reason": "Development tooling."
+    },
+    {
+      "id": "server/bench/orchestrate.go:135",
+      "token": "none",
+      "kind": "timer",
+      "what": "Benchmark pauses after the go test microbench so the compile burst settles",
+      "reason": "Development tooling."
+    },
+    {
+      "id": "server/bench/orchestrate.go:473",
+      "token": "none",
+      "kind": "timer",
+      "what": "Benchmark harness stops child processes by escalating from stdin close to SIGTERM to SIGKILL",
+      "reason": "Development tooling."
+    },
+    {
+      "id": "server/bench/orchestrate.go:519",
+      "token": "none",
+      "kind": "poll",
+      "what": "Benchmark harness waitReady: polls the child server every 100 ms",
+      "reason": "Development tooling with a single actor."
+    },
+    {
+      "id": "server/cmd/server/main.go:107",
+      "token": "none",
+      "kind": "timer",
+      "what": "verify-provider CLI with a 5-minute context",
+      "reason": "An operator CLI command, not on the serving path."
+    },
+    {
+      "id": "server/cmd/server/main.go:150",
+      "token": "none",
+      "kind": "timer",
+      "what": "Telemetry flush on shutdown with a 5s timeout",
+      "reason": "Runs once per instance"
+    },
+    {
+      "id": "server/cmd/server/main.go:212",
+      "token": "none",
+      "kind": "periodic",
+      "what": "Daily sweep job (Cloud Scheduler) connecting through db.Connect",
+      "reason": "One scheduled job at 04:00 KST."
+    },
+    {
+      "id": "server/internal/ai/provider.go:31",
+      "token": "none",
+      "kind": "other",
+      "what": "AI 503s: ErrUnavailable (no key or model configured), errModelConfig (bad model or effort, line 32), errQuota (upstream 402, line 34).",
+      "reason": "Configuration or billing states, not load, so a hint would only invite useless retries"
+    },
+    {
+      "id": "server/internal/ai/provider.go:123",
+      "token": "none",
+      "kind": "other",
+      "what": "OpenRouter http.Client: Timeout 175s, DefaultTransport, no transport retries",
+      "reason": "The transport itself never retries: a timed-out or failed call may have reached the model and been billed; the only re-send is the bounded, never-billed upstream-429 loop in JSON"
+    },
+    {
+      "id": "server/internal/ai/provider.go:248",
+      "token": "retry-after",
+      "kind": "http-429",
+      "what": "OpenRouter call: once the in-process upstream-429 re-sends are exhausted (or would not fit the deadline) the learner gets errBusy (429) with the provider's hint; a 402 becomes errQuota (503)",
+      "policy": "retry-after"
+    },
+    {
+      "id": "server/internal/ai/tasks.go:168",
+      "token": "none",
+      "kind": "retry",
+      "what": "The server repeats the paid generation immediately when the answer is empty, cut off, unreadable or refused by the validator",
+      "reason": "The regeneration fires when the first answer arrives, and those arrival times already differ by seconds"
+    },
+    {
+      "id": "server/internal/api/airuns.go:238",
+      "token": "none",
+      "kind": "timer",
+      "what": "The write that marks an AI run FAILED runs with no deadline",
+      "reason": "An unbounded wait, not a herd"
+    },
+    {
+      "id": "server/internal/api/api.go:114",
+      "token": "none",
+      "kind": "event",
+      "what": "invalidate() bumps the shared ver:posts after any successful write under /api/posts* or /api/blocks*, and on /api/admin/users/{id}",
+      "reason": "A version change cannot be spread over time"
+    },
+    {
+      "id": "server/internal/api/auth_handlers.go:37",
+      "token": "retry-after",
+      "kind": "rate-limit",
+      "what": "Sign-in limiter: ratelimit.Check(\"session:\"+clientIP, 30, 1m) on POST /api/session (demoLogin, line 37, mounted at api/api.go:124) and on GET /api/auth/{provide",
+      "policy": "retry-after (from ratelimit), plus a limit sized so that an ordinary bell never trips it."
+    },
+    {
+      "id": "server/internal/api/bootstrap.go:163",
+      "token": "none",
+      "kind": "other",
+      "what": "The bootstrap cache key includes the Seoul date (dateKey, bootstrap.go:36), so every boot key rolls over at 00:00 KST.",
+      "reason": "The rollover at midnight KST is needed for correctness (the date is in the key)"
+    },
+    {
+      "id": "server/internal/api/cachelayer.go:18",
+      "token": "coalesce",
+      "kind": "ttl",
+      "what": "bootstrapTTL = 60s for key boot:<user>:<learner>:<SeoulDate>:<ver(user)>:<ver(learner)> (the ETag plus the bootstrap JSON)",
+      "policy": "coalesce: singleflight on the bootstrap fill"
+    },
+    {
+      "id": "server/internal/api/cachelayer.go:19",
+      "token": "coalesce",
+      "kind": "ttl",
+      "what": "postsTTL = 15s for key posts:<user>:<role>:<commented>:<ver(user)>:<ver(posts)>",
+      "policy": "coalesce: singleflight on the posts fill"
+    },
+    {
+      "id": "server/internal/api/cachelayer.go:21",
+      "token": "none",
+      "kind": "ttl",
+      "what": "versionTTL = 7 days for ver:<userId>, ver:posts and ver:schools",
+      "reason": "When a version key expires it costs zero queries, because the entries it versioned live ≤ 1 h"
+    },
+    {
+      "id": "server/internal/api/cachelayer.go:40",
+      "token": "backoff",
+      "kind": "event",
+      "what": "bump(): a GET of the version, then a SET of n+1 with a 7-day TTL, using r.Context()",
+      "policy": "backoff: a bounded full-jitter retry of a write that is idempotent in effect, on a detached context, with values that only increase."
+    },
+    {
+      "id": "server/internal/api/cards.go:195",
+      "token": "none",
+      "kind": "other",
+      "what": "The server only accepts review timestamps inside a fixed window, and one rejected review blocks the rest of the offline queue",
+      "reason": "Affects one device"
+    },
+    {
+      "id": "server/internal/api/parent.go:80",
+      "token": "none",
+      "kind": "ttl",
+      "what": "Creating an invite code also deletes every user's expired invites",
+      "reason": "The table is tiny at PoC scale."
+    },
+    {
+      "id": "server/internal/api/parent.go:138",
+      "token": "retry-after",
+      "kind": "http-429",
+      "what": "Parent invite-code lockout: 5 wrong codes set LinkLockedUntil = now + 30 min, answered with errLinkLocked 429 (lines 35-46, 138-164).",
+      "policy": "retry-after, exact (spread 0)."
+    },
+    {
+      "id": "server/internal/api/study.go:49",
+      "token": "retry-after",
+      "kind": "rate-limit",
+      "what": "Per-student AI budget per minute: ratelimit.Check('ai:m:'+userID, AI_RATE_PER_MINUTE=10, 1m), checked before /api/generate, /api/essay/submit and /api/planner/s",
+      "policy": "retry-after (from ratelimit)"
+    },
+    {
+      "id": "server/internal/api/study.go:52",
+      "token": "retry-after",
+      "kind": "rate-limit",
+      "what": "Per-student AI budget per day: ratelimit.Check('ai:d:'+userID, AI_RATE_PER_DAY=200, 24h).",
+      "policy": "retry-after, exact (spread 0), with its own code."
+    },
+    {
+      "id": "server/internal/api/uploads.go:36",
+      "token": "none",
+      "kind": "timer",
+      "what": "Upload handler deadline: httpx.Deadline(90s), detached from client cancellation",
+      "reason": "A per-request deadline, now aiTimeout 180 s (uploads.go:36-38), causes no synchronized retry"
+    },
+    {
+      "id": "server/internal/api/uploads.go:183",
+      "token": "admission",
+      "kind": "rate-limit",
+      "what": "Upload-time OCR (image files, plus scanned-PDF pages through opts.OCR at line 150) makes paid model calls that are outside the per-student AI budget and have no",
+      "policy": "admission: the same AI semaphore, through Provider.JSON."
+    },
+    {
+      "id": "server/internal/api/uploads.go:199",
+      "token": "none",
+      "kind": "ttl",
+      "what": "Each upload first deletes the same user's unattached uploads older than 24 h",
+      "reason": "Per user, on demand."
+    },
+    {
+      "id": "server/internal/api/uploads.go:262",
+      "token": "admission",
+      "kind": "http-429",
+      "what": "pdfSlot: a per-instance semaphore for PDF extraction, sized by PDF_WORKERS=2 (api/api.go:45, scripts/deploy.mjs:69)",
+      "policy": "admission: keep the fixed 30 s queue wait"
+    },
+    {
+      "id": "server/internal/api/uploads.go:322",
+      "token": "none",
+      "kind": "ttl",
+      "what": "Uploads and upload images are served as HTTP-cacheable for a year",
+      "reason": "The content under an id never changes, so long private caching is correct."
+    },
+    {
+      "id": "server/internal/app/app.go:29",
+      "token": "retry-after",
+      "kind": "timer",
+      "what": "Server-side request deadlines: 15 s for ordinary API routes, 30 s for auth",
+      "policy": "retry-after on the 504 that the request deadline produces."
+    },
+    {
+      "id": "server/internal/auth/gate.go:31",
+      "token": "none",
+      "kind": "timer",
+      "what": "The HTML role gate looks up the session with no deadline",
+      "reason": "A missing time bound, not an alignment problem"
+    },
+    {
+      "id": "server/internal/auth/oauth.go:74",
+      "token": "none",
+      "kind": "ttl",
+      "what": "The OAuth state cookie and signed state live for 10 minutes",
+      "reason": "Each sign-in has its own lifetime, so nothing expires together."
+    },
+    {
+      "id": "server/internal/auth/oauth.go:79",
+      "token": "none",
+      "kind": "other",
+      "what": "ErrProviderOff: 503 for an unknown or unconfigured provider (lines 140-148).",
+      "reason": "A configuration state"
+    },
+    {
+      "id": "server/internal/auth/oauth.go:257",
+      "token": "none",
+      "kind": "timer",
+      "what": "The social-login token exchange and userinfo calls have 15 s timeouts and no retry",
+      "reason": "One attempt per user action."
+    },
+    {
+      "id": "server/internal/auth/oauth.go:305",
+      "token": "none",
+      "kind": "other",
+      "what": "OIDC issuer discovery runs under a global mutex; success is cached forever, failure is not cached",
+      "reason": "On success the mutex already makes callers share one discovery, which is then cached for the life of the process."
+    },
+    {
+      "id": "server/internal/auth/session.go:32",
+      "token": "lifetime",
+      "kind": "ttl",
+      "what": "Session lifetime is exactly 7 x 24 h from creation (Create, lines 105-115)",
+      "policy": "lifetime: sliding renewal"
+    },
+    {
+      "id": "server/internal/auth/session.go:95",
+      "token": "lifetime",
+      "kind": "ttl",
+      "what": "The memoryz_signed_in hint cookie's Max-Age, and its silent re-issue",
+      "policy": "lifetime"
+    },
+    {
+      "id": "server/internal/auth/session.go:111",
+      "token": "none",
+      "kind": "ttl",
+      "what": "Signing in deletes that user's expired sessions",
+      "reason": "Deletes only the signing-in user's rows."
+    },
+    {
+      "id": "server/internal/auth/session.go:210",
+      "token": "none",
+      "kind": "ttl",
+      "what": "sess:<sha256(token)> snapshot holding {userId, expiresAt}",
+      "reason": "A per-device snapshot, refilled on that device's next request by one primary-key join: at most about 50 point queries, spread by people"
+    },
+    {
+      "id": "server/internal/auth/session.go:233",
+      "token": "none",
+      "kind": "ttl",
+      "what": "user:<id> snapshot with a 60 s TTL",
+      "reason": "A per-user snapshot, refilled on the owner's next request by one primary-key query."
+    },
+    {
+      "id": "server/internal/blob/gcs.go:22",
+      "token": "none",
+      "kind": "retry",
+      "what": "Cloud Storage client created with storage.NewClient defaults (retry policy and backoff)",
+      "reason": "gax already applies full jitter to idempotent operations, and 25 writers are far below the bucket's limits"
+    },
+    {
+      "id": "server/internal/blob/gcs.go:35",
+      "token": "library",
+      "kind": "retry",
+      "what": "GCS.Put writes without a precondition, so the write counts as non-idempotent and is never retried",
+      "policy": "library: make the write idempotent so the storage client's full-jitter retry applies."
+    },
+    {
+      "id": "server/internal/cache/memory.go:44",
+      "token": "none",
+      "kind": "periodic",
+      "what": "The in-process cache sweeps expired entries on a 1-minute ticker, scanning the whole map under the global mutex (memory.go:43-61)",
+      "reason": "A process-local ticker that shares nothing"
+    },
+    {
+      "id": "server/internal/cache/memory.go:109",
+      "token": "none",
+      "kind": "rate-limit",
+      "what": "In-process fixed-window Incr, used as the rate-limit fallback when VALKEY_ADDR is empty",
+      "reason": "The fallback for development and tests"
+    },
+    {
+      "id": "server/internal/cache/valkey.go:40",
+      "token": "library",
+      "kind": "retry",
+      "what": "valkey-go client options: default RetryDelay, lazy reconnect, no ConnLifetime, ConnWriteTimeout 3s",
+      "policy": "library: keep valkey-go's equal-jitter retry, but put a deadline on every operation."
+    },
+    {
+      "id": "server/internal/cache/valkey.go:76",
+      "token": "none",
+      "kind": "other",
+      "what": "Startup PING: 5s timeout, no retry; a failure stops serve (server/cmd/server/main.go:184-190)",
+      "reason": "Runs once per instance start, and Cloud Run already spaces out restarts."
+    },
+    {
+      "id": "server/internal/cache/valkey.go:93",
+      "token": "lifetime",
+      "kind": "timer",
+      "what": "IAM re-AUTH timer per connection: RefreshAfter = token expiry - 5m, falling back to now + 30m",
+      "policy": "lifetime: fix the re-AUTH schedule so it always lands before the token expires, with a small spread per connection."
+    },
+    {
+      "id": "server/internal/cache/valkey.go:117",
+      "token": "none",
+      "kind": "ttl",
+      "what": "Valkey.Set stores values with PX ttl exactly as given",
+      "reason": "The driver writes the TTL it is given"
+    },
+    {
+      "id": "server/internal/cache/valkey.go:129",
+      "token": "retry-after",
+      "kind": "ttl",
+      "what": "cache.Valkey.Incr runs INCR, then a separate PEXPIRE only when the result is 1 (lines 129-140)",
+      "policy": "retry-after enabler: one atomic counter step that returns the time left in the window and heals keys that have no TTL."
+    },
+    {
+      "id": "server/internal/cache/valkey.go:134",
+      "token": "retry-after",
+      "kind": "rate-limit",
+      "what": "Valkey.Incr fixed-window counter: INCR, then a separate PEXPIRE only when n == 1 (valkey.go:129-140)",
+      "policy": "retry-after: each response breaks up the window edge"
+    },
+    {
+      "id": "server/internal/cache/valkey.go:145",
+      "token": "none",
+      "kind": "ttl",
+      "what": "Lock lease: SET NX PX ttl, released by a Lua script under a 3 s background context (valkey.go:145-165; in-memory version at memory.go:125-146).",
+      "reason": "Lock is not used in production; only tests call it."
+    },
+    {
+      "id": "server/internal/cache/valkey.go:149",
+      "token": "none",
+      "kind": "ttl",
+      "what": "Valkey.Lock lease (SET NX PX ttl) and a release script with a 3s timeout on context.Background (valkey.go:145-165)",
+      "reason": "An unused lease, so nothing can synchronise on it."
+    },
+    {
+      "id": "server/internal/config/config.go:156",
+      "token": "admission",
+      "kind": "rate-limit",
+      "what": "AI_CONCURRENCY (default 16) is parsed, validated and logged but never enforced, so nothing caps how many model calls run at once",
+      "policy": "admission: a FIFO semaphore in front of every paid model call, instead of a sleep."
+    },
+    {
+      "id": "server/internal/db/db.go:51",
+      "token": "none",
+      "kind": "reconnect",
+      "what": "Cloud SQL connector with WithLazyRefresh (IAM authN, private IP): the ephemeral certificate is fetched when a dial needs it",
+      "reason": "The connector refreshes once per instance under its mutex and already jitters its Admin API retries (cloudsqlconn v1.25.2)."
+    },
+    {
+      "id": "server/internal/db/db.go:78",
+      "token": "none",
+      "kind": "other",
+      "what": "The connection pool size (DB_POOL_MAX=6 per instance) is where the bell burst waits",
+      "reason": "Queuing at the pool is correct, and coalesced fills (cachelayer.go:18-20) remove duplicate work"
+    },
+    {
+      "id": "server/internal/db/db.go:80",
+      "token": "library",
+      "kind": "ttl",
+      "what": "pgxpool MaxConnLifetime = 30m with MaxConnLifetimeJitter left at 0",
+      "policy": "library: pgxpool MaxConnLifetimeJitter."
+    },
+    {
+      "id": "server/internal/db/db.go:81",
+      "token": "none",
+      "kind": "ttl",
+      "what": "Idle culling: MaxConnIdleTime 5m, HealthCheckPeriod 1m, MinConns 1, MinIdleConns unset (db.go:79-82)",
+      "reason": "A cold pool at the bell is a warmth problem, not a phase problem, so jitter would not change it"
+    },
+    {
+      "id": "server/internal/db/db.go:83",
+      "token": "none",
+      "kind": "reconnect",
+      "what": "Per-connection dial and cancel behaviour: ConnectTimeout 15s, pgconn's default context watcher with no DeadlineDelay, PingTimeout unset",
+      "reason": "Re-dials happen on demand and are capped at MaxConns, so a random delay would only add latency"
+    },
+    {
+      "id": "server/internal/db/db.go:99",
+      "token": "none",
+      "kind": "retry",
+      "what": "Startup DB ping retry loop in db.Connect (used by serve, migrate, sweep and seed-demo)",
+      "reason": "At most 3 instances plus 1 job, each opening one connection; retrying in lockstep cannot strain Cloud SQL"
+    },
+    {
+      "id": "server/internal/db/migrate.go:39",
+      "token": "none",
+      "kind": "retry",
+      "what": "goose Postgres session advisory lock that serialises migrators",
+      "reason": "Production has a single migrator."
+    },
+    {
+      "id": "server/internal/demo/seed.go:44",
+      "token": "none",
+      "kind": "other",
+      "what": "Every demo sign-in takes one global Postgres advisory lock",
+      "reason": "The advisory lock is held for one EXISTS query; it is not a timer."
+    },
+    {
+      "id": "server/internal/httpx/health.go:18",
+      "token": "none",
+      "kind": "other",
+      "what": "/api/health uses one 3s budget for both SELECT 1 and a cache GET, and serves as the Cloud Run startup and liveness probe (docs/CLOUD.md:40; route at server/inte",
+      "reason": "Cloud Run decides when probes run"
+    },
+    {
+      "id": "server/internal/httpx/health.go:21",
+      "token": "none",
+      "kind": "other",
+      "what": "/api/health answers 503 ErrDatabase (apierr/apierr.go:48) when SELECT 1 fails within 3 s",
+      "reason": "Only this handler returns ErrDatabase (apierr.go:48), and its callers are platform probes, so it gets no Retry-After."
+    },
+    {
+      "id": "server/internal/httpx/health.go:47",
+      "token": "none",
+      "kind": "timer",
+      "what": "Slow() dev endpoint that sleeps for ms (at most 5000)",
+      "reason": "Development only."
+    },
+    {
+      "id": "server/internal/httpx/json.go:84",
+      "token": "retry-after",
+      "kind": "http-429",
+      "what": "httpx.Fail is the single writer for every apierr response, 429 and 503 included",
+      "policy": "retry-after: the one place that writes it"
+    },
+    {
+      "id": "server/internal/httpx/server.go:13",
+      "token": "retry-after",
+      "kind": "other",
+      "what": "Graceful shutdown: on SIGTERM (cmd/server/main.go:67) srv.Shutdown waits ShutdownGrace=10 s (lines 12-13, 34-41)",
+      "policy": "retry-after"
+    },
+    {
+      "id": "server/internal/httpx/server.go:21",
+      "token": "none",
+      "kind": "timer",
+      "what": "http.Server timeouts: ReadHeaderTimeout 10 s, ReadTimeout 2 min, IdleTimeout 2 min, no WriteTimeout",
+      "reason": "Per-connection bounds with no synchronized retry."
+    },
+    {
+      "id": "server/internal/httpx/static.go:75",
+      "token": "none",
+      "kind": "other",
+      "what": "SPA document loader: 503 'web build missing' when the HTML file can't be read",
+      "reason": "A local 1 s stat cache and a path that only runs on misconfiguration."
+    },
+    {
+      "id": "server/internal/httpx/static.go:154",
+      "token": "none",
+      "kind": "ttl",
+      "what": "Cache-Control rules for the static web build",
+      "reason": "Each device revalidates on its own next navigation, and hashed chunks are immutable."
+    },
+    {
+      "id": "server/internal/pdfx/extract.go:261",
+      "token": "none",
+      "kind": "other",
+      "what": "Scanned-PDF pages are sent to OCR one after another inside the upload deadline while the request holds a pdfSlot, and every failure is reported as an unreadable",
+      "reason": "Serial within one upload and capped by pdfSlot and the AI semaphore"
+    },
+    {
+      "id": "server/internal/ratelimit/ratelimit.go:20",
+      "token": "retry-after",
+      "kind": "rate-limit",
+      "what": "ratelimit.Allow/Check: INCR rl:<key>, with TTL=window set on the first hit; allowed while n<=limit",
+      "policy": "retry-after on every refusal."
+    },
+    {
+      "id": "server/internal/srs/srs.go:123",
+      "token": "none",
+      "kind": "other",
+      "what": "Review intervals are fixed, and FSRS fuzz is disabled",
+      "reason": "Due times are evaluated on the device, and nothing fires at a due time."
+    },
+    {
+      "id": "server/internal/sweep/sweep.go:59",
+      "token": "none",
+      "kind": "periodic",
+      "what": "The sweep's orphan-blob pass can delete the objects of an upload that is still in progress",
+      "reason": "A race with one scheduled job, fixed by a minimum object age in a separate change."
+    },
+    {
+      "id": "server/internal/telemetry/telemetry.go:116",
+      "token": "none",
+      "kind": "retry",
+      "what": "Batch span processor (WithBatchTimeout 2s) and the OTLP gRPC trace and metric exporters with default retry",
+      "reason": "OTLP retries are already randomized, and there are at most 6 export streams."
+    },
+    {
+      "id": "server/internal/telemetry/telemetry.go:118",
+      "token": "none",
+      "kind": "periodic",
+      "what": "Metric PeriodicReader exporting every 60s",
+      "reason": "Three exports a minute running in phase is harmless."
+    },
+    {
+      "id": "server/internal/telemetry/telemetry.go:161",
+      "token": "none",
+      "kind": "periodic",
+      "what": "The pool-occupancy gauge is sampled only when metrics export, every 60 s",
+      "reason": "Measurement, not load"
+    },
+    {
+      "id": "src/components/app.tsx:192",
+      "token": "none",
+      "kind": "periodic",
+      "what": "HomeScreen setInterval every 60 s, plus 'focus' (193) and 'storage' (194) listeners",
+      "reason": "A local 60 s clock that sends no request."
+    },
+    {
+      "id": "src/components/app.tsx:637",
+      "token": "none",
+      "kind": "timer",
+      "what": "Toast auto-clear.",
+      "reason": "A toast timer."
+    },
+    {
+      "id": "src/components/app.tsx:663",
+      "token": "none",
+      "kind": "event",
+      "what": "The App 'offline'/'online' listeners only toggle the offline banner (660-664)",
+      "reason": "These listeners only toggle the offline banner (app.tsx:661-665) and send no request."
+    },
+    {
+      "id": "src/components/app.tsx:679",
+      "token": "cooldown",
+      "kind": "ttl",
+      "what": "The client decides between bootstrap and the Login screen using the memoryz_signed_in hint cookie (src/lib/session-hint.ts:9-14)",
+      "policy": "cooldown on sign-in refusals"
+    },
+    {
+      "id": "src/components/app.tsx:684",
+      "token": "backoff",
+      "kind": "event",
+      "what": "App mount restores the IndexedDB shell (665-674), then runs refresh() (GET /bootstrap, then shellDB put; 645-651)",
+      "policy": "backoff: a bounded automatic retry of the idempotent GET /bootstrap, floored by Retry-After."
+    },
+    {
+      "id": "src/components/app.tsx:701",
+      "token": "none",
+      "kind": "event",
+      "what": "navigator.serviceWorker.register('/sw.js') on every App mount in production (dev builds unregister it and delete the caches, 702-715).",
+      "reason": "One tiny no-store GET of /sw.js per page load, spread by people."
+    },
+    {
+      "id": "src/components/onboarding.tsx:20",
+      "token": "none",
+      "kind": "timer",
+      "what": "School search debounce",
+      "reason": "A debounce paced by keystrokes"
+    },
+    {
+      "id": "src/components/social/account.tsx:40",
+      "token": "none",
+      "kind": "event",
+      "what": "GET /social on Account mount, and again whenever data.posts changes identity, i.e",
+      "reason": "One-shot GETs on navigation, not part of a chain the classroom lines up"
+    },
+    {
+      "id": "src/components/social/account.tsx:421",
+      "token": "none",
+      "kind": "timer",
+      "what": "Profile editor school search debounce through api() (150 s timeout).",
+      "reason": "A debounce paced by keystrokes."
+    },
+    {
+      "id": "src/components/social/account.tsx:550",
+      "token": "none",
+      "kind": "periodic",
+      "what": "Invite code countdown",
+      "reason": "A local countdown; a new code only comes from the button."
+    },
+    {
+      "id": "src/components/social/admin.tsx:30",
+      "token": "none",
+      "kind": "event",
+      "what": "The admin screen fetches GET /admin once on mount",
+      "reason": "Admins only, one fetch per visit."
+    },
+    {
+      "id": "src/components/social/parent.tsx:351",
+      "token": "none",
+      "kind": "event",
+      "what": "ChildLinks fetches GET /children once on mount",
+      "reason": "One fetch per screen visit."
+    },
+    {
+      "id": "src/components/social/planner.tsx:113",
+      "token": "none",
+      "kind": "periodic",
+      "what": "Planner clock: setNow every 60 s, which recomputes due counts and gaps locally.",
+      "reason": "A local clock that sends no request."
+    },
+    {
+      "id": "src/components/social/planner.tsx:171",
+      "token": "none",
+      "kind": "periodic",
+      "what": "Elapsed-time counter while a suggestion is generating.",
+      "reason": "An elapsed-time counter in the UI."
+    },
+    {
+      "id": "src/components/social/planner.tsx:314",
+      "token": "none",
+      "kind": "poll",
+      "what": "inspectSuggestion() polls a stored request up to 45 times, every 1600 ms (312-317)",
+      "reason": "It starts from a tap, errors are thrown to the caller, and no reconnect re-aligns it."
+    },
+    {
+      "id": "src/components/social/planner.tsx:346",
+      "token": "none",
+      "kind": "poll",
+      "what": "resume(): on Planner mount (366-392), a stored RUNNING suggestion is inspected and then polled up to 45 times, every 1600 ms (about 72 s)",
+      "reason": "It starts on each student's own navigation and ends at the first error, and nothing ('online', visibility, a deploy) restarts it, so nothing re-aligns these pollers"
+    },
+    {
+      "id": "src/components/social/planner.tsx:466",
+      "token": "none",
+      "kind": "event",
+      "what": "Planner fill-free-time suggest() calls runAiTask(/planner/suggest) on a user tap",
+      "reason": "A tap at a person's own pace"
+    },
+    {
+      "id": "src/components/social/planner.tsx:488",
+      "token": "none",
+      "kind": "timer",
+      "what": "revealResult keeps the working state visible for at least 900 ms before opening the sheet (487-488).",
+      "reason": "A minimum reveal time for the UI only."
+    },
+    {
+      "id": "src/components/social/planner.tsx:558",
+      "token": "none",
+      "kind": "retry",
+      "what": "When applyPlan fails, it immediately does one GET /bootstrap plus a refresh to recompute which blocks were already saved (556-565)",
+      "reason": "One bounded re-read after a tap."
+    },
+    {
+      "id": "src/components/study/cards.tsx:147",
+      "token": "window",
+      "kind": "reconnect",
+      "what": "Flashcards 'online' listener (plus the update() call on mount, line 146) runs sync() (91-113)",
+      "policy": "window + backoff, through the offline.ts scheduler"
+    },
+    {
+      "id": "src/components/study/cards.tsx:208",
+      "token": "backoff",
+      "kind": "retry",
+      "what": "After every rating, void sync() (208), plus the manual sync buttons (255, 484, 764)",
+      "policy": "backoff, only after a failure"
+    },
+    {
+      "id": "src/components/study/essay.tsx:197",
+      "token": "none",
+      "kind": "event",
+      "what": "On essay screen mount, a stored submission is inspected once with GET /ai-runs (188-222)",
+      "reason": "One GET on navigation, with no loop."
+    },
+    {
+      "id": "src/components/study/essay.tsx:486",
+      "token": "none",
+      "kind": "event",
+      "what": "Essay submit calls runAiTask(/essay/submit)",
+      "reason": "Students finish free-text answers at different times"
+    },
+    {
+      "id": "src/components/study/generation-task.ts:25",
+      "token": "none",
+      "kind": "event",
+      "what": "When the GenerationSheet opens, recoverGenerationTask inspects a stored request once (called from study/shared.tsx:205).",
+      "reason": "One read when the sheet opens; errors fall back to the stored copy."
+    },
+    {
+      "id": "src/components/study/pdf-viewer.tsx:61",
+      "token": "none",
+      "kind": "timer",
+      "what": "Fetches the PDF bytes with a 45 s timeout",
+      "reason": "One fetch a person starts, with a manual retry."
+    },
+    {
+      "id": "src/components/study/shared.tsx:179",
+      "token": "none",
+      "kind": "periodic",
+      "what": "GenerationSheet elapsed-time counter.",
+      "reason": "An elapsed-time counter in the UI."
+    },
+    {
+      "id": "src/components/study/shared.tsx:243",
+      "token": "none",
+      "kind": "event",
+      "what": "GenerationSheet generate() calls runAiTask when the button is pressed (385)",
+      "reason": "The clicks are already spread by people; delaying a student's own click adds latency without lowering the peak"
+    },
+    {
+      "id": "src/components/study/shared.tsx:446",
+      "token": "cooldown",
+      "kind": "other",
+      "what": "uploadFile POSTs /api/upload with no timeout and no abort signal",
+      "policy": "cooldown"
+    },
+    {
+      "id": "src/components/study/subjects.tsx:960",
+      "token": "none",
+      "kind": "event",
+      "what": "UploadSheet save()",
+      "reason": "A serial chain a person starts, whose stages vary in length and already pull devices apart"
+    },
+    {
+      "id": "src/components/ui-date.tsx:204",
+      "token": "none",
+      "kind": "timer",
+      "what": "Time-wheel scroll-settle timer, plus requestAnimationFrame focus restores (src/components/ui-choice.tsx:76, ui-date.tsx:41, 134).",
+      "reason": "A UI settle timer and requestAnimationFrame focus restores."
+    },
+    {
+      "id": "src/lib/ai-task.ts:4",
+      "token": "none",
+      "kind": "timer",
+      "what": "AI_CLIENT_DEADLINE_MS = 190000",
+      "reason": "The deadline only leads to a status read, and only after a tap."
+    },
+    {
+      "id": "src/lib/ai-task.ts:344",
+      "token": "cooldown",
+      "kind": "retry",
+      "what": "How the client treats a POST 4xx (429 included) when no run record exists: the task is marked FAILED locally and not retried (lines 344-361)",
+      "policy": "cooldown on the manual retry"
+    },
+    {
+      "id": "src/lib/ai-task.ts:365",
+      "token": "none",
+      "kind": "timer",
+      "what": "The 190 s client deadline (AI_CLIENT_DEADLINE_MS line 4, set at 313), plus an immediate exit when navigator.onLine === false",
+      "reason": "Reaching the 190 s deadline or going offline only changes UI state"
+    },
+    {
+      "id": "src/lib/ai-task.ts:368",
+      "token": "period",
+      "kind": "poll",
+      "what": "runAiTask status loop: after the POST, GET /api/ai-runs/{id} every 2500 ms until the 190 s deadline (lines 312-370; first wait at line 332, later waits at 368-3",
+      "policy": "period ±25%, a wake window after a failed POST, and a floor-plus-full-jitter backoff on failed reads"
+    },
+    {
+      "id": "src/lib/api.ts:1",
+      "token": "retry-after",
+      "kind": "retry",
+      "what": "Client api(): fetch with a 20 s timeout for /bootstrap and 150 s otherwise",
+      "policy": "retry-after carrier"
+    },
+    {
+      "id": "src/lib/api.ts:4",
+      "token": "none",
+      "kind": "timer",
+      "what": "Shared fetch wrapper: AbortSignal.timeout(20000) for /bootstrap and 150000 for everything else",
+      "reason": "Each timeout starts when its request starts, and people have already spread those"
+    },
+    {
+      "id": "src/lib/materials.ts:17",
+      "token": "none",
+      "kind": "timer",
+      "what": "GET /api/materials/{id} with a 20 s timeout",
+      "reason": "One fetch a person starts, deduplicated in flight per id+hash, with a manual retry."
+    },
+    {
+      "id": "src/lib/materials.ts:31",
+      "token": "none",
+      "kind": "ttl",
+      "what": "The in-memory material detail cache is keyed by id+contentHash with no time-based expiry (26-42)",
+      "reason": "Client caches have no TTLs; events invalidate them, so nothing on the client can expire together."
+    },
+    {
+      "id": "src/lib/offline.ts:70",
+      "token": "none",
+      "kind": "event",
+      "what": "cacheCards image prefetch",
+      "reason": "Each uncached image is fetched once per device (cached ones are skipped at offline.ts:68) and served private/immutable (uploads.go:322)"
+    },
+    {
+      "id": "src/lib/offline.ts:154",
+      "token": "backoff",
+      "kind": "other",
+      "what": "syncReviews drains the IndexedDB review queue",
+      "policy": "backoff"
+    },
+    {
+      "id": "server/internal/ai/provider.go:upstream-429",
+      "token": "backoff",
+      "kind": "retry",
+      "what": "OpenRouter call refused with 429: re-sent at most twice after Retry-After (when ≤ 8 s) plus full jitter U[0, min(8 s, 1 s·2^k)), only while the caller's deadline leaves retryBudget (60 s)",
+      "policy": "backoff: a refused call was never billed, so a bounded jittered re-send cannot double-charge; the learner-facing hint remains for the exhausted case"
+    },
+    {
+      "id": "server/internal/ai/jev.go:429-window",
+      "token": "window",
+      "kind": "retry",
+      "what": "TypeSafe judgment call refused with 429/529: one re-send after U[300 ms, 600 ms)",
+      "policy": "window: a refused judgment was never billed and the caller only waits about a second for it"
+    },
+    {
+      "id": "server/internal/ai/provider.go:5xx",
+      "token": "retry-after",
+      "kind": "http-503",
+      "what": "OpenRouter call answered with a 5xx: AI_UPSTREAM_UNAVAILABLE 503 with a [10 s, 20 s) hint; the call may have reached the model, so it is never re-sent",
+      "policy": "retry-after"
+    }
+  ]
 }

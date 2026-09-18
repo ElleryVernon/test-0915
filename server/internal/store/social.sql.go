@@ -49,7 +49,7 @@ func (q *Queries) CreateFollow(ctx context.Context, arg CreateFollowParams) erro
 const createMessage = `-- name: CreateMessage :one
 INSERT INTO "Message" ("id", "senderId", "recipientId", "body")
 VALUES ($1, $2, $3, $4)
-RETURNING id, "senderId", "recipientId", body, "createdAt"
+RETURNING id, "senderId", "recipientId", body, "createdAt", ordinal, "requestId", "readAt", blocks, "replyToId", "replySnapshot", deleted
 `
 
 type CreateMessageParams struct {
@@ -73,6 +73,13 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 		&i.RecipientID,
 		&i.Body,
 		&i.CreatedAt,
+		&i.Ordinal,
+		&i.RequestID,
+		&i.ReadAt,
+		&i.Blocks,
+		&i.ReplyToId,
+		&i.ReplySnapshot,
+		&i.Deleted,
 	)
 	return i, err
 }
@@ -257,7 +264,7 @@ func (q *Queries) ListFollowing(ctx context.Context, followerid string) ([]ListF
 }
 
 const listMessages = `-- name: ListMessages :many
-SELECT id, "senderId", "recipientId", body, "createdAt" FROM "Message"
+SELECT id, "senderId", "recipientId", body, "createdAt", ordinal, "requestId", "readAt", blocks, "replyToId", "replySnapshot", deleted FROM "Message"
 WHERE ("senderId" = $1::text AND "recipientId" = $2::text)
    OR ("senderId" = $2::text AND "recipientId" = $1::text)
 ORDER BY "createdAt" ASC
@@ -285,6 +292,13 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]M
 			&i.RecipientID,
 			&i.Body,
 			&i.CreatedAt,
+			&i.Ordinal,
+			&i.RequestID,
+			&i.ReadAt,
+			&i.Blocks,
+			&i.ReplyToId,
+			&i.ReplySnapshot,
+			&i.Deleted,
 		); err != nil {
 			return nil, err
 		}

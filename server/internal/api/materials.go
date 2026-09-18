@@ -16,6 +16,7 @@ import (
 	"memoryz/server/internal/httpx"
 	"memoryz/server/internal/ids"
 	"memoryz/server/internal/jsonx"
+	"memoryz/server/internal/learning"
 	"memoryz/server/internal/logx"
 	"memoryz/server/internal/store"
 )
@@ -65,7 +66,7 @@ func (s *Server) createMaterial(w http.ResponseWriter, r *http.Request, user sto
 	v := &validator{}
 	v.id(in.SubjectID)
 	in.Title = v.text(in.Title, 200)
-	v.bounded(in.Content, 200_000)
+	v.bounded(in.Content, learning.MaxSourceRunes)
 	v.enum(in.Type, "TXT", "PDF", "IMAGE", "txt", "pdf", "image")
 	if in.URL != nil {
 		v.bounded(*in.URL, 2000)
@@ -132,10 +133,11 @@ func (s *Server) createSampleMaterial(w http.ResponseWriter, r *http.Request, us
 	sample := demo.Sample()
 	ctx := r.Context()
 	type answer struct {
-		Material  materialRow   `json:"material"`
-		Questions []questionRow `json:"questions"`
-		Essays    []essayRow    `json:"essays"`
-		Created   bool          `json:"created"`
+		Material  materialRow       `json:"material"`
+		Questions []questionRow     `json:"questions"`
+		Essays    []essayRow        `json:"essays"`
+		Created   bool              `json:"created"`
+		Lesson    map[string]string `json:"lesson"`
 	}
 	var out answer
 	err := db.Tx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -143,10 +145,24 @@ func (s *Server) createSampleMaterial(w http.ResponseWriter, r *http.Request, us
 		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtext($1))", "sample:"+user.ID); err != nil {
 			return err
 		}
+		prepareLesson := func() error {
+			var questionID string
+			if err := tx.QueryRow(ctx, `SELECT "id" FROM "Question" WHERE "userId"=$1 AND "materialId"=$2 AND "prompt"=$3 ORDER BY "id" LIMIT 1`, user.ID, out.Material.ID, sample.Questions[0].Prompt).Scan(&questionID); err != nil {
+				return err
+			}
+			var cardID string
+			// One starter card per owned question, including concurrent/retried starts.
+			// Preserve edited content and review history when the learner returns.
+			if err := tx.QueryRow(ctx, `INSERT INTO "Card" ("id","userId","subjectId","materialId","front","back","type","sourceQuestionId","sourceKind") VALUES($1,$2,$3,$4,$5,$6,'CONCEPT',$7,'STARTER') ON CONFLICT ("userId","sourceQuestionId","sourceKind") DO UPDATE SET "deleted"=false RETURNING "id"`, ids.New(), user.ID, out.Material.SubjectID, out.Material.ID, "탈분극이 일어날 때 어떤 이온이 어디로 이동할까요?", "나트륨 이온이 세포 안으로 들어와요.\n그 결과 세포막 안쪽의 전위가 상승해요.", questionID).Scan(&cardID); err != nil {
+				return err
+			}
+			out.Lesson = map[string]string{"questionId": questionID, "cardId": cardID}
+			return nil
+		}
 		existing, err := q.GetOwnedSampleMaterial(ctx, user.ID)
 		if err == nil {
 			out = answer{Material: materialOf(existing), Questions: []questionRow{}, Essays: []essayRow{}}
-			return nil
+			return prepareLesson()
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -177,7 +193,7 @@ func (s *Server) createSampleMaterial(w http.ResponseWriter, r *http.Request, us
 			}
 			out.Essays = append(out.Essays, essayOf(row))
 		}
-		return nil
+		return prepareLesson()
 	})
 	if err != nil {
 		return err
@@ -255,7 +271,7 @@ func (s *Server) patchMaterial(w http.ResponseWriter, r *http.Request, user stor
 	v := &validator{}
 	in.Title = v.optText(in.Title, 200)
 	if in.Content != nil {
-		v.bounded(*in.Content, 200_000)
+		v.bounded(*in.Content, learning.MaxSourceRunes)
 	}
 	if err := v.result(); err != nil {
 		return err
@@ -263,6 +279,13 @@ func (s *Server) patchMaterial(w http.ResponseWriter, r *http.Request, user stor
 	material, err := s.ownedMaterial(r, user)
 	if err != nil {
 		return err
+	}
+	var snapshot bool
+	if err := s.pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM "GenerationSources" WHERE "materialId"=$1)`, material.ID).Scan(&snapshot); err != nil {
+		return err
+	}
+	if snapshot {
+		return errSnapshotImmutable
 	}
 	params := store.UpdateMaterialParams{ID: material.ID, Title: in.Title, Content: in.Content}
 	if in.Content != nil {

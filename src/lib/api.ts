@@ -24,7 +24,11 @@ const DAY_MS = 86_400_000;
  * The server's wait, in ms: the body's millisecond value wins over the whole-second header (delta
  * seconds or an HTTP date); clamped to [0, 24 h]; null when neither says.
  */
-export function parseRetryAfter(header: string | null, bodyMs: unknown, now = Date.now()): number | null {
+export function parseRetryAfter(
+  header: string | null,
+  bodyMs: unknown,
+  now = Date.now(),
+): number | null {
   let ms: number | null = null;
   if (typeof bodyMs === 'number' && Number.isFinite(bodyMs) && bodyMs >= 0) ms = bodyMs;
   else if (header && /^\d+$/.test(header.trim())) ms = Number(header.trim()) * 1000;
@@ -36,7 +40,11 @@ export function parseRetryAfter(header: string | null, bodyMs: unknown, now = Da
 }
 
 /** Builds the ApiError for a failed response whose JSON body (if any) is result. */
-export function apiErrorOf(response: Response, result: { error?: unknown; code?: unknown; retryAfterMs?: unknown }, fallback: string) {
+export function apiErrorOf(
+  response: Response,
+  result: { error?: unknown; code?: unknown; retryAfterMs?: unknown },
+  fallback: string,
+) {
   return new ApiError(
     typeof result.error === 'string' && result.error ? result.error : fallback,
     response.status,
@@ -49,7 +57,10 @@ export function apiErrorOf(response: Response, result: { error?: unknown; code?:
 export function transient(error: unknown): boolean {
   if (error instanceof TypeError) return true;
   if (error instanceof Error && error.name === 'TimeoutError') return true;
-  return error instanceof ApiError && (error.status === 408 || error.status === 429 || (error.status >= 500 && error.status <= 599));
+  return (
+    error instanceof ApiError &&
+    (error.status === 408 || error.status === 429 || (error.status >= 500 && error.status <= 599))
+  );
 }
 
 /** The server's wait carried by error, if it is an ApiError that has one. */
@@ -71,18 +82,34 @@ export async function retryTransient<T>(
       return await fn();
     } catch (error) {
       const online = typeof navigator === 'undefined' || navigator.onLine !== false;
-      if (attempt > o.retries || !transient(error) || (error as Error).name === 'TimeoutError' || !online) throw error;
+      if (
+        attempt > o.retries ||
+        !transient(error) ||
+        (error as Error).name === 'TimeoutError' ||
+        !online
+      )
+        throw error;
       // jitter: backoff full jitter U[0, min(capMs, baseMs·2^k)), never before Retry-After + U[0,1 s); no retry after a client timeout or offline
-      await sleep(retryDelay(fullJitter(attempt, o.baseMs, o.capMs, o.rand), retryAfterMsOf(error), o.rand), o.signal);
+      await sleep(
+        retryDelay(fullJitter(attempt, o.baseMs, o.capMs, o.rand), retryAfterMsOf(error), o.rand),
+        o.signal,
+      );
     }
   }
 }
 
-export async function api<T = unknown>(path: string, body?: unknown, method?: string): Promise<T> {
+export async function api<T = unknown>(
+  path: string,
+  body?: unknown,
+  method?: string,
+  options?: { signal?: AbortSignal },
+): Promise<T> {
   const response = await sessionFetch(`/api${path}`, {
     method: method ?? (body === undefined ? 'GET' : 'POST'),
     // jitter: none — each 20 s / 150 s timeout starts with its own request, which people already spread; api() never re-sends on a timeout [site src/lib/api.ts:4]
-    signal: AbortSignal.timeout(path === '/bootstrap' || path.startsWith('/quiz/') ? 20000 : 150000),
+    signal: options?.signal
+      ? AbortSignal.any([options.signal, AbortSignal.timeout(20_000)])
+      : AbortSignal.timeout(path === '/bootstrap' || path.startsWith('/quiz/') ? 20000 : 150000),
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });

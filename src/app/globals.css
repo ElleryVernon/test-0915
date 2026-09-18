@@ -1,5 +1,4 @@
 @import 'tailwindcss';
-@import './layout-system.css';
 @font-face {
   font-family: Pretendard;
   src: url('/fonts/Pretendard-Regular.woff2') format('woff2');
@@ -56,12 +55,20 @@
   --text-disabled: #a5a5a8;
   --surface-muted: #f3f3f3;
   --surface-canvas: #fafafa;
+  --surface-raised: #fff;
+  --surface-sheet: var(--surface-raised);
+  --control-fill: var(--surface-muted);
   --border-subtle: #ededed;
   --border-strong: #d6d6d8;
   --brand: #ff6f0f;
   --on-primary: #fff;
   --brand-strong: #c94d09;
+  /* Text-field focus ring, drawn inside the control (negative offset) so no page gutter, sheet edge
+     or overflow clip can cut it; every field, search wrapper and option field uses these two tokens. */
+  --focus-ring: 2px solid var(--text-primary);
+  --focus-ring-offset: -2px;
   --brand-pressed: #ee6500;
+  --source-highlight: color-mix(in srgb, var(--brand) 32%, transparent);
   --danger: #c73d32;
   --danger-surface: #fff4f2;
   --notice-text: #885114;
@@ -81,6 +88,10 @@ html {
   background: var(--surface-muted);
   scrollbar-gutter: stable;
 }
+html.app-pull-refresh,
+html.app-pull-refresh body {
+  overscroll-behavior-y: contain;
+}
 body {
   margin: 0;
   color: var(--ink);
@@ -98,6 +109,11 @@ input,
 textarea,
 select {
   font: inherit;
+}
+/* WebKit gives fieldsets a min-content minimum width; with a grid of option buttons inside, iOS fonts
+   push that past the column and the whole block overflows to the right after a relayout. */
+fieldset {
+  min-inline-size: 0;
 }
 button,
 a,
@@ -124,8 +140,8 @@ a:focus-visible {
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 1px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 a {
   text-decoration: none;
@@ -217,10 +233,10 @@ svg {
     background 0.18s,
     transform 0.18s;
 }
-.icon-button:hover {
+.icon-button:enabled:hover {
   background: var(--surface-muted);
 }
-.icon-button:active {
+.icon-button:enabled:active {
   transform: scale(0.93);
 }
 .avatar {
@@ -274,10 +290,18 @@ svg {
   align-items: center;
   gap: var(--gap-related);
 }
+/* Raised/white surfaces reset inherited control fill before muted surfaces invert it. */
+:where(.bg-white, .sheet-content, [data-surface='raised']) {
+  --control-fill: var(--surface-muted);
+}
+/* Muted content surfaces provide a raised fill to their interactive children. */
+:where(.bg-surface, .bg-canvas, .panel, [data-surface='muted']) {
+  --control-fill: var(--surface-raised);
+}
 .field {
   display: block;
   width: 100%;
-  background: var(--surface-muted);
+  background: var(--control-fill);
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   min-height: var(--control-height);
@@ -290,8 +314,8 @@ svg {
 }
 .field:focus {
   background: #fff;
-  border-color: var(--brand);
-  outline: none;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .field::placeholder {
   color: var(--text-subtle);
@@ -329,57 +353,6 @@ svg {
   font-size: 13px;
   color: var(--text-muted);
   min-height: var(--control-size);
-}
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--gap-inline);
-  min-height: var(--control-height);
-  padding: var(--space-3) var(--space-5);
-  border-radius: var(--radius-control);
-  font-size: 16px;
-  line-height: 1.4;
-  font-weight: 600;
-  border: 0;
-  transition:
-    transform 0.16s,
-    filter 0.16s,
-    background 0.16s;
-  word-break: keep-all;
-}
-.btn:active {
-  transform: scale(0.98);
-}
-.btn-primary {
-  color: #fff;
-  background: var(--brand);
-  font-weight: 700;
-}
-.btn-primary:hover {
-  background: var(--brand-pressed);
-}
-.btn:disabled {
-  opacity: 1;
-  background: var(--surface-muted);
-  color: var(--text-disabled);
-}
-.btn:disabled:hover {
-  background: var(--surface-muted);
-}
-.btn-secondary {
-  color: var(--text-primary);
-  background: var(--surface-muted);
-}
-.btn-secondary:hover {
-  background: var(--border-subtle);
-}
-.btn-ghost {
-  color: var(--text-secondary);
-  background: transparent;
-}
-.btn-ghost:hover {
-  background: var(--surface-canvas);
 }
 .primary-surface {
   position: relative;
@@ -527,6 +500,30 @@ svg {
   line-height: 20px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+.home-review-empty h2 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 750;
+  line-height: 1.45;
+  letter-spacing: -0.035em;
+}
+.home-review-empty > p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.home-review-symbol {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+}
+.home-review-empty .btn {
+  margin-top: var(--space-2);
 }
 .home-review-head small {
   font-size: 13px;
@@ -875,8 +872,8 @@ svg {
   background: #fffffff2;
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--border-subtle);
-  padding: calc(var(--space-unit) * 1.25) var(--space-3) env(safe-area-inset-bottom, 0);
-  min-height: calc(49px + env(safe-area-inset-bottom, 0px));
+  padding: var(--bottom-nav-padding-top) var(--space-3) var(--bottom-nav-padding-bottom);
+  height: var(--bottom-nav-height);
 }
 .nav-item {
   position: relative;
@@ -963,6 +960,27 @@ svg {
 .sheet-heading .icon-button {
   margin-right: calc(-1 * var(--space-3));
 }
+.sheet-heading-actions {
+  gap: var(--space-2);
+  min-height: var(--control-size);
+  padding-bottom: var(--space-3);
+}
+.sheet-heading-actions h2 {
+  flex: 1;
+  font-size: 17px;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+}
+.sheet-heading-actions .icon-button {
+  margin: 0 0 0 calc(-1 * var(--space-3));
+  flex-shrink: 0;
+}
+.sheet-header-action {
+  flex-shrink: 0;
+}
+.sheet-header-action .button {
+  min-height: var(--control-size);
+}
 .sheet-body {
   min-height: 0;
   overflow-y: auto;
@@ -1020,6 +1038,20 @@ svg {
   text-align: center;
   box-shadow: 0 4px 24px color-mix(in srgb, var(--ink) 8%, transparent);
   animation: fade-in 0.16s;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 3);
+}
+.toast-action {
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 0 calc(var(--space-unit) * 1);
+  min-height: 44px;
+  margin: calc(var(--space-unit) * -3.5) 0;
+  white-space: nowrap;
 }
 .empty-state {
   text-align: center;
@@ -2394,10 +2426,8 @@ button.recall-card:active {
 }
 .compose-title:focus-visible,
 .compose-body:focus-visible {
-  outline: none;
-}
-.compose-title:focus-visible {
-  border-color: var(--brand);
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .compose-body:focus-visible {
   box-shadow: inset 2px 0 var(--line);
@@ -2575,6 +2605,12 @@ button.recall-card:active {
   padding: calc(var(--space-unit) * 3.75) 0;
   font-size: 16px;
 }
+/* The wrapper carries the ring for every search field, so screens that only use the shared class
+   (찾고 싶은 공부, 학교 검색) focus the same way as the module wrappers. */
+.search-field:has(input:focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
 .badge-bubble {
   height: 20px;
   min-width: 20px;
@@ -2653,9 +2689,6 @@ button.recall-card:active {
     border-radius: 28px;
     max-height: calc(100dvh - 48px);
   }
-  .bottom-nav {
-    padding-bottom: var(--space-4);
-  }
   .app-main {
     padding-bottom: calc(var(--space-unit) * 30);
   }
@@ -2726,7 +2759,8 @@ button.recall-card:active {
   color: var(--text-muted);
 }
 .curriculum-search:focus-within {
-  outline: 1.5px solid var(--brand);
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .curriculum-search input {
   width: 0;
@@ -3427,7 +3461,8 @@ body:has(.planner-cta) .toast {
   cursor: pointer;
 }
 .time-box:focus-within {
-  box-shadow: inset 0 0 0 1.5px var(--brand);
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
   background: #fff;
 }
 .time-box-label {
@@ -3684,7 +3719,7 @@ body:has(.planner-cta) .toast {
   flex-direction: column;
   overflow: hidden;
   border-radius: var(--radius);
-  border: 1px solid var(--border-subtle);
+  border: 0;
   background: var(--surface);
 }
 .pdf-preview-bar {
@@ -3734,6 +3769,48 @@ body:has(.planner-cta) .toast {
   position: relative;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.pdf-evidence-highlights {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+.pdf-evidence-pages {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.pdf-evidence-pages button {
+  min-height: 36px;
+  padding: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 3.5);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.pdf-evidence-pages button[aria-current='page'] {
+  background: var(--text-primary);
+  color: var(--surface-raised);
+  font-weight: 700;
+}
+.pdf-evidence-highlights > span {
+  position: absolute;
+  background: var(--source-highlight);
+  border-radius: 2px;
+}
+.pdf-evidence-unmatched {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 32px;
+  padding: var(--space-2);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 .pdf-preview-canvas {
   display: block;
@@ -3873,8 +3950,8 @@ body:has(.planner-cta) .toast {
 }
 .choice-field:focus-visible {
   background: #fff;
-  border-color: var(--brand);
-  outline: none;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .choice-field-value {
   min-width: 0;
@@ -4018,6 +4095,71 @@ body:has(.planner-cta) .toast {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
   border-radius: 8px;
+}
+.choice-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: var(--control-size);
+  padding: var(--space-4) 0;
+  text-align: left;
+}
+.choice-switch-copy {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.choice-switch-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.choice-switch-description {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.choice-switch-track {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background 160ms ease;
+}
+.choice-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px #0002;
+  transition: transform 160ms ease;
+}
+.choice-switch[aria-checked='true'] .choice-switch-track {
+  background: var(--text-primary);
+}
+.choice-switch[aria-checked='true'] .choice-switch-thumb {
+  transform: translateX(20px);
+}
+.choice-switch:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.choice-switch:disabled {
+  opacity: 0.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  .choice-switch-track,
+  .choice-switch-thumb {
+    transition: none;
+  }
 }
 .choice-stepper {
   display: inline-flex;
@@ -4325,10 +4467,6 @@ body:has(.planner-cta) .toast {
   color: var(--text-primary);
   background: var(--surface);
 }
-.school-time-input input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
 .school-day-hours {
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-subtle);
@@ -4550,8 +4688,8 @@ body:has(.planner-cta) .toast {
 .school-registration .choice-field:focus,
 .school-time-input input:focus {
   border-color: var(--border-strong);
-  outline: 2px solid var(--text-primary);
-  outline-offset: 1px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
   box-shadow: none;
 }
 .date-picker-day:disabled,
@@ -4762,7 +4900,7 @@ a.pill {
     gap: var(--space-1);
   }
   .community-spaces button {
-    font-size: 14px;
+    font-size: 13px;
   }
 }
 .community-profile {
@@ -4823,8 +4961,8 @@ a.pill {
   font-size: 15px;
 }
 .community-search:focus-within {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 2px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .community-conversations {
   margin-top: var(--gap-block);
@@ -4858,4 +4996,82 @@ a.pill {
 .community-conversation time {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+/* Session-end community surface: unread answer notices arrive after the session, not during. */
+.session-answer-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: calc(var(--space-unit) * 2.5);
+  min-height: var(--control-size, 44px);
+  padding: calc(var(--space-unit) * 3.5) calc(var(--space-unit) * 4);
+  margin-bottom: calc(var(--space-unit) * 4);
+  border-radius: 14px;
+  background: var(--surface-muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+.session-answer-row > svg:last-child {
+  margin-left: auto;
+  color: var(--text-secondary, var(--text-muted));
+}
+
+/* All source-selection and generation stages share a viewport-bounded frame. */
+.sheet-content-workspace {
+  height: min(760px, 90dvh);
+}
+.sheet-content-workspace .sheet-handle {
+  flex-shrink: 0;
+}
+.sheet-content-workspace .sheet-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: max(var(--gap-related), env(safe-area-inset-bottom));
+}
+
+/* On-screen keyboard and the installed web app (src/lib/keyboard-inset.ts sets the variables).
+   Fixed bars lift above the keyboard, sheets shrink to the visible height, the tab bar steps aside
+   while typing, and sticky headers cover the status bar instead of sliding under it. */
+html {
+  scroll-padding-bottom: calc(var(--keyboard-inset) + var(--space-12));
+}
+.screen-header,
+.community-header {
+  /* Sticky headers follow the visible top edge while iOS pans the visual viewport. */
+  top: var(--vv-top);
+  padding-top: calc(var(--space-2) + var(--safe-top));
+}
+html[data-keyboard='open'] .bottom-nav {
+  display: none;
+}
+.study-fixed-cta,
+.recall-library-actions,
+.curriculum-savebar {
+  bottom: var(--keyboard-inset);
+}
+html[data-keyboard='open'] .study-fixed-cta.above-nav,
+html[data-keyboard='open'] .planner-cta {
+  bottom: var(--keyboard-inset);
+  padding-bottom: max(var(--space-5), env(safe-area-inset-bottom));
+}
+.exercise-actions {
+  bottom: var(--keyboard-inset);
+}
+.sheet-content {
+  bottom: var(--keyboard-inset);
+  max-height: min(90dvh, calc(var(--vv-height) - var(--space-6)));
+}
+.sheet-content-workspace {
+  height: min(760px, 90dvh, calc(var(--vv-height) - var(--space-6)));
+}
+.sheet-content-full {
+  height: var(--vv-height);
+  max-height: var(--vv-height);
+}
+html[data-keyboard='open'] .toast {
+  bottom: calc(var(--keyboard-inset) + var(--space-4));
 }

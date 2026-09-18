@@ -10,12 +10,15 @@ import { useMaterialDetail } from '@/lib/materials';
 import { Button, Sheet } from '@/components/ui';
 import { describeFailure, displayTitle, findCitation, metaLabel, placeImages, type PageLayout } from './material-layout';
 import PdfViewer from './pdf-viewer';
+import { GenerationProvenance } from './generation-provenance';
+import { evidencePdfUrl, pdfEvidencePages } from './pdf-evidence';
+import { evidencePageLabel } from '@/lib/source-evidence';
 
 type Tab = 'preview' | 'text';
 
 export function MaterialViewer({ material, citation, onClose }: { material: Material | null; citation?: string; onClose: () => void }) {
   return (
-    <Sheet open={!!material} onClose={onClose} title={material ? displayTitle(material.title) : '자료'} description={material ? metaLabel(material) : undefined} fullScreen>
+    <Sheet open={!!material} onClose={onClose} title={material ? displayTitle(material.title) : '자료'} description={material ? citation ? '참고한 부분을 원본에서 확인해요' : metaLabel(material) : undefined} fullScreen>
       {material && <MaterialScreen key={`${material.id}:${material.contentHash}:${citation ?? ''}`} material={material} citation={citation} onClose={onClose} />}
     </Sheet>
   );
@@ -25,11 +28,16 @@ function MaterialScreen({ material, citation, onClose }: { material: Material; c
   const body = useMaterialDetail(material);
   const isPdf = !!material.url && material.type.toLowerCase().includes('pdf');
   const isImage = !!material.url && material.type.toLowerCase().includes('image');
-  const [tab, setTab] = useState<Tab>(isPdf && !citation ? 'preview' : 'text');
+  const [tab, setTab] = useState<Tab>(isPdf || isImage ? 'preview' : 'text');
   const [pages, setPages] = useState<number | undefined>(material.pages);
   const detail = body.detail;
   const located = useMemo(() => (detail && citation ? findCitation(detail.content, citation, detail.pageBreaks) : null), [detail, citation]);
-  const layouts = useMemo<PageLayout[]>(() => (detail ? placeImages(detail.content, detail.pageBreaks, detail.images ?? []) : []), [detail]);
+  const evidence = useMemo(() => detail && citation ? pdfEvidencePages(detail.content, citation, detail.pageBreaks) : [], [detail, citation]);
+  const pageLabel = located ? evidencePageLabel(located.start, located.end, detail?.pageBreaks) : null;
+  const layouts = useMemo<PageLayout[]>(() => {
+    const all = detail ? placeImages(detail.content, detail.pageBreaks, detail.images ?? []) : [];
+    return citation && isPdf ? all.filter((page) => evidence.some((match) => match.page === page.page)) : all;
+  }, [detail, citation, evidence, isPdf]);
   // Figures are numbered in reading order (the stored order skips filtered logos and backgrounds).
   const figureNumbers = useMemo(() => {
     const numbers = new Map<string, number>();
@@ -46,15 +54,17 @@ function MaterialScreen({ material, citation, onClose }: { material: Material; c
   }, [tab, located, layouts]);
 
   const failure = body.failure ? describeFailure({ status: body.failure.status, network: body.failure.network }) : null;
-  const download = material.url ? `${material.url}${material.url.includes('?') ? '&' : '?'}download=1` : null;
+  const sourceUrl = material.url && citation && isPdf ? evidencePdfUrl(material.url, evidence) : material.url;
+  const download = sourceUrl ? `${sourceUrl}${sourceUrl.includes('?') ? '&' : '?'}download=1` : null;
   return (
     <div className="material-screen" data-material-viewer>
+      {material.extraction === 'combined' && <GenerationProvenance materialId={material.id} />}
       {(isPdf || isImage) && (
         <div className="segmented" role="tablist" aria-label="보기 방식">
           {(
             [
-              ['preview', '미리보기'],
-              ['text', '본문'],
+              ['preview', isPdf ? '원본 PDF' : '미리보기'],
+              ['text', '추출 텍스트'],
             ] as const
           ).map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} data-viewer-tab={id} className={tab === id ? 'is-active' : undefined} onClick={() => setTab(id)}>
@@ -63,8 +73,13 @@ function MaterialScreen({ material, citation, onClose }: { material: Material; c
           ))}
         </div>
       )}
+      {tab === 'preview' && isPdf && citation && (
+        <p className="material-citation-note" role="status">
+          {body.loading ? '근거가 있는 쪽을 찾고 있어요' : pageLabel ? `${pageLabel} · 인용한 페이지만 모았어요. 주황색으로 강조한 부분이 인용한 원문이에요.` : '근거 위치를 확인하지 못했어요. 자료가 수정됐을 수 있어요.'}
+        </p>
+      )}
       {tab === 'preview' && isPdf && material.url && (
-        <PdfViewer url={material.url} title={displayTitle(material.title)} initialPage={located?.page ?? 1} onPageCount={setPages} />
+        (!citation || !!sourceUrl) && <PdfViewer url={material.url} title={displayTitle(material.title)} evidence={citation ? evidence : undefined} initialPage={located?.page ?? 1} onPageCount={setPages} />
       )}
       {tab === 'preview' && isImage && material.url && (
         <div className="material-image-preview">
@@ -73,6 +88,11 @@ function MaterialScreen({ material, citation, onClose }: { material: Material; c
       )}
       {tab === 'text' && (
         <div ref={textRef} className="material-text" data-material-text>
+          {isPdf && (
+            <p className="material-citation-note">
+              PDF에서 읽은 본문이에요. 수식·반응식·입체 구조가 원본과 다를 수 있으니 미리보기에서 확인해 주세요.
+            </p>
+          )}
           {citation && detail && (
             <p className="material-citation-note" data-citation-note>
               {located ? `${located.page}쪽에서 인용 문장을 찾았어요.` : '인용 문장을 본문에서 찾지 못했어요. 자료가 수정됐을 수 있어요.'}
@@ -128,7 +148,7 @@ function MaterialScreen({ material, citation, onClose }: { material: Material; c
       <div className="material-screen-actions">
         {download && (
           <a className="button button-secondary" href={download} download data-download>
-            <DownloadSimple size={18} /> 파일 저장
+            <DownloadSimple size={18} /> {citation ? '근거 페이지 저장' : '파일 저장'}
           </a>
         )}
         <Button variant="ghost" data-close-material onClick={onClose}>

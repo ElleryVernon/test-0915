@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"memoryz/server/internal/apierr"
+	"memoryz/server/internal/demo"
 	"memoryz/server/internal/httpx"
 	"memoryz/server/internal/jsonx"
 	"memoryz/server/internal/planner"
@@ -102,6 +103,7 @@ type notificationView struct {
 	Body      string     `json:"body"`
 	Read      bool       `json:"read"`
 	Href      string     `json:"href"`
+	Kind      string     `json:"kind"`
 	CreatedAt jsonx.Time `json:"createdAt"`
 }
 
@@ -129,7 +131,10 @@ type appData struct {
 	Notifications []notificationView `json:"notifications"`
 	Stats         statsView          `json:"stats"`
 	AIAvailable   bool               `json:"aiAvailable"`
-	Demo          bool               `json:"demo"`
+	// JudgeAvailable: the quick keyword verdict (POST /api/essay/judge) may be requested. It is a
+	// display-only preview, so shadow mode serves it too; only AI_JUDGE=on changes the grading path.
+	JudgeAvailable bool `json:"judgeAvailable"`
+	Demo           bool `json:"demo"`
 }
 
 func jsRound(v float64) int { return int(math.Floor(v + 0.5)) }
@@ -141,6 +146,11 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 	ctx := r.Context()
 	now := s.now()
 	parent := user.Role == store.RolePARENT
+	if parent {
+		if err := s.parentActivity(ctx, user); err != nil {
+			return err
+		}
+	}
 	var child *store.User
 	if parent {
 		linked, err := s.selectedChild(ctx, user)
@@ -166,6 +176,13 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 	cacheKey := "boot:" + user.ID + ":" + userID + ":" + dateKey(now) + ":" + s.version(ctx, user.ID) + ":" + s.version(ctx, userID)
 	// The build runs once per key for everyone asking at the same time (fill), on the fill's context.
 	build := func(ctx context.Context) ([]byte, error) {
+		// Lazy community notices (7-day accept ask, 21:00 digest) materialise on a rebuild, before
+		// the notification list below is read; deterministic ids keep a repeat build a no-op.
+		if !parent {
+			if err := s.communityNudges(ctx, user); err != nil {
+				return nil, err
+			}
+		}
 		var (
 			subjects      []store.ListSubjectsWithCountsRow
 			materials     []store.ListMaterialsWithUploadRow
@@ -178,6 +195,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 			cheersSent    []store.ListCheersSentRow
 			cheersGot     []store.ListCheersReceivedRow
 			notifications []store.Notification
+			avatarURL     string
 			reviews       []time.Time
 			studied       []string
 		)
@@ -199,6 +217,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 			run(func() (err error) { cheersGot, err = s.q.ListCheersReceived(gctx, user.ID); return })
 		}
 		run(func() (err error) { notifications, err = s.q.ListNotifications(gctx, user.ID); return })
+		run(func() (err error) { avatarURL, err = s.ownProfilePhotoURL(gctx, user.ID); return })
 		run(func() (err error) {
 			reviews, err = s.q.ListRecentCardReviews(gctx, store.ListRecentCardReviewsParams{UserID: userID, CreatedAt: now.Add(-7 * 24 * time.Hour)})
 			return
@@ -261,14 +280,20 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 		out := appData{
 			Profile: profileOf(user), Subjects: []subjectView{}, Materials: []materialView{}, Questions: []questionRow{}, Essays: []essayRow{},
 			Cards: []cardView{}, Attempts: []attemptView{}, Schedules: []scheduleView{}, Posts: posts, Cheers: []cheerView{}, Notifications: []notificationView{},
-			AIAvailable: s.ai.Available(), Demo: s.cfg.DemoMode,
+			AIAvailable: s.ai.Available(), JudgeAvailable: s.ai.Jev().Available(), Demo: user.ID == demo.Student || user.ID == demo.Parent || user.ID == demo.Admin,
 		}
+		pendingOnboarding, err := s.auth.NeedsOnboarding(ctx, user.ID)
+		if err != nil {
+			return nil, err
+		}
+		out.Profile.OnboardingRequired = pendingOnboarding
 		if out.Posts == nil {
 			out.Posts = []PostView{}
 		}
 		if user.Role == store.RoleSTUDENT {
 			out.Profile.Streak = int32(streak)
 		}
+		out.Profile.AvatarURL = avatarURL
 		if child != nil {
 			profile := profileOf(*child)
 			profile.Streak = 0
@@ -305,7 +330,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 		if mayNotes {
 			savedQuestions := map[string]string{}
 			if !parent {
-				rows, err := s.pool.Query(ctx, `SELECT "questionId","postId" FROM "CommunitySavedQuestion" WHERE "userId"=$1`, userID)
+				rows, err := s.pool.Query(ctx, `SELECT "questionId","postId" FROM "CommunitySavedQuestion" WHERE "userId"=$1 UNION ALL SELECT "questionId",''::text AS "postId" FROM "MessageSavedQuestion" WHERE "userId"=$1`, userID)
 				if err != nil {
 					return nil, err
 				}
@@ -347,7 +372,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 				count := c.ReviewCount
 				out.Cards = append(out.Cards, cardOf(store.Card{
 					Diagram: c.Diagram, MaskedNodeIds: c.MaskedNodeIds, SourceDiagramId: c.SourceDiagramId, MaterialID: c.MaterialID, ID: c.ID, UserID: c.UserID, SubjectID: c.SubjectID, Front: c.Front, Back: c.Back, Type: c.Type, Bucket: c.Bucket, ConsecutiveEasy: c.ConsecutiveEasy,
-					NextReviewAt: c.NextReviewAt, Deleted: c.Deleted, Image: c.Image, Masks: c.Masks, SourceQuestionID: c.SourceQuestionID, Fsrs: c.Fsrs, CreatedAt: c.CreatedAt,
+					NextReviewAt: c.NextReviewAt, Deleted: c.Deleted, Image: c.Image, Masks: c.Masks, SourceQuestionID: c.SourceQuestionID, SourceKind: c.SourceKind, Fsrs: c.Fsrs, CreatedAt: c.CreatedAt,
 				}, &count))
 			}
 		}
@@ -367,7 +392,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 			out.Cheers = append(out.Cheers, cheerView{ID: c.ID, SenderID: c.SenderID, RecipientID: c.RecipientID, Message: c.Message, Points: c.Points, Thanked: c.Thanked, CreatedAt: jsonx.Time(c.CreatedAt), SenderName: c.SenderName})
 		}
 		for _, n := range notifications {
-			out.Notifications = append(out.Notifications, notificationView{ID: n.ID, UserID: n.UserID, Title: n.Title, Body: n.Body, Read: n.Read, Href: n.Href, CreatedAt: jsonx.Time(n.CreatedAt)})
+			out.Notifications = append(out.Notifications, notificationView{ID: n.ID, UserID: n.UserID, Title: n.Title, Body: n.Body, Read: n.Read, Href: n.Href, Kind: n.Kind, CreatedAt: jsonx.Time(n.CreatedAt)})
 		}
 		yesterday := dateKey(now.Add(-24 * time.Hour))
 		todayCards, yesterdayCards := 0, 0

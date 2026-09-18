@@ -25,6 +25,7 @@ import SocialHub, { type SocialData } from './social-hub';
 import { ChildLinks } from './parent';
 import { OptionField } from '@/components/ui-choice';
 import { validationMessage } from '@/lib/ui-logic';
+import { ProfilePhoto, ProfilePhotoEditor } from '@/components/profile-photo';
 
 export default function Account(props: ScreenProps) {
   const { data, navigate, back, refresh, toast, path } = props;
@@ -53,7 +54,11 @@ export default function Account(props: ScreenProps) {
   const parent = data.profile.role === 'PARENT';
   const privacyRows: { key: keyof Profile['privacy']; title: string; description: string }[] = [
     { key: 'accuracy', title: '정답률 공개', description: '얼마나 이해했는지 비율로만 보여드려요' },
-    { key: 'time', title: '학습 시간 공개', description: '공부한 시간과 시간표를 보여드려요' },
+    {
+      key: 'time',
+      title: '학습 시간·활동 공개',
+      description: '학습 시간과 시간표, 오늘 학습 소식을 알려드려요',
+    },
     {
       key: 'wrongNotes',
       title: '오답노트 상세 공개',
@@ -121,6 +126,19 @@ export default function Account(props: ScreenProps) {
             title={parent ? '자녀 연결 관리' : '학부모 연결'}
             onClick={() => setLinks(true)}
           />
+          {data.profile.role === 'STUDENT' && (
+            <ListRow
+              icon={<BookOpen size={21} />}
+              title="배운 과목"
+              description="개념 연결과 문제 생성에 참고해요"
+              extra={
+                <span className="text-sm text-subtle">
+                  {data.profile.completedSubjects.length}과목
+                </span>
+              }
+              onClick={() => navigate('/completed-subjects')}
+            />
+          )}
           {!parent && data.profile.role === 'STUDENT' && (
             <section className="mt-7">
               <SectionTitle title="부모님께 보여드릴 정보" />
@@ -208,9 +226,17 @@ export default function Account(props: ScreenProps) {
       />
       <div className="page-inset pb-8">
         <div className="profile-identity">
-          <span className="size-14 shrink-0 rounded-full bg-surface text-secondary flex items-center justify-center text-[23px] font-bold">
-            {data.profile.name.slice(0, 1) || data.profile.nickname.slice(0, 1)}
-          </span>
+          <button
+            type="button"
+            aria-label="프로필 사진 편집"
+            onClick={() => setEdit(true)}
+            className="rounded-full shrink-0"
+          >
+            <ProfilePhoto
+              name={data.profile.name || data.profile.nickname}
+              url={data.profile.avatarUrl}
+            />
+          </button>
           <div className="flex-1 min-w-0">
             <h1 className="text-[23px] font-bold tracking-tight truncate">
               {data.profile.nickname}
@@ -354,6 +380,7 @@ export default function Account(props: ScreenProps) {
           <ListRow
             icon={<Bell size={21} />}
             title="알림"
+            description={parent ? '내 글의 댓글과 자녀의 오늘 학습 소식' : undefined}
             onClick={() => navigate('/notifications')}
           />
           {data.profile.role === 'ADMIN' && (
@@ -410,13 +437,14 @@ function ProfileEditor({
   open,
   onClose,
 }: ScreenProps & { open: boolean; onClose: () => void }) {
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [form, setForm] = useState({
     name: data.profile.name,
     nickname: data.profile.nickname,
     school: data.profile.school,
     grade: data.profile.grade,
   });
-  const [schools, setSchools] = useState<{ id: string; name: string }[]>([]);
+  const [schools, setSchools] = useState<{ id: string; name: string; address: string }[]>([]);
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -425,7 +453,9 @@ function ProfileEditor({
     let active = true;
     // jitter: none — a 200 ms search debounce paced by one person's keystrokes [site src/components/social/account.tsx:421]
     const timer = setTimeout(() => {
-      api<{ id: string; name: string }[]>(`/schools?q=${encodeURIComponent(form.school)}`)
+      api<{ id: string; name: string; address: string }[]>(
+        `/schools?q=${encodeURIComponent(form.school)}`,
+      )
         .then((s) => {
           if (active) setSchools(s);
         })
@@ -466,8 +496,16 @@ function ProfileEditor({
     }
   }
   return (
-    <Sheet open={open} onClose={() => !busy && onClose()} title="나를 소개해 주세요">
+    <Sheet open={open} onClose={() => !busy && !photoBusy && onClose()} title="프로필 편집">
       <form onSubmit={save} noValidate className="flex flex-col gap-4">
+        {open && (
+          <ProfilePhotoEditor
+            name={data.profile.name || data.profile.nickname}
+            url={data.profile.avatarUrl}
+            onSaved={refresh}
+            onBusy={setPhotoBusy}
+          />
+        )}
         <label className="text-sm font-semibold">
           이름
           <input
@@ -511,12 +549,13 @@ function ProfileEditor({
                       type="button"
                       key={s.id}
                       onClick={() => {
-                        setForm({ ...form, school: s.name });
+                        setForm({ ...form, school: `${s.name} · ${s.address}` });
                         setSearching(false);
                       }}
                       className="px-4 py-3 text-left text-sm font-medium"
                     >
                       {s.name}
+                      <small className="block">{s.address}</small>
                     </button>
                   ))}
                 </span>
@@ -542,7 +581,7 @@ function ProfileEditor({
             {error}
           </p>
         )}
-        <Button type="submit" disabled={busy} className="mt-2">
+        <Button type="submit" disabled={busy || photoBusy} className="mt-2">
           {busy ? '저장하고 있어요…' : '저장하기'}
         </Button>
       </form>

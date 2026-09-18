@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from 'next';
+import './layout-system.css';
+import './action-system.css';
 import './globals.css';
 import App from '@/components/app';
 export const metadata: Metadata = {

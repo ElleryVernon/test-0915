@@ -69,6 +69,7 @@ type scheduleRow struct {
 // cardView is asCard(): the row with nextReviewAt as ISO, image omitted when null, masks and fsrs
 // as JSON documents and, when known, the completed review count.
 type cardView struct {
+	SourceKind       string          `json:"sourceKind"`
 	Diagram          json.RawMessage `json:"diagram,omitempty"`
 	MaskedNodeIDs    []string        `json:"maskedNodeIds,omitempty"`
 	SourceDiagramID  *string         `json:"sourceDiagramId,omitempty"`
@@ -101,7 +102,8 @@ func cardOf(c store.Card, reviewCount *int32) cardView {
 		fsrs = json.RawMessage("null")
 	}
 	return cardView{
-		Diagram: c.Diagram, MaskedNodeIDs: c.MaskedNodeIds, SourceDiagramID: c.SourceDiagramId,
+		SourceKind: c.SourceKind,
+		Diagram:    c.Diagram, MaskedNodeIDs: c.MaskedNodeIds, SourceDiagramID: c.SourceDiagramId,
 		ID: c.ID, UserID: c.UserID, SubjectID: c.SubjectID, Front: c.Front, Back: c.Back, Type: string(c.Type), Bucket: string(c.Bucket),
 		ConsecutiveEasy: c.ConsecutiveEasy, NextReviewAt: jsonx.Time(c.NextReviewAt), Deleted: c.Deleted, Image: c.Image, Masks: masks,
 		SourceQuestionID: c.SourceQuestionID, MaterialID: c.MaterialID, Fsrs: fsrs, CreatedAt: jsonx.Time(c.CreatedAt), ReviewCount: reviewCount,

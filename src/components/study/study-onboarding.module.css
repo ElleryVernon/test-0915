@@ -1,0 +1,141 @@
+.onboarding {
+  display: grid;
+  gap: var(--gap-section);
+  min-width: 0;
+}
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 28px;
+}
+.steps li + li::before {
+  content: '›';
+  padding-right: var(--space-1);
+  color: var(--text-muted);
+}
+.steps [aria-current='step'] {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.introduction {
+  display: grid;
+  justify-items: start;
+  gap: var(--gap-block);
+  padding-top: var(--space-2);
+}
+.symbol {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-panel);
+  background: var(--surface-muted);
+}
+.introduction h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 26px;
+  font-weight: 750;
+  line-height: 1.45;
+  letter-spacing: -0.04em;
+  word-break: keep-all;
+}
+.introduction p,
+.unavailable p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+  word-break: keep-all;
+}
+.start,
+.unavailable {
+  display: grid;
+  gap: var(--gap-related);
+}
+.choices {
+  display: grid;
+  gap: var(--space-2);
+}
+.choices button {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-block);
+  min-height: 80px;
+  width: 100%;
+  padding: var(--gap-block);
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  text-align: left;
+  transition: background 150ms ease;
+}
+.choices button > svg {
+  flex-shrink: 0;
+}
+.choices button > svg:last-child {
+  color: var(--text-muted);
+}
+.choices button > span {
+  min-width: 0;
+  flex: 1;
+}
+.choices strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+.choices small {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+.manual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--control-size);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.choices button:focus-visible,
+.manual:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
+}
+@media (hover: hover) {
+  .choices button:hover,
+  .manual:hover {
+    background: color-mix(in srgb, var(--text-primary) 7%, var(--surface-muted));
+  }
+}
+.choices button:active,
+.manual:active {
+  background: color-mix(in srgb, var(--text-primary) 7%, var(--surface-muted));
+}
+@media (prefers-reduced-motion: reduce) {
+  .choices button {
+    transition: none;
+  }
+}

@@ -54,22 +54,33 @@ type Config struct {
 	GCSBucket           string
 	StaticDir           string // directory of the web build to serve; empty serves the API only
 
+	TossClientKey string
+	TossSecretKey string // secret; server-only
+	PaymentsLive  bool   // explicit opt-in; test keys never enabled in production
+
 	DemoMode  bool
 	DemoAdmin bool
 
 	AuthSecret string // secret: signs login state cookies
 	OAuth      map[string]OAuthClient
 
-	OpenRouterAPIKey        string // secret
-	OpenRouterModel         string
-	OpenRouterEffort        string
-	OpenRouterProviderOrder []string
-	OpenRouterBaseURL       string // empty means openrouter.ai; tests point it at a fake
-	AIRatePerMinute         int    // paid model requests one student may start per minute
-	AIRatePerDay            int
+	OpenRouterAPIKey         string // secret
+	OpenRouterModel          string
+	OpenRouterQualityModel   string // optional independent generation reviewer; empty uses the generator
+	OpenRouterEffort         string
+	OpenRouterStructuredMode string // function (default) or json_schema for endpoints without forced tools
+	OpenRouterProviderOrder  []string
+	OpenRouterBaseURL        string // empty means openrouter.ai; tests point it at a fake
+	AIRatePerMinute          int    // paid model requests one student may start per minute
+	AIRatePerDay             int
+	TypeSafeAPIKey           string // secret: TypeSafe (Jev) judgment model
+	TypeSafeModel            string // jev-latest unless pinned
+	TypeSafeBaseURL          string // empty means api.typesafe.ai; tests point it at a fake
+	AIJudge                  string // off (default): no judgments; shadow: record verdicts only; on: agreement may replace the separate review call
 
 	PDFWorkers       int
 	AIConcurrency    int
+	AIQualityReview  bool // independent semantic review before generated items can be stored
 	UploadLegacyDirs []string
 	MigrateOnStart   bool
 	LogLevel         string
@@ -124,47 +135,57 @@ func Load(get func(string) (string, bool)) (*Config, error) {
 	boolOf := func(key string) bool { return env(key, "false") == "true" }
 
 	c := &Config{
-		Env:                 env("ENV", Development),
-		Host:                env("HOST", ""),
-		Port:                intOf("PORT", 8080),
-		LogFormat:           env("LOG_FORMAT", ""),
-		AppURL:              env("APP_URL", ""),
-		DatabaseURL:         env("DATABASE_URL", ""),
-		DBInstance:          env("DB_INSTANCE", ""),
-		DBUser:              env("DB_USER", ""),
-		DBName:              env("DB_NAME", "memoryz"),
-		DBPassword:          env("DB_PASSWORD", ""),
-		DBIAMAuth:           boolOf("DB_IAM_AUTH"),
-		DBIPType:            env("DB_IP_TYPE", "private"),
-		DBPoolMax:           int32(intOf("DB_POOL_MAX", 6)),
-		ValkeyAddr:          env("VALKEY_ADDR", ""),
-		ValkeyIAMAuth:       boolOf("VALKEY_IAM_AUTH"),
-		ValkeyCAPEM:         env("VALKEY_CA_PEM", ""),
-		ValkeyTLSServerName: env("VALKEY_TLS_SERVER_NAME", ""),
-		ValkeyUsername:      env("VALKEY_USERNAME", ""),
-		ValkeyPassword:      env("VALKEY_PASSWORD", ""),
-		BlobStore:           env("BLOB_STORE", "pg"),
-		GCSBucket:           env("GCS_BUCKET", ""),
-		StaticDir:           env("STATIC_DIR", ""),
-		DemoMode:            boolOf("DEMO_MODE"),
-		DemoAdmin:           boolOf("DEMO_ADMIN"),
-		AuthSecret:          env("AUTH_SECRET", ""),
-		OAuth:               map[string]OAuthClient{},
-		OpenRouterAPIKey:    env("OPENROUTER_API_KEY", ""),
-		OpenRouterModel:     env("OPENROUTER_MODEL", ""),
-		OpenRouterEffort:    env("OPENROUTER_REASONING_EFFORT", "high"),
-		OpenRouterBaseURL:   env("OPENROUTER_BASE_URL", ""),
-		AIRatePerMinute:     intOf("AI_RATE_PER_MINUTE", 10),
-		AIRatePerDay:        intOf("AI_RATE_PER_DAY", 200),
-		PDFWorkers:          intOf("PDF_WORKERS", 2),
-		AIConcurrency:       intOf("AI_CONCURRENCY", 16),
-		MigrateOnStart:      boolOf("MIGRATE_ON_START"),
-		LogLevel:            env("LOG_LEVEL", "info"),
-		GoogleProject:       env("GOOGLE_CLOUD_PROJECT", ""),
-		TrustProxy:          env("TRUST_PROXY", "") == "true",
-		PprofAddr:           env("PPROF_ADDR", ""),
-		OTelExporter:        env("OTEL_EXPORTER", ""),
-		OTelSampleRatio:     1,
+		Env:                      env("ENV", Development),
+		Host:                     env("HOST", ""),
+		Port:                     intOf("PORT", 8080),
+		LogFormat:                env("LOG_FORMAT", ""),
+		AppURL:                   env("APP_URL", ""),
+		DatabaseURL:              env("DATABASE_URL", ""),
+		DBInstance:               env("DB_INSTANCE", ""),
+		DBUser:                   env("DB_USER", ""),
+		DBName:                   env("DB_NAME", "memoryz"),
+		DBPassword:               env("DB_PASSWORD", ""),
+		DBIAMAuth:                boolOf("DB_IAM_AUTH"),
+		DBIPType:                 env("DB_IP_TYPE", "private"),
+		DBPoolMax:                int32(intOf("DB_POOL_MAX", 6)),
+		ValkeyAddr:               env("VALKEY_ADDR", ""),
+		ValkeyIAMAuth:            boolOf("VALKEY_IAM_AUTH"),
+		ValkeyCAPEM:              env("VALKEY_CA_PEM", ""),
+		ValkeyTLSServerName:      env("VALKEY_TLS_SERVER_NAME", ""),
+		ValkeyUsername:           env("VALKEY_USERNAME", ""),
+		ValkeyPassword:           env("VALKEY_PASSWORD", ""),
+		BlobStore:                env("BLOB_STORE", "pg"),
+		GCSBucket:                env("GCS_BUCKET", ""),
+		StaticDir:                env("STATIC_DIR", ""),
+		TossClientKey:            env("TOSS_CLIENT_KEY", ""),
+		TossSecretKey:            env("TOSS_SECRET_KEY", ""),
+		PaymentsLive:             boolOf("PAYMENTS_LIVE"),
+		DemoMode:                 boolOf("DEMO_MODE"),
+		DemoAdmin:                boolOf("DEMO_ADMIN"),
+		AuthSecret:               env("AUTH_SECRET", ""),
+		OAuth:                    map[string]OAuthClient{},
+		OpenRouterAPIKey:         env("OPENROUTER_API_KEY", ""),
+		OpenRouterModel:          env("OPENROUTER_MODEL", ""),
+		OpenRouterQualityModel:   env("OPENROUTER_QUALITY_MODEL", ""),
+		OpenRouterEffort:         env("OPENROUTER_REASONING_EFFORT", "high"),
+		OpenRouterStructuredMode: env("OPENROUTER_STRUCTURED_MODE", "function"),
+		OpenRouterBaseURL:        env("OPENROUTER_BASE_URL", ""),
+		AIRatePerMinute:          intOf("AI_RATE_PER_MINUTE", 10),
+		AIRatePerDay:             intOf("AI_RATE_PER_DAY", 200),
+		TypeSafeAPIKey:           env("TYPESAFE_API_KEY", ""),
+		TypeSafeModel:            env("TYPESAFE_MODEL", "jev-latest"),
+		TypeSafeBaseURL:          env("TYPESAFE_BASE_URL", ""),
+		AIJudge:                  env("AI_JUDGE", "off"),
+		PDFWorkers:               intOf("PDF_WORKERS", 2),
+		AIConcurrency:            intOf("AI_CONCURRENCY", 16),
+		AIQualityReview:          env("AI_QUALITY_REVIEW", "true") != "false",
+		MigrateOnStart:           boolOf("MIGRATE_ON_START"),
+		LogLevel:                 env("LOG_LEVEL", "info"),
+		GoogleProject:            env("GOOGLE_CLOUD_PROJECT", ""),
+		TrustProxy:               env("TRUST_PROXY", "") == "true",
+		PprofAddr:                env("PPROF_ADDR", ""),
+		OTelExporter:             env("OTEL_EXPORTER", ""),
+		OTelSampleRatio:          1,
 	}
 	for _, raw := range strings.Split(env("TRUSTED_PROXIES", ""), ",") {
 		raw = strings.TrimSpace(raw)
@@ -337,6 +358,12 @@ func Load(get func(string) (string, bool)) (*Config, error) {
 	if c.OpenRouterModel != "" && !regexp.MustCompile(`^[a-zA-Z0-9._:/-]+$`).MatchString(c.OpenRouterModel) {
 		problems = append(problems, "OPENROUTER_MODEL has unexpected characters")
 	}
+	if c.OpenRouterQualityModel != "" && !regexp.MustCompile(`^[a-zA-Z0-9._:/-]+$`).MatchString(c.OpenRouterQualityModel) {
+		problems = append(problems, "OPENROUTER_QUALITY_MODEL has unexpected characters")
+	}
+	if c.OpenRouterStructuredMode != "function" && c.OpenRouterStructuredMode != "json_schema" {
+		problems = append(problems, "OPENROUTER_STRUCTURED_MODE must be function or json_schema")
+	}
 	if c.OpenRouterBaseURL != "" {
 		if u, err := url.Parse(c.OpenRouterBaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			problems = append(problems, "OPENROUTER_BASE_URL must be an absolute http(s) URL")
@@ -344,6 +371,20 @@ func Load(get func(string) (string, bool)) (*Config, error) {
 	}
 	if c.AIRatePerMinute < 1 || c.AIRatePerDay < 1 {
 		problems = append(problems, "AI_RATE_PER_MINUTE and AI_RATE_PER_DAY must be positive")
+	}
+	if c.AIJudge != "off" && c.AIJudge != "shadow" && c.AIJudge != "on" {
+		problems = append(problems, "AI_JUDGE must be off, shadow or on")
+	}
+	if c.AIJudge != "off" && c.TypeSafeAPIKey == "" {
+		problems = append(problems, "AI_JUDGE needs TYPESAFE_API_KEY")
+	}
+	if c.TypeSafeModel == "" || !regexp.MustCompile(`^[a-zA-Z0-9._:/-]+$`).MatchString(c.TypeSafeModel) {
+		problems = append(problems, "TYPESAFE_MODEL has unexpected characters")
+	}
+	if c.TypeSafeBaseURL != "" {
+		if u, err := url.Parse(c.TypeSafeBaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			problems = append(problems, "TYPESAFE_BASE_URL must be an absolute http(s) URL")
+		}
 	}
 	if c.PprofAddr != "" && !strings.HasPrefix(c.PprofAddr, "127.0.0.1:") && !strings.HasPrefix(c.PprofAddr, "localhost:") {
 		problems = append(problems, "PPROF_ADDR must bind loopback")
@@ -373,6 +414,11 @@ func Load(get func(string) (string, bool)) (*Config, error) {
 
 // AIAvailable reports whether AI-backed features can run.
 func (c *Config) AIAvailable() bool { return c.OpenRouterAPIKey != "" && c.OpenRouterModel != "" }
+
+// JudgeAvailable reports whether the Jev judgment model may be called (shadow or on, with a key).
+func (c *Config) JudgeAvailable() bool {
+	return c.TypeSafeAPIKey != "" && (c.AIJudge == "shadow" || c.AIJudge == "on")
+}
 
 // Secure reports whether cookies must carry the Secure flag.
 func (c *Config) Secure() bool { return strings.HasPrefix(c.AppURL, "https:") }
@@ -409,9 +455,21 @@ func (c *Config) Redacted() map[string]any {
 		"otelExporter": c.OTelExporter, "otelSampleRatio": c.OTelSampleRatio,
 		"demoMode": c.DemoMode, "demoAdmin": c.DemoAdmin, "authSecret": set(c.AuthSecret),
 		"oauthProviders":   c.ConfiguredProviders(),
-		"openRouterApiKey": set(c.OpenRouterAPIKey), "openRouterModel": c.OpenRouterModel, "openRouterEffort": c.OpenRouterEffort,
+		"openRouterApiKey": set(c.OpenRouterAPIKey), "openRouterModel": c.OpenRouterModel, "openRouterEffort": c.OpenRouterEffort, "openRouterQualityModel": c.OpenRouterQualityModel,
 		"openRouterProviderOrder": c.OpenRouterProviderOrder, "openRouterBaseUrl": c.OpenRouterBaseURL, "aiRatePerMinute": c.AIRatePerMinute, "aiRatePerDay": c.AIRatePerDay,
 		"pdfWorkers": c.PDFWorkers, "aiConcurrency": c.AIConcurrency,
+		"typeSafeApiKey": set(c.TypeSafeAPIKey), "typeSafeModel": c.TypeSafeModel, "typeSafeBaseUrl": c.TypeSafeBaseURL, "aiJudge": c.AIJudge,
 		"uploadLegacyDirs": c.UploadLegacyDirs, "migrateOnStart": c.MigrateOnStart, "logLevel": c.LogLevel, "googleProject": c.GoogleProject, "trustProxy": c.TrustProxy, "trustedProxies": len(c.TrustedProxies), "pprofAddr": c.PprofAddr,
 	}
+}
+
+// PaymentMode requires a matching environment pair; incomplete configuration stays unavailable.
+func (c *Config) PaymentMode() string {
+	if strings.HasPrefix(c.TossClientKey, "live_ck_") && strings.HasPrefix(c.TossSecretKey, "live_sk_") && c.PaymentsLive {
+		return "live"
+	}
+	if c.Development() && strings.HasPrefix(c.TossClientKey, "test_ck_") && strings.HasPrefix(c.TossSecretKey, "test_sk_") && !c.PaymentsLive {
+		return "test"
+	}
+	return "unavailable"
 }

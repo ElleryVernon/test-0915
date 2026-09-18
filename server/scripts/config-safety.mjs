@@ -15,7 +15,7 @@ const work = mkdtempSync(join(tmpdir(), 'memoryz-config-'));
 const bin = join(work, 'server');
 const build = spawnSync('go', ['build', '-o', bin, './cmd/server'], { cwd: resolve('server'), encoding: 'utf8' });
 if (build.status !== 0) throw new Error(`go build: ${build.stderr}`);
-const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(DATABASE_URL|AUTH_SECRET|OPENROUTER_API_KEY|APP_URL|ENV|PORT|HOST|GOOGLE_CLIENT_SECRET)$/.test(k)));
+const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(DATABASE_URL|AUTH_SECRET|OPENROUTER_API_KEY|APP_URL|ENV|PORT|HOST|GOOGLE_CLIENT_SECRET|GOOGLE_CLIENT_ID|KAKAO_CLIENT_ID|KAKAO_CLIENT_SECRET|NAVER_CLIENT_ID|NAVER_CLIENT_SECRET|APPLE_CLIENT_ID|APPLE_CLIENT_SECRET)$/.test(k)));
 let checks = 0;
 const check = (ok, message) => {
   assert.ok(ok, message);

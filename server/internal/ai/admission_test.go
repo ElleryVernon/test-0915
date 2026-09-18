@@ -105,11 +105,13 @@ func TestAdmission(t *testing.T) {
 		t.Fatalf("a shorter caller deadline is its own error, not 429: %v", err)
 	}
 	p.slots.Release(2)
-	// An upstream 429 is one upstream call; the learner decides when to try again.
+	// An upstream 429 (never billed) is re-sent at most UpstreamRetries times, then the learner
+	// decides when to try again.
 	before := calls.Load()
 	p.client.Transport = headerTransport{"X-Test": "429"}
-	if err := call(p, context.Background()); !errors.Is(err, errBusy) || calls.Load() != before+1 {
-		t.Fatalf("upstream 429 is not retried: %v (%d calls)", err, calls.Load()-before)
+	p.retryBase, p.retryCap = time.Millisecond, 2*time.Millisecond
+	if err := call(p, context.Background()); !errors.Is(err, errBusy) || calls.Load() != before+1+UpstreamRetries {
+		t.Fatalf("upstream 429 is re-sent %d times then hinted: %v (%d calls)", UpstreamRetries, err, calls.Load()-before)
 	}
 	zero := NewProvider(&config.Config{}, "", slog.Default())
 	if !zero.slots.TryAcquire(16) || zero.slots.TryAcquire(1) {
@@ -129,6 +131,8 @@ func TestRetryHints(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusTooManyRequests)
 	})
+	// No in-process re-send here: a zero cap treats every hint as too long and waits nothing without one.
+	p.retryBase, p.retryCap = 0, 0
 	now := time.Now()
 	for _, c := range []struct {
 		header string

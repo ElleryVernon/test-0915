@@ -14,6 +14,9 @@ const config = (phase: string): NextConfig => ({
           return [{ source: '/api/:path*', destination: `${api}/api/:path*` }];
         },
       }
-    : { output: 'export' }),
+    : {
+        output: 'export',
+        ...(process.env.NEXT_EXPORT_DIR ? { distDir: process.env.NEXT_EXPORT_DIR } : {}),
+      }),
 });
 export default config;

@@ -239,6 +239,26 @@ func RequestScheme(r *http.Request) string {
 	return "http"
 }
 
+// loopbackAlias treats localhost and 127.0.0.1 on the app's port as the same development origin:
+// `next dev` proxies /api to the Go server, so the request Host is never the browser's, and a
+// student who opens the preview as localhost while APP_URL says 127.0.0.1 (or the reverse) must not
+// have every mutation refused. Production app origins are not loopback, so this never widens them.
+func loopbackAlias(origin, app string) bool {
+	o, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	a, err := url.Parse(app)
+	if err != nil {
+		return false
+	}
+	return o.Scheme == a.Scheme && o.Port() == a.Port() && isLoopback(o.Hostname()) && isLoopback(a.Hostname())
+}
+
+func isLoopback(host string) bool {
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
 // CSRF is the previous server's mutation rule: a cross-site fetch is refused, and an Origin that is
 // neither this request's origin, the app origin, nor the request's own host on the same scheme is refused.
 func CSRF(appOrigin string) Middleware {
@@ -259,7 +279,7 @@ func CSRF(appOrigin string) Middleware {
 				matchesHost = u.Host == r.Host && u.Scheme == RequestScheme(r)
 			}
 			requestOrigin := RequestScheme(r) + "://" + r.Host
-			if r.Header.Get("Sec-Fetch-Site") == "cross-site" || (origin != "" && origin != requestOrigin && origin != appOrigin && !matchesHost) {
+			if r.Header.Get("Sec-Fetch-Site") == "cross-site" || (origin != "" && origin != requestOrigin && origin != appOrigin && !matchesHost && !loopbackAlias(origin, appOrigin)) {
 				Fail(w, r, apierr.ErrBadOrigin)
 				return
 			}

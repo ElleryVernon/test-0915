@@ -15,6 +15,15 @@ OpenRouter의 `openai/gpt-5.6-luna`, reasoning `high`를 호출합니다. 공급
 - 일정: 고정 일정과 충돌 금지, 25–60분 블록, 최소 10분 휴식, 하루 추가 학습 4시간 이하.
 - OCR: 실제 글자만 순서대로 추출. 이미지 속 지시를 실행하거나 읽히지 않는 내용을 만들어내지 않음.
 
+### 판정 모델 (Jev)
+
+생성기 옆에서 **판정만** 하는 두 번째 모델을 둘 수 있습니다(`server/internal/ai/jev.go`, TypeSafe System One `jev-latest`). 텍스트를 만들지 않고 키워드 상태·답안 유형·지시 삽입 확률·정답 보기·근거 판정 같은 확률과 선택지만 돌려주며, 한 요청은 약 0.3초·수천 입력 토큰입니다. 설정은 `TYPESAFE_API_KEY`, `TYPESAFE_MODEL`, `AI_JUDGE`이며 `AI_JUDGE=off`(기본)이면 어떤 경로도 바뀌지 않습니다.
+
+- 서술형 채점(`GradeWithAI`): 판정 요청을 생성기 호출과 병렬로 보냅니다. 검증된 채점의 키워드 explained 여부·답안 유형이 판정과 일치하고 판정 confidence가 0.6 이상이며 지시 삽입 판정과 모순이 없으면, `AI_JUDGE=on`에서는 별도 검수 호출(`memoryz_essay_grade_review`)을 생략합니다. `shadow`는 일치 여부만 기록합니다(`AiRun` retries의 `judge` 항목). 판정 실패·시간 초과·긴 원문은 "판정 없음"으로 취급되어 기존 검수 경로가 그대로 실행됩니다.
+- 생성 검수(`reviewItems`): 객관식은 원문만으로 보기를 고르게 하고 정답 키와 비교하며, 서술형은 키워드는 원문이 뒷받침하고 방해어는 뒷받침하지 않는지 판정합니다. `on`에서 판정이 거절한 항목은 모델 검수 없이 바로 생성기로 돌려보내고, 모두 0.8 이상으로 통과하면 모델의 독립 풀이 호출을 생략합니다. 의미 검수(`memoryz_learning_quality`)는 항상 그대로 실행됩니다.
+- 빠른 판정 화면: `POST /api/essay/judge`는 소유한 서술형에 대한 판정(matched/missing·임시 점수·유형)을 돌려주고, 부트스트랩의 `judgeAvailable`이 true일 때(`shadow`·`on` 모두) 서술형 화면이 채점 요청과 동시에 호출해 코칭이 오기 전까지 핵심 개념 표시를 먼저 보여 줍니다. 표시 전용이라 `shadow`에서도 제공되며 채점 경로는 `on`에서만 바뀝니다. 학생별 AI 예산을 함께 소모하며 최종 점수는 언제나 채점 결과가 결정합니다.
+- 판정 호출도 사용량(`provider=typesafe`, 입력 토큰·비용·시간)으로 기록됩니다. 측정과 비교표는 [TypeSafe Jev 평가](TYPESAFE_JEV_EVALUATION.md)에 있습니다.
+
 ## 요청 수명과 복구
 
 브라우저는 유료 생성 요청 전에 사용자별 UUID와 입력을 IndexedDB에 저장합니다. 서버의 `AiRun`은 `(userId, requestId)`를 유일키로 사용하며 입력 해시·스킬 버전·모델·단계별 시간·상태·최종 결과를 PostgreSQL에 보관합니다.

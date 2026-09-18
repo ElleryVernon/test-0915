@@ -41,6 +41,8 @@ import { isDue } from '@/lib/srs';
 import { Button, EmptyState, ErrorNote, IconButton, ScreenHeader, Sheet } from '@/components/ui';
 import { useJourneyState } from '../journey';
 import ScheduleEditor, { type ScheduleDraft, type ScheduleReceipt } from './planner-editor';
+import { PlannerWorkspace } from './planner-workspace';
+import workspaceStyles from './planner-workspace.module.css';
 import { MonthSheet } from './planner-pickers';
 import { SchoolRegistrationForm } from './school-registration';
 import {
@@ -106,6 +108,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
           data.schedules.some(
             (schedule) =>
               (!draft.editing || schedule.id === draft.editing.id) &&
+              !draft.initial.repeat &&
               scheduleMatchesDraft(schedule, draft.initial),
           ) ||
           (!!draft.receipt &&
@@ -119,6 +122,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
       );
   }, [data.schedules, drafts, setDrafts]);
   const [monthOpen, setMonthOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [schoolBusy, setSchoolBusy] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
@@ -145,7 +149,7 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
   const requestStartedAt = useRef<number | null>(null);
   const resumeController = useRef<AbortController | null>(null);
   const interacting = useRef(false);
-  interacting.current = !!editor || monthOpen;
+  interacting.current = !!editor || monthOpen || workspaceOpen;
   const viewedDay = useRef(day);
   viewedDay.current = day;
   const aiController = useRef<AbortController | null>(null);
@@ -623,9 +627,10 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
     try {
       const current = await api<AppData>('/bootstrap');
       const recovered = recoverPlannerResult(original, suggestionDate, current.schedules);
-      for (const block of recovered.plans[selectedPlan].blocks) {
-        await api('/schedules', block);
-        added++;
+      const blocks = recovered.plans[selectedPlan].blocks;
+      if (blocks.length) {
+        const saved = await api<{ added: number }>('/schedules/batch', { blocks });
+        added = saved.added;
       }
       await refresh();
       if (aiTask)
@@ -725,6 +730,18 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
         }
       />
       <div className="page-inset planner-screen">
+        <button
+          type="button"
+          className={workspaceStyles.entryPoint}
+          onClick={() => setWorkspaceOpen(true)}
+          aria-haspopup="dialog"
+        >
+          <span>
+            <strong>이번 주 계획 세우기</strong>
+            <small>할 일에 시간 배치 · 학원 시간표 후보 비교</small>
+          </span>
+          <ChevronRight size={20} />
+        </button>
         <div className="flex items-center justify-between">
           <IconButton label="이전 주" onClick={() => setDay(shiftDate(day, -7))}>
             <ChevronLeft size={18} />
@@ -1045,6 +1062,19 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
         </div>
       )}
 
+      {workspaceOpen && (
+        <PlannerWorkspace
+          data={data}
+          day={day}
+          onClose={() => setWorkspaceOpen(false)}
+          onSaved={async (message, date) => {
+            await refresh();
+            setDay(date);
+            setWorkspaceOpen(false);
+            toast(message);
+          }}
+        />
+      )}
       {editor && (
         <ScheduleEditor
           key={editor.key}
@@ -1074,7 +1104,12 @@ export default function Planner({ data, refresh, toast }: ScreenProps) {
           receipt={editor.receipt}
           onDraft={(initial, receipt) => {
             // A no-op selection or returning to the original values is not an unfinished task.
-            if (!receipt && editor.baseline && scheduleMatchesDraft(editor.baseline, initial)) {
+            if (
+              !receipt &&
+              editor.baseline &&
+              !initial.repeat &&
+              scheduleMatchesDraft(editor.baseline, initial)
+            ) {
               forgetDraft(editor.key);
               return;
             }

@@ -29,9 +29,11 @@ export default function Parent(props: ScreenProps) {
   } | null>(null);
   const [statsError, setStatsError] = useState('');
   useEffect(() => {
+    setParentStats(null);
+  }, [data.child?.id]);
+  useEffect(() => {
     let active = true;
     if (data.profile.role !== 'PARENT' || !data.child) return;
-    setParentStats(null);
     setStatsError('');
     api<{
       subjectStats: ReturnType<typeof subjectAccuracy>;
@@ -321,7 +323,7 @@ export default function Parent(props: ScreenProps) {
         </div>
       )}
       <Sheet open={links} onClose={() => setLinks(false)} title="함께할 자녀를 선택해 주세요">
-        <ChildLinks {...props} />
+        <ChildLinks {...props} onConnected={() => setLinks(false)} />
       </Sheet>
     </>
   );
@@ -340,7 +342,12 @@ function PrivateNotice({ title }: { title: string }) {
   );
 }
 
-export function ChildLinks({ data, refresh, toast }: ScreenProps) {
+export function ChildLinks({
+  data,
+  refresh,
+  toast,
+  onConnected,
+}: ScreenProps & { onConnected?: () => void }) {
   const [children, setChildren] = useState<(Profile & { selected: boolean })[]>([]);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -377,6 +384,7 @@ export function ChildLinks({ data, refresh, toast }: ScreenProps) {
       await reload();
       setCode('');
       toast('자녀와 연결됐어요');
+      onConnected?.();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -390,6 +398,7 @@ export function ChildLinks({ data, refresh, toast }: ScreenProps) {
       await api('/children/select', { childId: child.id });
       await reload();
       toast(`${child.name}의 학습 현황을 보여드려요`);
+      onConnected?.();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -576,11 +585,19 @@ export function CheerScreen(props: ScreenProps) {
                   <SectionTitle
                     title="포인트도 함께 보낼까요?"
                     action={
-                      <span className="text-[12px] text-muted">
-                        잔액 {data.profile.points.toLocaleString()}P
-                      </span>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="btn-compact"
+                        onClick={() => navigate('/points')}
+                      >
+                        충전하기
+                      </Button>
                     }
                   />
+                  <p className="text-sm text-muted mt-2">
+                    보유 {data.profile.points.toLocaleString()}P · 1원 = 1P
+                  </p>
                   <div className="grid grid-cols-4 gap-2 mt-3">
                     {[0, 100, 300, 500].map((p) => (
                       <button

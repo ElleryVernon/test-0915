@@ -247,3 +247,26 @@
   color: var(--danger);
   font-size: 14px;
 }
+
+/* "내 질문 2개에 답했고…" — the profile answers 신뢰 with the viewer's own history. */
+.relation {
+  margin: 0;
+  padding-block: var(--space-3);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.identity h2 .textButton {
+  margin-left: var(--gap-inline);
+  font-size: 12px;
+  font-weight: 400;
+}
+.nicknameInput {
+  border: 1px solid var(--border-subtle);
+  width: 100%;
+  min-height: var(--control-height);
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}

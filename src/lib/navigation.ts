@@ -219,7 +219,7 @@ export class JourneyHistory {
 export function mainTab(path: string, parent = false): string {
   const base = path.split('?')[0];
   if (
-    /^\/(study|subjects|quiz|essay|flashcards|wrong-notes|create-card|completed-subjects|search)(\/|$)/.test(
+    /^\/(start|study|subjects|quiz|essay|flashcards|wrong-notes|create-card|completed-subjects|search)(\/|$)/.test(
       base,
     )
   )

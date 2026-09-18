@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "bindings": [
+    {
+      "id": "lehninger-enzyme-competitive",
+      "pdfFile": "Lehninger_Chapters_Split/Lehninger_Chapter_06_pp198-245.pdf",
+      "pdfSha256": "3bb21605345d0a8840e0fba7962abb478e508eba5b1699a9819c7f428b67d31f",
+      "pageStart": 20,
+      "pageEnd": 20,
+      "extractor": [
+        "pdftotext",
+        "-f",
+        "20",
+        "-l",
+        "20",
+        "PDF",
+        "-"
+      ],
+      "sourceStart": 614,
+      "sourceEnd": 3761,
+      "sourceSha256": "f854f4da6ffc6c3e64543c5b41b4454726fd6942c2b5111d70a82119b7b6aa23",
+      "caseSha256": "a3eec48b07c56b14b40884244e383ecf1b37e4ee494673ce5e09d50debdd4741"
+    },
+    {
+      "id": "mcmurry-substitution-elimination",
+      "pdfFile": "Organic-Chemistry-John-McMurry-9th_chapters_fixed/Chapter_11 - Reactions of Alkyl Halides - Nucleophilic Substitutions and Eliminations.pdf",
+      "pdfSha256": "2ae987bb3e5307479077dfbc525577b15f6c07f8c073bc895965426f7e0bbf8e",
+      "pageStart": 38,
+      "pageEnd": 38,
+      "extractor": [
+        "pdftotext",
+        "-f",
+        "38",
+        "-l",
+        "38",
+        "PDF",
+        "-"
+      ],
+      "sourceStart": 89,
+      "sourceEnd": 1845,
+      "sourceSha256": "13700460b4ed5154358a8fbea0e65db51ee6da99d38ec7be1f4c3b6f10ae2992",
+      "caseSha256": "45cf7d979932466733e327538f837a7f2dd74650b69387e0c49df6190584c764"
+    },
+    {
+      "id": "lehninger-energy-coupling",
+      "pdfFile": "Lehninger_Chapters_Split/Lehninger_Chapter_13_pp496-527.pdf",
+      "pdfSha256": "aa6533ffdf26038f5858ceed1ac58bb8913902f6cd9e9ab04721bbfba7fd9c66",
+      "pageStart": 7,
+      "pageEnd": 7,
+      "extractor": [
+        "pdftotext",
+        "-f",
+        "7",
+        "-l",
+        "7",
+        "PDF",
+        "-"
+      ],
+      "sourceStart": 666,
+      "sourceEnd": 4355,
+      "sourceSha256": "8c2459256896b7560aa8d9e3cde2f594f7d93b4bb5e777abc0dade8cebd6940c",
+      "caseSha256": "080fb11f3e4e3eaeb430b35ef01fe4dc0f7633fb0f55abb35e6bf9f8efdfeca9"
+    },
+    {
+      "id": "mcmurry-acid-base-equilibrium",
+      "pdfFile": "Organic-Chemistry-John-McMurry-9th_chapters_fixed/Chapter_02 - Polar Covalent Bonds Acids and Bases.pdf",
+      "pdfSha256": "4178faabb4b3d040557b9703823a39e39537e7171ce42763d414320580a9588f",
+      "pageStart": 19,
+      "pageEnd": 20,
+      "extractor": [
+        "pdftotext",
+        "-f",
+        "19",
+        "-l",
+        "20",
+        "PDF",
+        "-"
+      ],
+      "sourceStart": 52,
+      "sourceEnd": 2677,
+      "sourceSha256": "f4f1d05d6bc268d45f03687446f2e5587fc2838dfeb1b1a3af73d9d2c622240a",
+      "caseSha256": "0c5e5dbea984e7e0e35d7ae75e03e6ce321df02a7a5fb988e70c3f67f2be9915"
+    },
+    {
+      "id": "lehninger-membrane-symport",
+      "pdfFile": "Lehninger_Chapters_Split/Lehninger_Chapter_11_pp377-428.pdf",
+      "pdfSha256": "9a2ddbe2eb837358734a15b5e40aeedcde661f4d695207d2755b995bb28275a2",
+      "pageStart": 36,
+      "pageEnd": 36,
+      "extractor": [
+        "pdftotext",
+        "-f",
+        "36",
+        "-l",
+        "36",
+        "PDF",
+        "-"
+      ],
+      "sourceStart": 528,
+      "sourceEnd": 3515,
+      "sourceSha256": "8df9c5f1e3bd57d6bdbcbb2ee0ad5be214294f3283e4ca1660df0a9fe39d521b",
+      "caseSha256": "bf362f620976d946ffee6a0efe9a94248bd22c1a87228b569f83ab261d87f506"
+    },
+    {
+      "id": "lehninger-dna-proofreading",
+      "pdfFile": "Lehninger_Chapters_Split/Lehninger_Chapter_25_pp955-1000.pdf",
+      "pdfSha256": "4b030af4de5b3817502cd20bd72e45b3c610e31e0fbd1d30ee0aad21b35ff348",
+      "pageStart": 7,
+      "pageEnd": 7,
+      "extractor": [
+        "pdftotext",
+        "-f",
+        "7",
+        "-l",
+        "7",
+        "PDF",
+        "-"
+      ],
+      "sourceStart": 74,
+      "sourceEnd": 1784,
+      "sourceSha256": "bc2993ce1095582b52fd8dc8779808db33780c08b31276bc08696ad5e99afab8",
+      "caseSha256": "ad16696728a020fc8110c487242c941aad52e5e80de5e6dd4fe8aa7b3b841e3c"
+    },
+    {
+      "id": "mcmurry-meso-stereochemistry",
+      "pdfFile": "Organic-Chemistry-John-McMurry-9th_chapters_fixed/Chapter_05 - Stereochemistry at Tetrahedral Centers.pdf",
+      "pdfSha256": "13d8cf3a640ab5c3b0db3f862dbd0bb4632aa9c86db6180fc9fb6f685b38546e",
+      "pageStart": 19,
+      "pageEnd": 20,
+      "extractor": [
+        "pdftotext",
+        "-f",
+        "19",
+        "-l",
+        "20",
+        "PDF",
+        "-"
+      ],
+      "sourceStart": 340,
+      "sourceEnd": 2743,
+      "sourceSha256": "5f2885fc58151e3f9ce5898110087895cc5bd78c67164eb349989d8de5deb958",
+      "caseSha256": "d3bc0621fe4c57a996e6c44bb28edd649c3ace26e0f9e522073c162aa104cf29"
+    },
+    {
+      "id": "mcmurry-halogen-regioselectivity",
+      "pdfFile": "Organic-Chemistry-John-McMurry-9th_chapters_fixed/Chapter_16 - Chemistry of Benzene - Electrophilic Aromatic Substitution.pdf",
+      "pdfSha256": "6993842cc5bdb437fe5d3a2c466f0698bcae37a4fbf26897db564e3f26ea0ed2",
+      "pageStart": 24,
+      "pageEnd": 24,
+      "extractor": [
+        "pdftotext",
+        "-f",
+        "24",
+        "-l",
+        "24",
+        "PDF",
+        "-"
+      ],
+      "sourceStart": 62,
+      "sourceEnd": 1709,
+      "sourceSha256": "d1effa51a6c10ac0bcc6be37149bd4d6c5940075b1c57740397e2ceb10fe7fbb",
+      "caseSha256": "2d692c1528d4c88ee7e97fe45e2659c220a84dc37b0832eb3aeb823338967e60"
+    }
+  ]
+}

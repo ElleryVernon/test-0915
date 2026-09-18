@@ -2,6 +2,10 @@
 // out/<screen>.html per known top-level screen so a direct visit is a real document; deeper paths
 // (/subjects/<id>, /flashcards?card=…) are answered with the shell by the Go server's fallback.
 export const screens = [
+  'demo',
+  'login',
+  'onboarding',
+  'start',
   'study',
   'subjects',
   'quiz',
@@ -17,6 +21,7 @@ export const screens = [
   'parent',
   'parent-boards',
   'cheer',
+  'points',
   'admin',
   'search',
   'notifications',

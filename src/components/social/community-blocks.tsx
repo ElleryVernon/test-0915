@@ -1,13 +1,46 @@
 'use client';
 
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
-import { ArrowDown, ArrowUp, Check, ChevronRight, Trash2 } from '@/components/icons';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronRight,
+  ChevronDown,
+  Trash2,
+  BookOpen,
+  Layers,
+  FileText,
+  ImageIcon,
+  PencilLine,
+  ListChecks,
+  CalendarDays,
+  Sigma,
+} from '@/components/icons';
 import { Button, IconButton, Sheet } from '@/components/ui';
 import { Checkbox } from '@/components/ui-choice';
+import { useJourneyLayer } from '@/components/journey';
+import { AttachmentSheet } from './attachment-sheet';
+import {
+  initialAttachmentRoute,
+  permittedAttachmentTypes,
+  attachmentCapacity,
+  updateExcerptRange,
+  pollInputError,
+  createAttachmentRequestGuard,
+  insertMathSymbol,
+} from '@/lib/attachment-workflow';
 import { api } from '@/lib/api';
 import { fetchMaterialDetail } from '@/lib/materials';
-import type { AppData, Card, Mask, Navigate, Schedule } from '@/lib/contracts';
+import type { AppData, Card, Mask, Navigate, Schedule, ToastAction } from '@/lib/contracts';
 import type { CommunityBlock, CommunityBlockType } from '@/lib/community-types';
+import {
+  markFollowed,
+  markFollowSuggested,
+  maySuggestFollow,
+  recordClone,
+  solveResultCopy,
+} from '@/lib/community-nudges';
 import { DiagramCardContent } from '../study/explanation-card';
 import styles from './community-blocks.module.css';
 
@@ -21,11 +54,39 @@ export const BLOCK_LABELS: Record<CommunityBlockType, string> = {
   SCHEDULE: '시간표',
   MATH: '수식',
 };
+const BLOCK_ICONS = {
+  QUESTION: BookOpen,
+  CARD: Layers,
+  MATERIAL: FileText,
+  PHOTO: ImageIcon,
+  ESSAY: PencilLine,
+  POLL: ListChecks,
+  SCHEDULE: CalendarDays,
+  MATH: Sigma,
+};
+function BlockIcon({ type }: { type: CommunityBlockType }) {
+  const Icon = BLOCK_ICONS[type];
+  return <Icon size={16} />;
+}
+export function blockPreviewText(block: CommunityBlock): string {
+  const p = block.payload;
+  if (block.type === 'SCHEDULE') return `${Array.isArray(p.rows) ? p.rows.length : 0}개의 일정`;
+  const value =
+    block.type === 'QUESTION' || block.type === 'ESSAY'
+      ? p.prompt
+      : block.type === 'CARD'
+        ? p.front
+        : block.type === 'POLL'
+          ? p.question
+          : block.type === 'PHOTO'
+            ? p.caption
+            : block.type === 'MATERIAL'
+              ? p.title
+              : p.text;
+  return typeof value === 'string' ? value : '';
+}
 export function allowedBlockTypes(role: string, comment = false): CommunityBlockType[] {
-  if (role === 'PARENT') return comment ? ['PHOTO'] : ['PHOTO', 'POLL'];
-  return comment
-    ? ['QUESTION', 'CARD', 'PHOTO', 'MATH']
-    : (Object.keys(BLOCK_LABELS) as CommunityBlockType[]);
+  return permittedAttachmentTypes(role, comment);
 }
 export function blockSummary(blocks: CommunityBlock[] = []) {
   const counts = new Map<CommunityBlockType, number>();
@@ -98,15 +159,7 @@ const makeBlock = (
   hidden: type === 'QUESTION' || type === 'CARD',
 });
 
-export function BlockPicker({
-  data,
-  open,
-  onClose,
-  onAdd,
-  remaining,
-  comment = false,
-  photoCount = 0,
-}: {
+type BlockPickerProps = {
   data: AppData;
   open: boolean;
   onClose: () => void;
@@ -114,9 +167,155 @@ export function BlockPicker({
   remaining: number;
   comment?: boolean;
   photoCount?: number;
+  allowedTypes?: CommunityBlockType[];
+  initialType?: CommunityBlockType;
+  maxAttachments?: number;
+};
+
+const TOOL_HELP: Record<CommunityBlockType, string> = {
+  QUESTION: '내 문제를 골라 함께 풀어봐요',
+  CARD: '복습 카드의 앞면과 뒷면을 공유해요',
+  MATERIAL: '내 자료에서 필요한 문장만 발췌해요',
+  PHOTO: '사진을 고르고 필요한 부분을 편집해요',
+  ESSAY: '직접 작성한 답안에 피드백을 받아요',
+  POLL: '선택지 2~4개로 의견을 물어봐요',
+  SCHEDULE: '하루 일정 중 공유할 시간만 골라요',
+  MATH: '수식과 수학 기호를 입력해요',
+};
+
+export function BlockPicker(props: BlockPickerProps) {
+  // A dismissed picker owns no parent draft; reopening starts a new attachment.
+  return props.open ? <AttachmentPickerSession {...props} /> : null;
+}
+function AttachmentPickerSession({
+  data,
+  onClose,
+  onAdd,
+  remaining,
+  comment = false,
+  photoCount = 0,
+  allowedTypes,
+  initialType,
+  maxAttachments = comment ? 1 : 5,
+}: BlockPickerProps) {
+  const types = permittedAttachmentTypes(data.profile.role, comment, allowedTypes);
+  const initial = initialAttachmentRoute(types, initialType);
+  const [route, setRoute] = useState(initial);
+  const [visited, setVisited] = useState<CommunityBlockType[]>(initial.type ? [initial.type] : []);
+  const close = useJourneyLayer(true, onClose);
+  const backToMenu = useJourneyLayer(!!route.type && route.type !== initial.type, () =>
+    setRoute({ type: null, preview: false }),
+  );
+  const backToList = useJourneyLayer(route.preview, () =>
+    setRoute((previous) => ({ ...previous, preview: false })),
+  );
+  const chooseType = (type: CommunityBlockType) => {
+    if (!types.includes(type)) return;
+    setVisited((previous) => (previous.includes(type) ? previous : [...previous, type]));
+    setRoute({ type, preview: false });
+  };
+  const type = route.type;
+  const title = !type
+    ? '첨부하기'
+    : route.preview
+      ? type === 'MATERIAL'
+        ? '공유할 문장 선택'
+        : `${BLOCK_LABELS[type]} 확인`
+      : `${BLOCK_LABELS[type]} 첨부`;
+  return (
+    <AttachmentSheet
+      open
+      flush
+      history={false}
+      onClose={close}
+      title={title}
+      closeLabel="첨부 닫기"
+      description={!type && remaining > 0 ? `최대 ${remaining}개 더 첨부할 수 있어요` : undefined}
+      onBack={route.preview ? backToList : type && type !== initial.type ? backToMenu : undefined}
+    >
+      {!type && (
+        <div className={styles.toolMenu}>
+          {remaining <= 0 ? (
+            <p className={styles.empty}>
+              첨부는 {maxAttachments}개까지예요. 기존 첨부를 하나 빼면 더 넣을 수 있어요.
+            </p>
+          ) : (
+            types.map((kind) => (
+              <button
+                type="button"
+                key={kind}
+                className={styles.toolMenuRow}
+                disabled={!attachmentCapacity(kind, remaining, photoCount)}
+                onClick={() => chooseType(kind)}
+              >
+                <span className={styles.toolMenuIcon}>
+                  <BlockIcon type={kind} />
+                </span>
+                <span>
+                  <strong>{BLOCK_LABELS[kind]}</strong>
+                  <small>
+                    {kind === 'PHOTO' && photoCount >= 4
+                      ? '사진 4장을 모두 첨부했어요'
+                      : TOOL_HELP[kind]}
+                  </small>
+                </span>
+                <ChevronRight size={18} />
+              </button>
+            ))
+          )}
+          {!types.length && <p className={styles.empty}>이곳에 첨부할 수 있는 항목이 없어요.</p>}
+        </div>
+      )}
+      {visited.map((kind) => (
+        <AttachmentTool
+          key={kind}
+          type={kind}
+          data={data}
+          active={type === kind}
+          preview={type === kind && route.preview}
+          onPreview={() => setRoute({ type: kind, preview: true })}
+          onChooseType={chooseType}
+          canChoosePhoto={
+            types.includes('PHOTO') && attachmentCapacity('PHOTO', remaining, photoCount)
+          }
+          onAdd={onAdd}
+          onClose={close}
+          remaining={remaining}
+          photoCount={photoCount}
+          maxAttachments={maxAttachments}
+        />
+      ))}
+    </AttachmentSheet>
+  );
+}
+
+function AttachmentTool({
+  type,
+  data,
+  active,
+  preview,
+  onPreview,
+  onChooseType,
+  canChoosePhoto,
+  onAdd,
+  onClose,
+  remaining,
+  photoCount,
+  maxAttachments,
+}: {
+  type: CommunityBlockType;
+  data: AppData;
+  active: boolean;
+  preview: boolean;
+  onPreview: () => void;
+  onChooseType: (type: CommunityBlockType) => void;
+  canChoosePhoto: boolean;
+  onAdd: (block: CommunityBlock) => void;
+  onClose: () => void;
+  remaining: number;
+  photoCount: number;
+  maxAttachments: number;
 }) {
-  const types = allowedBlockTypes(data.profile.role, comment);
-  const [type, setType] = useState<CommunityBlockType>(types[0]);
   const [candidate, setCandidate] = useState<CommunityBlock | null>(null);
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
@@ -129,39 +328,44 @@ export function BlockPicker({
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [date, setDate] = useState(today);
   const [rowIds, setRowIds] = useState<string[]>([]);
-  const loadId = useRef(0);
+  const loadGuard = useRef(createAttachmentRequestGuard());
+  const mathField = useRef<HTMLTextAreaElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const listScroll = useRef(0);
+  useLayoutEffect(() => {
+    if (active && bodyRef.current) bodyRef.current.scrollTop = preview ? 0 : listScroll.current;
+  }, [active, preview]);
   useEffect(() => {
-    if (!open) {
-      loadId.current++;
-      setCandidate(null);
-      setError('');
+    if (!active || !preview) {
+      loadGuard.current.cancel();
       setLoading(false);
     }
-  }, [open]);
-  const chooseType = (next: CommunityBlockType) => {
-    loadId.current++;
-    setType(next);
-    setCandidate(null);
-    setQuery('');
-    setError('');
-    setLoading(false);
-    setSentences([]);
-    setSelectedSentences([]);
-    setRowIds([]);
-  };
+  }, [active, preview]);
+  useEffect(
+    () => () => {
+      loadGuard.current.cancel();
+    },
+    [],
+  );
+  const chooseType = onChooseType;
   const subject = (id: string) => data.subjects.find((s) => s.id === id)?.name ?? '';
   const match = (value: string) =>
     value.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   const chooseMaterial = async (id: string) => {
     const source = data.materials.find((m) => m.id === id);
     if (!source) return;
-    const current = ++loadId.current;
+    if (candidate?.refId === id) {
+      onPreview();
+      return;
+    }
+    const current = loadGuard.current.start();
+    onPreview();
     setLoading(true);
     setError('');
     setCandidate(null);
     try {
       const detail = await fetchMaterialDetail(source);
-      if (loadId.current !== current) return;
+      if (!loadGuard.current.isCurrent(current)) return;
       const parts = excerptSentences(detail.content);
       setSentences(parts);
       setSourceText(detail.content);
@@ -173,14 +377,14 @@ export function BlockPicker({
           id,
         ),
       );
-      if (!parts.length) setError('이 자료에는 발췌할 본문이 없어요. 사진으로 첨부할 수 있어요.');
+      if (!parts.length) setError('이 자료에는 발췌할 본문이 없어요. 다른 자료를 선택해 주세요.');
     } catch (e) {
-      if (loadId.current === current) setError(message(e));
+      if (loadGuard.current.isCurrent(current)) setError(message(e));
     } finally {
-      if (loadId.current === current) setLoading(false);
+      if (loadGuard.current.isCurrent(current)) setLoading(false);
     }
   };
-  const scheduleRows = data.schedules
+  const scheduleRows = (data.schedules ?? [])
     .filter((row) => row.date === date)
     .sort((a, b) => a.start.localeCompare(b.start));
   const build = (): CommunityBlock | null => {
@@ -215,14 +419,12 @@ export function BlockPicker({
         : null;
     return candidate;
   };
-  // Building a block generates its durable ID only at confirmation, not on every render.
+  // New poll, math and schedule IDs are generated only when confirming the attachment.
   const valid =
     type === 'MATH'
       ? !!math.trim()
       : type === 'POLL'
-        ? !!pollQuestion.trim() &&
-          pollOptions.every((o) => o.trim()) &&
-          new Set(pollOptions.map((o) => o.trim())).size === pollOptions.length
+        ? !pollInputError(pollQuestion, pollOptions)
         : type === 'SCHEDULE'
           ? rowIds.length > 0
           : type === 'MATERIAL'
@@ -237,6 +439,8 @@ export function BlockPicker({
             title: q.prompt,
             meta: subject(q.subjectId),
             select: () => {
+              onPreview();
+              if (candidate?.refId === q.id) return;
               const attempt = data.attempts
                 .filter((a) => a.questionId === q.id)
                 .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
@@ -266,7 +470,9 @@ export function BlockPicker({
               id: c.id,
               title: c.front,
               meta: `${subject(c.subjectId)} · ${c.diagram || c.type === 'BLIND' ? '가림 카드' : '복습 카드'}`,
-              select: () =>
+              select: () => {
+                onPreview();
+                if (candidate?.refId === c.id) return;
                 setCandidate(
                   makeBlock(
                     'CARD',
@@ -282,7 +488,8 @@ export function BlockPicker({
                     },
                     c.id,
                   ),
-                ),
+                );
+              },
             }))
         : type === 'MATERIAL'
           ? data.materials
@@ -304,7 +511,9 @@ export function BlockPicker({
                     id: e.id,
                     title: e.prompt,
                     meta: `${subject(e.subjectId)} · 내 답안 ${attempt.answer.length}자`,
-                    select: () =>
+                    select: () => {
+                      onPreview();
+                      if (candidate?.refId === e.id) return;
                       setCandidate(
                         makeBlock(
                           'ESSAY',
@@ -316,64 +525,50 @@ export function BlockPicker({
                           },
                           e.id,
                         ),
-                      ),
+                      );
+                    },
                   },
                 ];
               })
             : [];
   const learning = ['QUESTION', 'CARD', 'MATERIAL', 'ESSAY'].includes(type);
+  const capacity = attachmentCapacity(type, remaining, photoCount);
   return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title={comment ? '댓글에 첨부하기' : '내 공부 첨부하기'}
-      description={`첨부 ${Math.max(0, (comment ? 1 : 5) - remaining)} / ${comment ? 1 : 5}`}
-      fullScreen
-    >
-      <div className={styles.picker}>
-        <div className={styles.typeGrid} role="group" aria-label="첨부 종류">
-          {types.map((kind) => (
-            <button
-              className={styles.typeButton}
-              type="button"
-              key={kind}
-              aria-pressed={type === kind}
-              onClick={() => chooseType(kind)}
-            >
-              {BLOCK_LABELS[kind]}
-            </button>
-          ))}
-        </div>
+    <div className={styles.tool} hidden={!active}>
+      <div
+        className={styles.toolBody}
+        ref={bodyRef}
+        onScroll={(event) => {
+          if (!preview) listScroll.current = event.currentTarget.scrollTop;
+        }}
+      >
         {remaining <= 0 && (
-          <p role="status" className={styles.note}>
-            첨부는 {comment ? '1개' : '5개'}까지예요. 기존 첨부를 하나 빼면 더 넣을 수 있어요.
+          <p role="status" className={styles.empty}>
+            첨부는 {maxAttachments}개까지예요. 기존 첨부를 하나 빼면 더 넣을 수 있어요.
           </p>
         )}
-        {learning && (
+        {learning && !preview && (
           <>
-            <label className={styles.field}>
-              내 {BLOCK_LABELS[type]} 찾기
+            <label className={styles.searchField}>
+              <span className="sr-only">내 {BLOCK_LABELS[type]} 찾기</span>
               <input
                 type="search"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(event) => setQuery(event.target.value)}
                 placeholder="제목이나 과목으로 검색"
               />
             </label>
+            <p className={styles.note}>
+              {type === 'ESSAY' ? '직접 제출한 답안만 표시돼요.' : '내 학습에 저장된 항목이에요.'}
+            </p>
             <div className={styles.pickList}>
               {rows.map((row) => (
-                <button
-                  type="button"
-                  key={row.id}
-                  className={styles.pickRow}
-                  aria-pressed={candidate?.refId === row.id}
-                  onClick={row.select}
-                >
+                <button type="button" key={row.id} className={styles.pickRow} onClick={row.select}>
                   <span>
                     <strong>{row.title}</strong>
                     <small>{row.meta}</small>
                   </span>
-                  {candidate?.refId === row.id ? <Check size={20} /> : <ChevronRight size={20} />}
+                  {candidate?.refId === row.id ? <Check size={18} /> : <ChevronRight size={18} />}
                 </button>
               ))}
             </div>
@@ -386,61 +581,86 @@ export function BlockPicker({
                       ? '제출한 서술형 답안이 아직 없어요.'
                       : `아직 내 ${BLOCK_LABELS[type]}가 없어요.`}
                 </p>
-                <button
-                  type="button"
-                  className={styles.outline}
-                  onClick={() => chooseType('PHOTO')}
-                >
-                  사진으로 대신 첨부
-                </button>
+                {query ? (
+                  <button type="button" className={styles.outline} onClick={() => setQuery('')}>
+                    검색 지우기
+                  </button>
+                ) : (
+                  canChoosePhoto && (
+                    <button
+                      type="button"
+                      className={styles.outline}
+                      onClick={() => chooseType('PHOTO')}
+                    >
+                      사진으로 대신 첨부
+                    </button>
+                  )
+                )}
               </div>
             )}
           </>
         )}
         {loading && (
-          <p role="status" className={styles.note}>
+          <p role="status" className={styles.loading}>
             자료 본문을 불러오고 있어요.
           </p>
         )}
-        {type === 'MATERIAL' && candidate && (
+        {type === 'MATERIAL' && candidate && preview && (
           <div className={styles.group}>
-            <strong>공유할 연속 문장 선택 · {selectedSentences.length} / 3</strong>
+            <div className={styles.selectedSource}>
+              <FileText size={18} />
+              <strong>{text(candidate.payload.title)}</strong>
+            </div>
             <p className={styles.note}>
-              연속된 문장 최대 3개 · 2,000자까지 공개돼요. 원본 자료는 나만 열 수 있어요.
+              공유할 첫 문장과 바로 이어지는 문장을 골라 주세요. 최대 3문장·2,000자까지 첨부되며,
+              자료 전체는 공개되지 않아요.
             </p>
+            <div className={styles.selectionHeading}>
+              <strong aria-live="polite">{selectedSentences.length} / 3문장 선택</strong>
+              <button
+                type="button"
+                disabled={!selectedSentences.length}
+                onClick={() => {
+                  setSelectedSentences([]);
+                  setError('');
+                }}
+              >
+                선택 초기화
+              </button>
+            </div>
             <div className={styles.sentences}>
-              {sentences.map((sentence, i) => (
+              {sentences.map((sentence, index) => (
                 <Checkbox
-                  key={i}
-                  checked={selectedSentences.includes(i)}
-                  disabled={selectedSentences.length === 3 && !selectedSentences.includes(i)}
+                  key={index}
+                  checked={selectedSentences.includes(index)}
                   onChange={(checked) => {
-                    setError('');
-                    setSelectedSentences((previous) => {
-                      if (!checked) return previous.filter((n) => n < i);
-                      if (!previous.length) return [i];
-                      const low = Math.min(...previous, i),
-                        high = Math.max(...previous, i);
-                      return high - low < 3
-                        ? Array.from({ length: high - low + 1 }, (_, n) => low + n)
-                        : [i];
-                    });
+                    const next = updateExcerptRange(selectedSentences, index, checked);
+                    setSelectedSentences(next.indices);
+                    setError(next.error);
                   }}
                 >
                   {sentence}
                 </Checkbox>
               ))}
             </div>
-            {selectedSentences.length > 0 && !excerptSelection(sourceText, selectedSentences) && (
-              <p className={styles.note}>선택한 내용이 2,000자를 넘어요. 더 짧게 선택해 주세요.</p>
+            {!!selectedSentences.length && (
+              <div className={styles.excerptPreview}>
+                <strong>첨부될 내용</strong>
+                {excerptSelection(sourceText, selectedSentences) ? (
+                  <p>{excerptSelection(sourceText, selectedSentences)}</p>
+                ) : (
+                  <p className={styles.note}>2,000자를 넘었어요. 선택한 문장을 줄여 주세요.</p>
+                )}
+              </div>
             )}
           </div>
         )}
         {type === 'PHOTO' &&
           (photoCount >= 4 ? (
-            <p className={styles.note}>사진은 한 글에 4장까지 첨부할 수 있어요.</p>
+            <p className={styles.note}>사진은 최대 4장까지 첨부할 수 있어요.</p>
           ) : (
             <PhotoEditor
+              active={active}
               onReady={(image, caption) =>
                 setCandidate(image ? makeBlock('PHOTO', { image, caption }) : null)
               }
@@ -451,6 +671,7 @@ export function BlockPicker({
             <label className={styles.field}>
               수식
               <textarea
+                ref={mathField}
                 value={math}
                 maxLength={2000}
                 rows={4}
@@ -464,7 +685,20 @@ export function BlockPicker({
                   type="button"
                   className={styles.outline}
                   key={token}
-                  onClick={() => setMath((s) => `${s}${token}`)}
+                  onClick={() => {
+                    const input = mathField.current;
+                    const inserted = insertMathSymbol(
+                      math,
+                      input?.selectionStart ?? math.length,
+                      input?.selectionEnd ?? math.length,
+                      token,
+                    );
+                    setMath(inserted.value);
+                    requestAnimationFrame(() => {
+                      input?.focus({ preventScroll: true });
+                      input?.setSelectionRange(inserted.caret, inserted.caret);
+                    });
+                  }}
                 >
                   {token}
                 </button>
@@ -520,6 +754,13 @@ export function BlockPicker({
                 선택지 추가
               </button>
             )}
+            {pollQuestion.trim() &&
+              pollOptions.every((option) => option.trim()) &&
+              pollInputError(pollQuestion, pollOptions) && (
+                <p className={styles.error} role="status">
+                  {pollInputError(pollQuestion, pollOptions)}
+                </p>
+              )}
             <p className={styles.note}>
               서로 다른 선택지 2~4개 · 게시 후 24시간 동안 1인 1표예요. 투표한 뒤 결과를 볼 수
               있어요.
@@ -543,29 +784,44 @@ export function BlockPicker({
               최대 6개 선택 · 고정 일정 이름은 ‘학교’로 바뀌어요. 읽는 사람은 자율 일정만 담을 수
               있어요.
             </p>
-            {scheduleRows.map((row) => (
-              <Checkbox
-                key={row.id}
-                checked={rowIds.includes(row.id)}
-                disabled={rowIds.length >= 6 && !rowIds.includes(row.id)}
-                onChange={(checked) =>
-                  setRowIds((ids) =>
-                    checked ? [...ids, row.id].slice(0, 6) : ids.filter((id) => id !== row.id),
-                  )
-                }
-              >
-                {row.start}–{row.end} · {row.kind === 'FIXED' ? '학교' : row.title}
-              </Checkbox>
-            ))}
+            <div className={styles.scheduleChoices}>
+              {scheduleRows.map((row) => (
+                <Checkbox
+                  key={row.id}
+                  checked={rowIds.includes(row.id)}
+                  disabled={rowIds.length >= 6 && !rowIds.includes(row.id)}
+                  onChange={(checked) =>
+                    setRowIds((ids) =>
+                      checked ? [...ids, row.id].slice(0, 6) : ids.filter((id) => id !== row.id),
+                    )
+                  }
+                >
+                  {row.start}–{row.end} · {row.kind === 'FIXED' ? '학교' : row.title}
+                </Checkbox>
+              ))}
+            </div>
+            <p className={styles.note} aria-live="polite">
+              {rowIds.length} / 6개 선택
+            </p>
             {!scheduleRows.length && (
               <p className={styles.empty}>이 날짜에는 일정이 없어요. 다른 날짜를 선택해 주세요.</p>
             )}
           </div>
         )}
-        {candidate && type !== 'PHOTO' && type !== 'MATERIAL' && (
+
+        {candidate && preview && ['QUESTION', 'CARD', 'ESSAY'].includes(type) && (
           <div className={styles.group}>
-            <p className={styles.note}>첨부 미리보기</p>
-            <BlockView block={candidate} data={data} navigate={() => {}} toast={() => {}} preview />
+            <p className={styles.note}>
+              아래 내용이 첨부돼요. 다른 항목은 이전 단계에서 고를 수 있어요.
+            </p>
+            <BlockView
+              key={`${candidate.id}-${candidate.hidden}`}
+              block={candidate}
+              data={data}
+              navigate={() => {}}
+              toast={() => {}}
+              preview
+            />
             {['QUESTION', 'CARD'].includes(candidate.type) && (
               <Checkbox
                 checked={candidate.hidden}
@@ -581,26 +837,30 @@ export function BlockPicker({
             {error}
           </p>
         )}
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={!valid || loading || remaining <= 0 || (type === 'PHOTO' && photoCount >= 4)}
-          onClick={() => {
-            const block = build();
-            if (block) {
-              onAdd(block);
-              setCandidate(null);
-              setMath('');
-              setPollQuestion('');
-              setPollOptions(['', '']);
-              onClose();
-            }
-          }}
-        >
-          {BLOCK_LABELS[type]} 1개 첨부하기
-        </Button>
       </div>
-    </Sheet>
+      {(!learning || preview) && (
+        <div className={styles.toolFooter}>
+          {type === 'PHOTO' && !valid && capacity && (
+            <p className={styles.note}>사진을 고르고 게시될 내용을 확인해 주세요.</p>
+          )}
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={!valid || loading || !capacity}
+            onClick={() => {
+              if (!capacity || !valid || loading) return;
+              const block = build();
+              if (block) {
+                onAdd(block);
+                onClose();
+              }
+            }}
+          >
+            {BLOCK_LABELS[type]} 첨부하기
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -648,7 +908,13 @@ async function compressedPhoto(file: File) {
     URL.revokeObjectURL(source);
   }
 }
-function PhotoEditor({ onReady }: { onReady: (image: string, caption: string) => void }) {
+function PhotoEditor({
+  active,
+  onReady,
+}: {
+  active: boolean;
+  onReady: (image: string, caption: string) => void;
+}) {
   const [image, setImage] = useState('');
   const [original, setOriginal] = useState('');
   const [caption, setCaption] = useState('');
@@ -656,9 +922,15 @@ function PhotoEditor({ onReady }: { onReady: (image: string, caption: string) =>
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [rect, setRect] = useState<Rect>({ x: 10, y: 10, width: 30, height: 20 });
-  const [tool, setTool] = useState<'redact' | 'crop'>('redact');
+  const [tool, setTool] = useState<'redact' | 'crop' | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   const generation = useRef(0);
+  useEffect(() => {
+    if (!active) {
+      generation.current++;
+      setBusy(false);
+    }
+  }, [active]);
   useEffect(
     () => () => {
       generation.current++;
@@ -684,6 +956,7 @@ function PhotoEditor({ onReady }: { onReady: (image: string, caption: string) =>
       if (current !== generation.current) return;
       setImage(result);
       setOriginal(result);
+      setTool(null);
     } catch (e) {
       if (current === generation.current) setError(message(e));
     } finally {
@@ -698,8 +971,10 @@ function PhotoEditor({ onReady }: { onReady: (image: string, caption: string) =>
     };
   };
   const apply = async () => {
-    if (!image || busy || rect.width < 1 || rect.height < 1) return;
+    if (!image || !tool || busy || rect.width < 1 || rect.height < 1) return;
     setBusy(true);
+    setChecked(false);
+    notify(image, caption, false);
     setError('');
     const current = ++generation.current;
     try {
@@ -728,6 +1003,7 @@ function PhotoEditor({ onReady }: { onReady: (image: string, caption: string) =>
       const result = encodePhoto(canvas);
       if (current !== generation.current) return;
       setImage(result);
+      setTool(null);
       setChecked(false);
       notify(result, caption, false);
     } catch (e) {
@@ -738,9 +1014,15 @@ function PhotoEditor({ onReady }: { onReady: (image: string, caption: string) =>
   };
   return (
     <div className={styles.group}>
-      <label className={styles.field}>
-        사진 선택
+      <label className={`${styles.photoPicker} ${image ? styles.photoPickerCompact : ''}`}>
+        <ImageIcon size={24} />
+        <span>
+          <strong>{image ? '다른 사진 선택' : '사진 선택'}</strong>
+          <small>JPG · PNG · WebP, 최대 10MB</small>
+        </span>
         <input
+          className={styles.fileInput}
+          aria-label="사진 선택"
           type="file"
           accept="image/jpeg,image/png,image/webp"
           disabled={busy}
@@ -760,7 +1042,7 @@ function PhotoEditor({ onReady }: { onReady: (image: string, caption: string) =>
               type="button"
               className={styles.outline}
               aria-pressed={tool === 'redact'}
-              onClick={() => setTool('redact')}
+              onClick={() => setTool(tool === 'redact' ? null : 'redact')}
             >
               영역 가리기
             </button>
@@ -768,17 +1050,21 @@ function PhotoEditor({ onReady }: { onReady: (image: string, caption: string) =>
               type="button"
               className={styles.outline}
               aria-pressed={tool === 'crop'}
-              onClick={() => setTool('crop')}
+              onClick={() => setTool(tool === 'crop' ? null : 'crop')}
             >
               잘라내기
             </button>
           </div>
-          <p className={styles.note}>
-            사진 위에서 영역을 드래그하거나 아래 위치·크기를 조절한 뒤 적용해 주세요.
-          </p>
+          {tool && (
+            <p className={styles.note}>
+              사진에서 원하는 부분을 드래그한 뒤 {tool === 'crop' ? '자르기' : '가리기'}를 적용해
+              주세요.
+            </p>
+          )}
           <div
-            className={styles.photoEditor}
+            className={`${styles.photoEditor} ${tool ? styles.photoEditing : ''}`}
             onPointerDown={(event) => {
+              if (!tool) return;
               event.currentTarget.setPointerCapture(event.pointerId);
               start.current = point(event);
               setRect({ ...start.current, width: 0, height: 0 });
@@ -802,60 +1088,72 @@ function PhotoEditor({ onReady }: { onReady: (image: string, caption: string) =>
             }}
           >
             <img src={image} alt="게시할 사진 미리보기" draggable={false} />
-            <span
-              className={styles.selection}
-              style={{
-                left: `${rect.x}%`,
-                top: `${rect.y}%`,
-                width: `${rect.width}%`,
-                height: `${rect.height}%`,
-              }}
-            />
+            {tool && (
+              <span
+                className={styles.selection}
+                style={{
+                  left: `${rect.x}%`,
+                  top: `${rect.y}%`,
+                  width: `${rect.width}%`,
+                  height: `${rect.height}%`,
+                }}
+              />
+            )}
           </div>
-          <div className={styles.rectFields}>
-            {(['x', 'y', 'width', 'height'] as const).map((key, i) => (
-              <label className={styles.field} key={key}>
-                {['왼쪽 %', '위쪽 %', '너비 %', '높이 %'][i]}
-                <input
-                  type="number"
-                  min={key === 'x' || key === 'y' ? 0 : 1}
-                  max={100}
-                  value={Math.round(rect[key])}
-                  onChange={(e) =>
-                    setRect({
-                      ...rect,
-                      [key]: Math.max(
-                        key === 'x' || key === 'y' ? 0 : 1,
-                        Math.min(100, Number(e.target.value)),
-                      ),
-                    })
+          {tool && (
+            <>
+              <details className={styles.rectSettings}>
+                <summary>위치와 크기로 조절</summary>
+                <div className={styles.rectFields}>
+                  {(['x', 'y', 'width', 'height'] as const).map((key, i) => (
+                    <label className={styles.field} key={key}>
+                      {['왼쪽 %', '위쪽 %', '너비 %', '높이 %'][i]}
+                      <input
+                        type="number"
+                        min={key === 'x' || key === 'y' ? 0 : 1}
+                        max={100}
+                        value={Math.round(rect[key])}
+                        onChange={(e) =>
+                          setRect({
+                            ...rect,
+                            [key]: Math.max(
+                              key === 'x' || key === 'y' ? 0 : 1,
+                              Math.min(100, Number(e.target.value)),
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              </details>
+              <div className={styles.inline}>
+                <button
+                  type="button"
+                  className={styles.outline}
+                  disabled={
+                    busy || rect.width < 1 || rect.height < 1 || rect.x >= 100 || rect.y >= 100
                   }
-                />
-              </label>
-            ))}
-          </div>
-          <div className={styles.inline}>
-            <button
-              type="button"
-              className={styles.outline}
-              disabled={busy || rect.width < 1 || rect.height < 1 || rect.x >= 100 || rect.y >= 100}
-              onClick={() => void apply()}
-            >
-              {tool === 'redact' ? '선택 영역 가리기' : '선택 영역으로 자르기'}
-            </button>
-            <button
-              type="button"
-              className={styles.outline}
-              disabled={busy}
-              onClick={() => {
-                setImage(original);
-                setChecked(false);
-                notify(original, caption, false);
-              }}
-            >
-              편집 초기화
-            </button>
-          </div>
+                  onClick={() => void apply()}
+                >
+                  {tool === 'redact' ? '선택 영역 가리기' : '선택 영역으로 자르기'}
+                </button>
+                <button
+                  type="button"
+                  className={styles.outline}
+                  disabled={busy}
+                  onClick={() => {
+                    setImage(original);
+                    setTool(null);
+                    setChecked(false);
+                    notify(original, caption, false);
+                  }}
+                >
+                  편집 초기화
+                </button>
+              </div>
+            </>
+          )}
           <label className={styles.field}>
             사진 설명
             <input
@@ -895,28 +1193,34 @@ function PhotoEditor({ onReady }: { onReady: (image: string, caption: string) =>
 }
 
 export function recordedSolveSelection(response: { selected?: number }, requested: number | null) {
-  const recorded = Number.isInteger(response.selected) && response.selected! >= 0 ? response.selected! : requested;
+  const recorded =
+    Number.isInteger(response.selected) && response.selected! >= 0 ? response.selected! : requested;
   return { selected: recorded, previous: recorded !== requested };
 }
 
 export function BlockView({
   block,
   postId,
+  messageId,
   data,
   navigate,
   toast,
   onChanged,
   preview = false,
   onFeedback,
+  postAuthor,
 }: {
   block: CommunityBlock;
   postId?: string;
+  messageId?: string;
   data: AppData;
   navigate: Navigate;
-  toast: (message: string) => void;
+  toast: (message: string, action?: ToastAction) => void;
   onChanged?: () => void;
   preview?: boolean;
   onFeedback?: () => void;
+  /** Author of the post this block sits in — needed for the rare clone→follow nudge. */
+  postAuthor?: { id: string; name: string };
 }) {
   const p = block.payload;
   const [revealed, setRevealed] = useState(!block.hidden);
@@ -940,8 +1244,10 @@ export function BlockView({
     null,
   );
   const [photoOpen, setPhotoOpen] = useState(false);
-  const canAct = !preview && !!postId && data.profile.role !== 'PARENT';
-  const endpoint = `/posts/${encodeURIComponent(postId ?? '')}/blocks/${encodeURIComponent(block.id)}`;
+  const canAct = !preview && !!(postId || messageId) && data.profile.role !== 'PARENT';
+  const endpoint = messageId
+    ? `/messages/${encodeURIComponent(messageId)}/blocks/${encodeURIComponent(block.id)}`
+    : `/posts/${encodeURIComponent(postId ?? '')}/blocks/${encodeURIComponent(block.id)}`;
   useEffect(() => {
     setStats(block.stats);
   }, [block.stats]);
@@ -987,6 +1293,7 @@ export function BlockView({
     <section className={styles.block} aria-label={`${BLOCK_LABELS[block.type]} 첨부`}>
       <div className={styles.meta}>
         <span>
+          <BlockIcon type={block.type} />
           {BLOCK_LABELS[block.type]}
           {p.subjectName ? ` · ${p.subjectName}` : ''}
         </span>
@@ -1045,13 +1352,28 @@ export function BlockView({
               {busy ? '확인 중…' : '정답 확인'}
             </Button>
           )}
-          {previousSolve && result && <p className={styles.note}>이미 참여한 문제예요. 처음 선택한 답과 결과를 보여 드려요.</p>}
-          {result && (
-            <p role="status" className={styles.result}>
-              {result.correct ? '맞았어요' : '이 부분을 다시 확인해 봐요'} · 정답{' '}
-              {result.answer + 1}번
+          {previousSolve && result && (
+            <p className={styles.note}>
+              이미 참여한 문제예요. 처음 선택한 답과 결과를 보여 드려요.
             </p>
           )}
+          {result &&
+            (() => {
+              const copy = solveResultCopy({
+                correct: result.correct,
+                attempts: stats?.attempts,
+                correctCount: stats?.correct,
+                authorSelected: Number.isInteger(p.selected) ? (p.selected as number) : undefined,
+              });
+              return (
+                <div role="status" className={styles.result}>
+                  <p>
+                    {copy.headline} · 정답 {result.answer + 1}번
+                  </p>
+                  {copy.detail && <small>{copy.detail}</small>}
+                </div>
+              );
+            })()}
           {revealed && (
             <div className={styles.answer}>
               <strong>정답 · {options[answer] ?? `${answer + 1}번`}</strong>
@@ -1070,7 +1392,7 @@ export function BlockView({
                 {!trying && canAct && (
                   <button
                     type="button"
-                    className={styles.outline}
+                    className={styles.primaryAction}
                     onClick={() => {
                       setTrying(true);
                       setSelected(null);
@@ -1105,6 +1427,11 @@ export function BlockView({
                 정답 접기
               </button>
             )}
+            {result && result.correct && canAct && onFeedback && (
+              <button type="button" className={styles.outline} onClick={onFeedback}>
+                답변으로 도와주기
+              </button>
+            )}
             {result && !result.correct && canAct && (
               <button
                 type="button"
@@ -1114,7 +1441,7 @@ export function BlockView({
                   void run(async () => {
                     await api(`${endpoint}/save-question`, {});
                     setQuestionSaved(true);
-                    toast('내 오답노트에 담았어요. 해설은 원 글의 근거와 답변을 확인해 주세요.');
+                    toast('내 오답노트에 담았어요. 공유된 근거와 해설로 복습할 수 있어요.');
                     onChanged?.();
                   })
                 }
@@ -1131,7 +1458,9 @@ export function BlockView({
           </p>
           {trying && (
             <p className={styles.note}>
-              이 풀이는 커뮤니티 정답률에만 반영돼요. 개인 학습 기록에는 남지 않아요.
+              {messageId
+                ? '이 대화에서 함께 풀어보는 문제예요. 개인 학습 기록에는 남지 않아요.'
+                : '이 풀이는 커뮤니티 정답률에만 반영돼요. 개인 학습 기록에는 남지 않아요.'}
             </p>
           )}
         </>
@@ -1193,8 +1522,34 @@ export function BlockView({
                       {},
                     );
                     setCloned(copy);
-                    toast('내 카드 보관함의 다시 상자에 담았어요.');
                     onChanged?.();
+                    // Second clone from the same author earns one follow suggestion, ever.
+                    const author = postAuthor?.id;
+                    if (author && author !== data.profile.id) {
+                      const count = recordClone(author);
+                      if (count >= 2 && maySuggestFollow(author)) {
+                        markFollowSuggested(author);
+                        toast(
+                          `내 카드 보관함에 담았어요. ${postAuthor!.name}님의 카드가 자주 닿네요`,
+                          {
+                            label: '팔로우',
+                            onClick: () =>
+                              api('/follow', { userId: author, following: true })
+                                .then(() => {
+                                  markFollowed(author, true);
+                                  toast(`${postAuthor!.name}님의 새 카드 알림을 받아요`);
+                                })
+                                .catch((e) => toast((e as Error).message)),
+                          },
+                        );
+                        return;
+                      }
+                    }
+                    toast('내 카드 보관함의 다시 상자에 담았어요.', {
+                      label: '카드 열기',
+                      onClick: () =>
+                        navigate(`/flashcards?subject=${encodeURIComponent(copy.subjectId)}`),
+                    });
                   })
                 }
               >
@@ -1322,7 +1677,7 @@ export function BlockView({
             <button
               type="button"
               className={styles.outline}
-              disabled={busy || selected === null || !postId}
+              disabled={busy || selected === null || !(postId || messageId)}
               onClick={() =>
                 void run(async () => {
                   const response = await api<{ stats: CommunityBlock['stats'] }>(
@@ -1500,7 +1855,9 @@ export function BlockDraftList({
         <div className={styles.draft} key={block.id}>
           <div className={styles.draftHeading}>
             <strong>
-              첨부 {index + 1} · {BLOCK_LABELS[block.type]}
+              <BlockIcon type={block.type} />
+              {BLOCK_LABELS[block.type]}
+              {block.payload.subjectName ? ` · ${block.payload.subjectName}` : ''}
             </strong>
             <div className={styles.inline}>
               {blocks.length > 1 && (
@@ -1529,7 +1886,33 @@ export function BlockDraftList({
               </IconButton>
             </div>
           </div>
-          <BlockView block={block} data={data} navigate={() => {}} toast={() => {}} preview />
+          {block.type === 'PHOTO' && typeof block.payload.image === 'string' && (
+            <img
+              className={styles.draftPhoto}
+              src={block.payload.image}
+              alt={block.payload.caption || '첨부 사진'}
+            />
+          )}
+          <p className={styles.draftText}>{blockPreviewText(block)}</p>
+          {block.type === 'QUESTION' && (
+            <p className={styles.note}>
+              {Array.isArray(block.payload.options)
+                ? `${block.payload.options.length}지선다`
+                : '문제'}
+              {Number.isInteger(block.payload.selected)
+                ? ` · 내 답 ${Number(block.payload.selected) + 1}번`
+                : ''}
+            </p>
+          )}
+          {block.type !== 'PHOTO' && (
+            <details className={styles.draftPreview}>
+              <summary>
+                첨부 내용 확인
+                <ChevronDown size={14} />
+              </summary>
+              <BlockView block={block} data={data} navigate={() => {}} toast={() => {}} preview />
+            </details>
+          )}
           {['QUESTION', 'CARD'].includes(block.type) && (
             <Checkbox
               checked={block.hidden}

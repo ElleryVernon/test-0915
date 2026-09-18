@@ -138,22 +138,19 @@ export function SchoolRegistrationForm({
       const checked = previewSchoolRegistration(form, current.schedules, today);
       const pending = checked.filter((row) => row.status === 'new');
       setProgress({ saved: 0, total: pending.length });
-      let skipped = checked.filter((row) => row.status !== 'new').length;
-      for (const row of pending) {
-        try {
-          await api('/schedules', {
+      const skipped = checked.filter((row) => row.status !== 'new').length;
+      if (pending.length) {
+        const result = await api<{ added: number; existing: number }>('/schedules/batch', {
+          blocks: pending.map((row) => ({
             title: form.title.trim(),
             date: row.date,
             start: row.start,
             end: row.end,
             kind: 'FIXED',
-          });
-          saved++;
-          setProgress({ saved, total: pending.length });
-        } catch (e) {
-          if (!/겹쳐요/.test((e as Error).message)) throw e;
-          skipped++;
-        }
+          })),
+        });
+        saved = result.added;
+        setProgress({ saved, total: pending.length });
       }
       const message = saved
         ? `학교 시간 ${saved}일을 등록했어요${skipped ? ` · 기존 일정이 있는 ${skipped}일은 유지했어요` : ''}`
@@ -208,7 +205,7 @@ export function SchoolRegistrationForm({
             format={(date) => dayLabel(date, 'long')}
           />
           <div className="segmented-control" role="group" aria-label="등록 기간">
-            {[1, 4].map((weeks) => (
+            {[1, 4, 16].map((weeks) => (
               <button
                 type="button"
                 className="segment-option"
@@ -216,7 +213,7 @@ export function SchoolRegistrationForm({
                 key={weeks}
                 onClick={() => set({ weeks })}
               >
-                {weeks}주
+                {weeks === 16 ? '한 학기 · 16주' : `${weeks}주`}
               </button>
             ))}
           </div>

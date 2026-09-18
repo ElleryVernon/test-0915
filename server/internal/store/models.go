@@ -186,6 +186,13 @@ func (ns NullScheduleKind) Value() (driver.Value, error) {
 	return string(ns.ScheduleKind), nil
 }
 
+type AccountOnboarding struct {
+	UserID      string
+	Draft       []byte
+	CompletedAt *time.Time
+	UpdatedAt   time.Time
+}
+
 type AiRun struct {
 	ID           string
 	UserID       string
@@ -277,6 +284,11 @@ type Comment struct {
 	CreatedAt time.Time
 }
 
+type CommentLike struct {
+	CommentId string
+	UserID    string
+}
+
 type CommunityAction struct {
 	UserID    string
 	PostID    string
@@ -302,6 +314,8 @@ type CommunityComment struct {
 	Block     []byte
 	RequestID *string
 	UserID    string
+	Deleted   bool
+	EditedAt  *time.Time
 }
 
 type CommunityFollowEvent struct {
@@ -366,6 +380,13 @@ type Follow struct {
 	FollowingID string
 }
 
+type GenerationSource struct {
+	MaterialID string
+	Sources    []byte
+	Topic      string
+	CreatedAt  pgtype.Timestamptz
+}
+
 type Invite struct {
 	Code      string
 	StudentID string
@@ -389,11 +410,38 @@ type Material struct {
 }
 
 type Message struct {
-	ID          string
-	SenderID    string
-	RecipientID string
-	Body        string
-	CreatedAt   time.Time
+	ID            string
+	SenderID      string
+	RecipientID   string
+	Body          string
+	CreatedAt     time.Time
+	Ordinal       int64
+	RequestID     *string
+	ReadAt        *time.Time
+	Blocks        []byte
+	ReplyToId     *string
+	ReplySnapshot []byte
+	Deleted       bool
+}
+
+type MessageAction struct {
+	UserID    string
+	MessageId string
+	BlockId   string
+	Kind      string
+	Result    []byte
+	CreatedAt time.Time
+}
+
+type MessageReaction struct {
+	MessageId string
+	UserID    string
+}
+
+type MessageSavedQuestion struct {
+	UserID     string
+	QuestionID string
+	MessageId  string
 }
 
 type Notification struct {
@@ -404,6 +452,7 @@ type Notification struct {
 	Read      bool
 	Href      string
 	CreatedAt time.Time
+	Kind      string
 }
 
 type OAuthAccount struct {
@@ -421,10 +470,28 @@ type OpsBlob struct {
 	CreatedAt   pgtype.Timestamptz
 }
 
+type ParentLearningNotice struct {
+	NotificationId string
+	StudentID      string
+	Day            pgtype.Date
+}
+
 type ParentLink struct {
 	ParentID  string
 	StudentID string
 	CreatedAt time.Time
+}
+
+type PointTopup struct {
+	ID         string
+	UserID     string
+	RequestID  string
+	Amount     int32
+	Mode       string
+	Status     string
+	PaymentKey *string
+	CreatedAt  pgtype.Timestamptz
+	CreditedAt pgtype.Timestamptz
 }
 
 type Post struct {
@@ -447,6 +514,13 @@ type PostLike struct {
 type PostSave struct {
 	UserID string
 	PostID string
+}
+
+type ProfilePhoto struct {
+	UserID    string
+	Version   string
+	Data      []byte
+	UpdatedAt time.Time
 }
 
 type Question struct {

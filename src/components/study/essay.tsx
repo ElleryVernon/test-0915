@@ -1,7 +1,14 @@
 'use client';
+import { Disclosure } from '../ui-content';
+import { EssayAnswerChunks, EssayKeywordOptions, EssayStructure } from './essay-structure';
+import { StudyLibraryAction } from './subjects';
+import styles from './essay-structure.module.css';
+import writing from './essay-writing.module.css';
 import { CommunityAsk } from '../social/community-ask';
+import { QuickJudgment, type EssayJudgment } from './essay-judgment';
+import { api } from '@/lib/api';
 import { useEffect, useState } from 'react';
-import { Check, ChevronRight, Eye, PencilLine, RotateCcw } from '@/components/icons';
+import { ChevronDown, ChevronRight, Eye, PencilLine, RotateCcw, X } from '@/components/icons';
 import type { Essay, Material, ScreenProps } from '@/lib/contracts';
 import {
   findEssayDraft,
@@ -10,7 +17,7 @@ import {
   essayRevision,
 } from '@/lib/study-drafts';
 import { useJourneyLayer, useJourneyState } from '../journey';
-import { Button, EmptyState, IconButton, ScreenHeader } from '@/components/ui';
+import { Button, EmptyState, ScreenHeader } from '@/components/ui';
 import {
   acknowledgeAiTask,
   AiTaskFailureError,
@@ -32,13 +39,11 @@ import {
 import { exactKeywords, latestAttempts, mix } from './logic';
 import {
   BusyText,
-  Chip,
   Citation,
   ErrorNote,
   GenerationSheet,
   MaterialViewer,
   params,
-  Progress,
   SubjectSelect,
   useAction,
 } from './shared';
@@ -71,8 +76,12 @@ export function EssayScreen(props: ScreenProps) {
   const latest = latestAttempts(props.data.attempts, 'essayId');
   return (
     <>
-      <ScreenHeader title="서술형 코칭" back={() => props.back('/study')} />
-      <div className="page-inset pb-8">
+      <ScreenHeader
+        title="서술형 도우미"
+        back={() => props.back('/study')}
+        action={<StudyLibraryAction props={props} />}
+      />
+      <div className="page-inset has-page-action-dock">
         <h2 className="mt-3 text-[26px] font-extrabold leading-[1.3] tracking-[-.035em]">
           아는 것을
           <br />내 문장으로 꺼내는 연습
@@ -118,10 +127,10 @@ export function EssayScreen(props: ScreenProps) {
             />
           )}
         </div>
-        <Button className="mt-5 w-full" variant="secondary" onClick={() => setGenerate(true)}>
-          서술형 문제 만들기
-        </Button>
       </div>
+      <footer className="page-action-dock" aria-label="새 서술형 문제 만들기">
+        <Button onClick={() => setGenerate(true)}>서술형 문제 만들기</Button>
+      </footer>
       <GenerationSheet
         open={generate}
         onClose={() => setGenerate(false)}
@@ -169,7 +178,17 @@ function EssayExercise({
   const [hint, setHint] = useState(draft?.hint || false);
   const [answer, setAnswer] = useState(initial.answer);
   const [coaching, setCoaching] = useState(draft?.coaching || '');
+  const [writingHelp, setWritingHelp] = useState<'structure' | 'previous' | 'coaching' | null>(
+    null,
+  );
+  const closeWritingHelp = () => {
+    document.querySelector<HTMLButtonElement>(`[data-writing-help="${writingHelp}"]`)?.focus();
+    setWritingHelp(null);
+  };
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  // The judge's quick verdict on the submitted answer, shown until the graded coaching arrives.
+  const [quick, setQuick] = useState<EssayJudgment | null>(null);
+  const [quickPending, setQuickPending] = useState(false);
   const [viewer, setViewer] = useState<{ material: Material; citation?: string } | null>(null);
   const [task, setTask] = useState<AiTaskRecord | null>(null);
   const action = useAction();
@@ -300,7 +319,7 @@ function EssayExercise({
             ))}
           </div>
         )}
-        {!feedback && (
+        {!feedback && stage !== 4 && (
           <>
             <span className="text-[13px] font-semibold text-muted">
               {guided ? `연습 도움 · ${labels[stage - 1]}` : '서술형 연습'}
@@ -330,51 +349,63 @@ function EssayExercise({
               </strong>
             </div>
             <p id="keyword-instruction" className="text-[13px] leading-relaxed text-muted">
-              {selected.length === essay.keywords.length
-                ? '다 골랐어요. 바꾸려면 선택한 단어를 먼저 눌러 해제하세요.'
-                : '질문을 설명하는 데 꼭 필요한 단어만 골라 주세요.'}
+              {checked
+                ? '정답은 체크, 오답은 X, 고르지 않은 정답은 놓친 정답으로 표시했어요.'
+                : selected.length === essay.keywords.length
+                  ? '다 골랐어요. 바꾸려면 선택한 단어를 먼저 눌러 해제하세요.'
+                  : '질문을 설명하는 데 꼭 필요한 단어만 골라 주세요.'}
             </p>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              {keywords.map((word) => (
-                <button
-                  key={word}
-                  aria-pressed={selected.includes(word)}
-                  disabled={!selected.includes(word) && selected.length >= essay.keywords.length}
-                  aria-describedby="keyword-instruction"
-                  onClick={() => {
-                    setChecked(false);
-                    setSelected((current) =>
-                      toggleEssayKeyword(current, word, choices, essay.keywords.length),
-                    );
-                  }}
-                  className="keyword-option"
-                >
-                  {selected.includes(word) && <Check size={17} className="shrink-0" />}
-                  {word}
-                </button>
-              ))}
-            </div>
+            <EssayKeywordOptions
+              choices={keywords}
+              selected={selected}
+              correct={essay.keywords}
+              checked={checked}
+              onSelect={(word) =>
+                setSelected((current) =>
+                  toggleEssayKeyword(current, word, choices, essay.keywords.length),
+                )
+              }
+            />
             <div className="mt-6 space-y-3">
-              {checked && !allKeywords && (
-                <p role="alert" className="rounded-2xl bg-surface p-4 text-[14px] leading-relaxed">
-                  {selected.some((k) => !essay.keywords.includes(k))
-                    ? '이 답안의 핵심 키워드와 다른 선택이 있어요. 근거에서 어떤 작용을 설명하는지 확인해 보세요.'
-                    : `필요한 키워드가 더 있어요. ${essay.keywords.length}개를 모두 골라 주세요.`}
-                </p>
+              {checked && (
+                <div
+                  role="status"
+                  className="rounded-2xl bg-surface p-4 text-[14px] leading-relaxed"
+                >
+                  <strong className="block">
+                    {allKeywords
+                      ? '핵심 키워드를 모두 찾았어요'
+                      : `정답 ${selected.filter((word) => essay.keywords.includes(word)).length}개 · 오답 ${selected.filter((word) => !essay.keywords.includes(word)).length}개`}
+                  </strong>
+                  <p className="mt-1 text-muted">
+                    {allKeywords
+                      ? '다음 단계에서 설명할 순서를 정해 볼까요?'
+                      : '오답과 놓친 정답을 비교해 보세요. 다시 고르기를 누르면 선택을 바꿀 수 있어요.'}
+                  </p>
+                </div>
               )}
               <Button
                 className="w-full"
                 disabled={selected.length !== essay.keywords.length}
                 onClick={() => {
-                  setChecked(true);
-                  if (allKeywords) {
-                    setChecked(false);
-                    setStage(2);
-                    window.scrollTo({ top: 0 });
+                  if (!checked) {
+                    setChecked(true);
+                    return;
                   }
+                  if (!allKeywords) {
+                    setChecked(false);
+                    return;
+                  }
+                  setChecked(false);
+                  setStage(2);
+                  window.scrollTo({ top: 0 });
                 }}
               >
-                키워드 확인하기
+                {!checked
+                  ? '선택한 키워드 확인하기'
+                  : allKeywords
+                    ? '다음 단계로 넘어가기'
+                    : '다시 고르기'}
               </Button>
               <Button
                 variant="secondary"
@@ -396,7 +427,7 @@ function EssayExercise({
                       window.scrollTo({ top: 0 });
                     }}
                   >
-                    이 키워드로 생각 정리하기
+                    이 키워드로 다음 단계로 넘어가기
                   </Button>
                 </div>
               )}
@@ -419,7 +450,7 @@ function EssayExercise({
                 {order.length} / {essay.keywords.length}
               </strong>
             </div>
-            <ol className="essay-order" aria-label="내가 정한 키워드 순서">
+            <ol className={`essay-order ${styles.outline}`} aria-label="내가 정한 키워드 순서">
               {essay.keywords.map((_, index) => {
                 const word = order[index];
                 return (
@@ -454,7 +485,8 @@ function EssayExercise({
               {mix(essay.keywords).map((word) => (
                 <button
                   key={word}
-                  className="keyword-option"
+                  className={styles.keyword}
+                  data-state={order.includes(word) ? 'selected' : 'idle'}
                   disabled={order.includes(word)}
                   aria-pressed={order.includes(word)}
                   onClick={() => {
@@ -491,10 +523,10 @@ function EssayExercise({
                 window.scrollTo({ top: 0 });
               }}
             >
-              이 흐름으로 이어가기
+              다음 단계로 넘어가기
             </Button>
             <Button className="mt-2 w-full" variant="ghost" onClick={backToKeywords}>
-              키워드 다시 고르기
+              이전 단계로 돌아가기
             </Button>
           </>
         )}
@@ -513,7 +545,10 @@ function EssayExercise({
             {hint ? (
               <div className="mt-4 rounded-2xl bg-surface p-4">
                 <h2 className="text-sm font-bold">예시 답안</h2>
-                <p className="mt-3 text-sm leading-relaxed">{essay.modelAnswer}</p>
+                <EssayAnswerChunks
+                  className="mt-3 text-sm leading-relaxed"
+                  text={essay.modelAnswer}
+                />
                 <p className="mt-3 text-xs leading-relaxed text-muted">
                   표현과 설명 순서는 달라도 괜찮아요. 핵심 내용과 관계가 드러나도록 써 보세요.
                 </p>
@@ -530,88 +565,157 @@ function EssayExercise({
                 window.scrollTo({ top: 0 });
               }}
             >
-              답안 쓰기
+              다음 단계로 넘어가기
             </Button>
             <Button className="mt-2 w-full" variant="ghost" onClick={backToOrder}>
-              순서 다시 정하기
+              이전 단계로 돌아가기
             </Button>
           </>
         )}
         {stage === 4 && !feedback && (
           <>
-            {guided && (
-              <p className="mt-4 text-sm leading-relaxed text-muted">
-                내 글의 순서 · {order.join(' → ')}
+            <header className={writing.question}>
+              <p>
+                {props.data.subjects.find((subject) => subject.id === essay.subjectId)?.name ||
+                  '서술형 연습'}
               </p>
-            )}
-            {!guided && (
-              <p className="mt-3 text-sm leading-relaxed text-muted">
+              <h1>{essay.prompt}</h1>
+              <span>
                 {params(props.path).get('revise') === '1' || coaching
-                  ? '지난 답안을 가져왔어요. 빠진 내용이나 설명이 부족한 부분을 고쳐 보세요.'
-                  : '먼저 떠오르는 대로 써 보세요. 막히면 아래에서 키워드와 예시의 도움을 받을 수 있어요.'}
-              </p>
+                  ? '빠진 내용이나 부족한 설명을 내 문장으로 다듬어 보세요.'
+                  : '질문에 대한 생각을 내 문장으로 풀어 써 보세요.'}
+              </span>
+            </header>
+            {guided && order.length > 0 && (
+              <p className={writing.outline}>내 글의 순서 · {order.join(' → ')}</p>
             )}
-            {coaching && (
-              <details className="mt-4 rounded-2xl bg-surface p-4">
-                <summary className="cursor-pointer text-sm font-semibold">
-                  보완할 내용 다시 보기
-                </summary>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{coaching}</p>
-              </details>
-            )}
-            <label className="mt-5 block">
-              <span className="sr-only">서술형 답안</span>
+            <section className={writing.editor} aria-label="답안 작성">
+              <div className={writing.editorHeading}>
+                <label htmlFor="essay-answer">내 답안</label>
+                <span id="essay-answer-count">{answer.length.toLocaleString()} / 5,000자</span>
+              </div>
               <textarea
-                className="field min-h-60 resize-y !bg-canvas text-[16px] leading-[1.8]"
+                id="essay-answer"
+                className={writing.answer}
+                aria-describedby="essay-answer-hint essay-answer-count"
                 maxLength={5000}
                 value={answer}
-                disabled={action.busy || task?.status === 'RUNNING' || task?.status === 'READY'}
-                onChange={(e) => setAnswer(e.target.value)}
-                placeholder="왜 그런지, 어떻게 이어지는지 내 말로 설명해 주세요."
-              />
-            </label>
-            <p className="mt-2 text-right text-xs text-muted">
-              {answer.trim().length < 10 ? '10자 이상 쓰면 코칭을 받을 수 있어요 · ' : ''}
-              {answer.length} / 5,000자
-            </p>
-            {!guided && (
-              <Button
-                className="mt-3 w-full"
-                variant="secondary"
                 disabled={pending}
-                onClick={() => {
-                  setGuided(true);
-                  setStage(1);
-                  window.scrollTo({ top: 0 });
-                }}
+                onChange={(e) => setAnswer(e.target.value)}
+                placeholder="떠오르는 생각부터 써 보세요."
+              />
+              <p id="essay-answer-hint" className={writing.inputHint}>
+                {answer.trim().length < 10
+                  ? '10자 이상 작성하면 코칭을 받을 수 있어요.'
+                  : '작성 중인 답안은 이 기기에 보관돼요.'}
+              </p>
+            </section>
+            <div className={writing.tools} aria-label="답안 작성 도움">
+              <button
+                type="button"
+                data-writing-help="structure"
+                aria-expanded={writingHelp === 'structure'}
+                aria-controls="essay-writing-help"
+                onClick={() => setWritingHelp(writingHelp === 'structure' ? null : 'structure')}
               >
-                막혔나요? 키워드부터 연습하기
-              </Button>
-            )}
-            {previous?.answer && (
-              <details className="mt-4 rounded-2xl bg-surface p-4">
-                <summary className="cursor-pointer text-sm font-semibold">
-                  지난 답안 보기 · {previous.score}점
-                </summary>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">
-                  {previous.answer}
-                </p>
-                <Button
-                  className="mt-3 w-full"
-                  variant="secondary"
-                  disabled={pending || !!answer.trim()}
-                  onClick={() => setAnswer(previous.answer!)}
+                힌트 보기 <ChevronDown size={15} aria-hidden="true" />
+              </button>
+              {!guided && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => {
+                    setGuided(true);
+                    setStage(1);
+                    setWritingHelp(null);
+                    window.scrollTo({ top: 0 });
+                  }}
                 >
-                  지난 답안 가져와 고치기
-                </Button>
-                {!!answer.trim() && (
-                  <p className="mt-2 text-xs text-muted">
-                    작성 중인 내용을 지우지 않도록 가져오기는 빈 답안에서만 가능해요.
-                  </p>
-                )}
-              </details>
-            )}
-            <div className="mt-5 space-y-3">
+                  키워드 연습 <ChevronRight size={15} aria-hidden="true" />
+                </button>
+              )}
+              {previous?.answer && (
+                <button
+                  type="button"
+                  data-writing-help="previous"
+                  aria-expanded={writingHelp === 'previous'}
+                  aria-controls="essay-writing-help"
+                  onClick={() => setWritingHelp(writingHelp === 'previous' ? null : 'previous')}
+                >
+                  지난 답안 <ChevronDown size={15} aria-hidden="true" />
+                </button>
+              )}
+              {coaching && (
+                <button
+                  type="button"
+                  data-writing-help="coaching"
+                  aria-expanded={writingHelp === 'coaching'}
+                  aria-controls="essay-writing-help"
+                  onClick={() => setWritingHelp(writingHelp === 'coaching' ? null : 'coaching')}
+                >
+                  보완할 내용 <ChevronDown size={15} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            <section
+              id="essay-writing-help"
+              className={writing.help}
+              hidden={!writingHelp}
+              data-surface="muted"
+            >
+              <div className={writing.helpHeading}>
+                <h2>
+                  {writingHelp === 'structure'
+                    ? '답안 구조 힌트'
+                    : writingHelp === 'previous'
+                      ? `지난 답안 · ${previous?.score}점`
+                      : '보완할 내용'}
+                </h2>
+                <button type="button" aria-label="작성 도움 닫기" onClick={closeWritingHelp}>
+                  <X size={18} />
+                </button>
+              </div>
+              {writingHelp === 'structure' && (
+                <>
+                  <EssayStructure
+                    modelAnswer={essay.modelAnswer}
+                    citation={essay.citation}
+                    keywords={essay.keywords}
+                  />
+                  <Citation
+                    citation={essay.citation}
+                    material={material}
+                    onOpen={() =>
+                      setViewer(material ? { material, citation: essay.citation } : null)
+                    }
+                  />
+                </>
+              )}
+              {writingHelp === 'coaching' && <EssayAnswerChunks text={coaching} />}
+              {writingHelp === 'previous' && previous?.answer && (
+                <>
+                  <EssayAnswerChunks text={previous.answer} />
+                  <Button
+                    className="mt-4 w-full"
+                    variant="secondary"
+                    disabled={pending || !!answer.trim()}
+                    onClick={() => {
+                      setAnswer(previous.answer!);
+                      setWritingHelp(null);
+                      document.getElementById('essay-answer')?.focus();
+                    }}
+                  >
+                    지난 답안 가져와 고치기
+                  </Button>
+                  {!!answer.trim() && (
+                    <p className={writing.previousHint}>
+                      작성 중인 답안을 보호하기 위해 빈 답안에만 가져올 수 있어요.
+                    </p>
+                  )}
+                </>
+              )}
+            </section>
+            <div className={writing.submit}>
               {!props.data.aiAvailable && (
                 <p className="rounded-2xl bg-surface p-4 text-sm leading-relaxed text-secondary">
                   키워드·순서·분량 기준으로 연습 채점해요. AI 의미 평가는 연결 준비가 끝나면 이용할
@@ -629,6 +733,7 @@ function EssayExercise({
                   시작해요.
                 </p>
               )}
+              <QuickJudgment judgment={quick} keywords={essay.keywords} pending={quickPending} />
               <ErrorNote error={action.error} />
               {unchangedRevision && (
                 <p className="text-sm text-muted" role="status">
@@ -650,6 +755,15 @@ function EssayExercise({
                       endpoint: '/essay/submit' as const,
                       payload: { essayId: essay.id, answer: answer.trim() },
                     };
+                    if (props.data.judgeAvailable) {
+                      // Ask the judge beside the grade; its marks arrive in well under a second.
+                      setQuick(null);
+                      setQuickPending(true);
+                      api<EssayJudgment>('/essay/judge', lookup.payload)
+                        .then(setQuick)
+                        .catch(() => setQuick(null))
+                        .finally(() => setQuickPending(false));
+                    }
                     try {
                       // jitter: none — students finish their answers at different times; the wait loop's timing is runAiTask's [site src/components/study/essay.tsx:486]
                       const response = await runAiTask<Feedback>({
@@ -658,6 +772,8 @@ function EssayExercise({
                         onStatus: setTask,
                       });
                       setFeedback(response);
+                      setQuick(null);
+                      setQuickPending(false);
                       await props.refresh();
                       await acknowledgeAiTask(lookup);
                       window.scrollTo({ top: 0 });
@@ -686,7 +802,7 @@ function EssayExercise({
               </Button>
               {guided && (
                 <Button className="w-full" variant="ghost" disabled={pending} onClick={backToHint}>
-                  내 글의 순서와 예시 다시 보기
+                  이전 단계로 돌아가기
                 </Button>
               )}
             </div>
@@ -707,11 +823,11 @@ function EssayExercise({
             </div>
             <div className="rounded-[20px] bg-surface p-4">
               <h2 className="mb-3 text-[15px] font-bold">내가 쓴 답안</h2>
-              <p className="whitespace-pre-wrap text-sm leading-[1.8] text-secondary">{answer}</p>
+              <EssayAnswerChunks text={answer} className="text-sm leading-[1.8] text-secondary" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-2xl bg-surface p-4">
-                <p className="text-xs text-muted">포함한 키워드</p>
+                <p className="text-xs text-muted">충분히 설명한 개념</p>
                 <strong className="mt-1 block text-[25px]">
                   {feedback.matched.length}
                   <span className="text-sm font-medium text-muted"> / {essay.keywords.length}</span>
@@ -726,16 +842,26 @@ function EssayExercise({
               </div>
             </div>
             <div className="rounded-[20px] bg-ink p-5 text-white">
-              <h2 className="text-[15px] font-bold">이렇게 다듬어 보세요</h2>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-[1.8] text-white/85">
-                {feedback.feedback}
-              </p>
+              <h2 className="text-[15px] font-bold">
+                {feedback.score === 100 ? '잘 설명했어요' : '이렇게 다듬어 보세요'}
+              </h2>
+              <EssayAnswerChunks
+                text={feedback.feedback}
+                className="mt-3 text-sm leading-[1.8] text-white/85"
+              />
               {feedback.missing.length > 0 && (
                 <p className="mt-3 text-xs text-white/70">
-                  보완할 키워드 · {feedback.missing.join(', ')}
+                  보완할 핵심 개념 · {feedback.missing.join(', ')}
                 </p>
               )}
             </div>
+            <Disclosure title="서술형 구조도 보기">
+              <EssayStructure
+                modelAnswer={essay.modelAnswer}
+                citation={essay.citation}
+                keywords={essay.keywords}
+              />
+            </Disclosure>
             <Citation
               citation={essay.citation}
               material={material}
@@ -769,7 +895,7 @@ function EssayExercise({
         )}
         {guided && !feedback && (
           <Button className="mt-4 w-full" variant="ghost" disabled={pending} onClick={closeGuide}>
-            도움 닫고 답안으로 돌아가기
+            바로 답안 작성하기
           </Button>
         )}
       </div>

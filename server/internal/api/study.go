@@ -13,6 +13,7 @@ import (
 
 	"memoryz/server/internal/ai"
 	"memoryz/server/internal/apierr"
+	"memoryz/server/internal/curriculum"
 	"memoryz/server/internal/httpx"
 	"memoryz/server/internal/ids"
 	"memoryz/server/internal/learning"
@@ -27,16 +28,19 @@ func init() {
 		mux.Handle("/api/generate", httpx.Methods{http.MethodPost: httpx.Deadline(aiTimeout, s.withUser(s.generate, store.RoleSTUDENT))})
 		mux.Handle("/api/quiz/answer", httpx.Methods{http.MethodPost: s.withUser(s.answerQuiz, store.RoleSTUDENT)})
 		mux.Handle("/api/essay/submit", httpx.Methods{http.MethodPost: httpx.Deadline(aiTimeout, s.withUser(s.submitEssay, store.RoleSTUDENT))})
+		mux.Handle("/api/essay/judge", httpx.Methods{http.MethodPost: s.withUser(s.judgeEssay, store.RoleSTUDENT)})
 		mux.Handle("/api/planner/suggest", httpx.Methods{http.MethodPost: httpx.Deadline(aiTimeout, s.withUser(s.suggestPlans, store.RoleSTUDENT))})
 		mux.Handle("/api/ai-runs/{id}", httpx.Methods{http.MethodGet: s.withUser(s.readAiRun)})
 	})
 }
 
-// aiTimeout bounds one model-backed request end to end (the provider itself waits up to 120s).
-const aiTimeout = 180 * time.Second
+// aiTimeout includes model calls, semantic validation and regeneration.
+const aiTimeout = ai.RequestTimeout
 
 var (
 	errQuestionNotFound = apierr.New(404, "문제를 찾을 수 없어요.")
+	errJudgeUnavailable = apierr.New(503, "빠른 판정을 지금은 사용할 수 없어요.")
+	errJudgeFailed      = apierr.New(503, "빠른 판정을 받지 못했어요. 채점 결과를 기다려 주세요.")
 	errMaterialTooShort = apierr.New(400, "학습 자료에 본문을 20자 이상 추가해 주세요.")
 	errMaterialChanged  = apierr.New(409, "생성 중 학습 자료가 변경됐어요. 최신 자료를 확인하고 다시 시도해 주세요.")
 	ruleGradeMethod     = "키워드·순서 기반 연습 채점"
@@ -66,16 +70,27 @@ func (s *Server) aiBudget(ctx context.Context, userID string) error {
 
 func (s *Server) generate(w http.ResponseWriter, r *http.Request, user store.User) error {
 	var in struct {
-		MaterialID string   `json:"materialId"`
-		Count      *float64 `json:"count"`
-		Mode       string   `json:"mode"`
-		RequestID  *string  `json:"requestId"`
+		MaterialID  string   `json:"materialId"`
+		MaterialIDs []string `json:"materialIds"`
+		SubjectID   string   `json:"subjectId"`
+		Topic       string   `json:"topic"`
+		Count       *float64 `json:"count"`
+		Mode        string   `json:"mode"`
+		RequestID   *string  `json:"requestId"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
 	v := &validator{}
-	v.id(in.MaterialID)
+	materialIDs, sourceErr := generationIDs(in.MaterialID, in.MaterialIDs)
+	if sourceErr != nil {
+		return sourceErr
+	}
+	if in.SubjectID != "" {
+		v.id(in.SubjectID)
+	}
+	in.Topic = strings.TrimSpace(in.Topic)
+	v.bounded(in.Topic, 120)
 	count := 0
 	if in.Count == nil {
 		v.fail(msgInput)
@@ -92,42 +107,43 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request, user store.Use
 	}
 	kind := ai.Kind(in.Mode)
 	hashInput := map[string]any{"materialId": in.MaterialID, "count": count, "mode": in.Mode}
-	type loaded struct {
-		content   string
-		subjectID string
+	if in.MaterialIDs != nil || in.SubjectID != "" || in.Topic != "" {
+		hashInput = map[string]any{"materialIds": materialIDs, "subjectId": in.SubjectID, "topic": in.Topic, "count": count, "mode": in.Mode}
 	}
 	outcome, err := s.executeRun(r.Context(), user.ID, requestID, kind, hashInput, func(ctx context.Context, ex *execution) (any, error) {
-		material, err := ai.Tool(ctx, ex.rt, "LOAD_CONTEXT", func(ctx context.Context) (loaded, error) {
-			row, err := s.q.GetMaterialContent(ctx, store.GetMaterialContentParams{ID: in.MaterialID, UserID: user.ID})
-			if errors.Is(err, pgx.ErrNoRows) {
-				return loaded{}, errMaterialNotFound
-			}
+		material, err := ai.Tool(ctx, ex.rt, "LOAD_CONTEXT", func(ctx context.Context) (generationContext, error) {
+			sources, err := loadGenerationSources(ctx, s.pool, user.ID, materialIDs, false)
 			if err != nil {
-				return loaded{}, err
+				return generationContext{}, err
 			}
-			if length(strings.TrimSpace(row.Content)) < 20 {
-				return loaded{}, errMaterialTooShort
-			}
-			return loaded{content: row.Content, subjectID: row.SubjectID}, nil
+			return combineGenerationSources(sources, in.SubjectID)
 		})
 		if err != nil {
 			return nil, err
 		}
-		items, err := ai.GenerateItems(ctx, s.ai, material.content, kind, count)
+		subject, subjectErr := s.ownedSubject(ctx, user, material.subjectID)
+		if subjectErr != nil {
+			return nil, subjectErr
+		}
+		ctx = ai.WithLearningContext(ctx, user.CompletedSubjects, curriculum.Retrieve(subject.Name, user.Grade, time.Now(), material.content))
+		items, err := ai.GenerateItemsForTopic(ctx, s.ai, material.content, kind, count, in.Topic)
 		if err != nil {
 			return nil, err
 		}
+		if !material.grounded(items) {
+			return nil, apierr.New(422, "생성한 내용의 근거가 선택한 자료의 본문과 일치하지 않아요. 다시 시도해 주세요.")
+		}
 		return ex.commit(ctx, func(ctx context.Context, tx pgx.Tx, q *store.Queries) (any, error) {
-			current, err := q.GetMaterialContent(ctx, store.GetMaterialContentParams{ID: in.MaterialID, UserID: user.ID})
-			if errors.Is(err, pgx.ErrNoRows) || (err == nil && (current.Content != material.content || current.SubjectID != material.subjectID)) {
-				return nil, errMaterialChanged
+			if err := material.checkUnchanged(ctx, tx, user.ID); err != nil {
+				return nil, err
 			}
+			outputMaterialID, err := material.materialID(ctx, tx, q, user.ID, in.Topic)
 			if err != nil {
 				return nil, err
 			}
 			created := []any{}
 			for _, item := range items.Questions {
-				row, err := q.CreateQuestion(ctx, store.CreateQuestionParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, MaterialID: in.MaterialID, Prompt: item.Prompt, Options: item.Options, Answer: int32(item.Answer), Explanation: item.Explanation, Citation: item.Citation, Past: item.Past, Future: item.Future})
+				row, err := q.CreateQuestion(ctx, store.CreateQuestionParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, MaterialID: outputMaterialID, Prompt: item.Prompt, Options: item.Options, Answer: int32(item.Answer), Explanation: item.Explanation, Citation: item.Citation, Past: item.Past, Future: item.Future})
 				if err != nil {
 					return nil, err
 				}
@@ -147,14 +163,14 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request, user store.Use
 				created = append(created, questionOf(row))
 			}
 			for _, item := range items.Essays {
-				row, err := q.CreateEssay(ctx, store.CreateEssayParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, MaterialID: in.MaterialID, Prompt: item.Prompt, Keywords: item.Keywords, Distractors: item.Distractors, ModelAnswer: item.ModelAnswer, Citation: item.Citation})
+				row, err := q.CreateEssay(ctx, store.CreateEssayParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, MaterialID: outputMaterialID, Prompt: item.Prompt, Keywords: item.Keywords, Distractors: item.Distractors, ModelAnswer: item.ModelAnswer, Citation: item.Citation})
 				if err != nil {
 					return nil, err
 				}
 				created = append(created, essayOf(row))
 			}
 			for _, item := range items.Cards {
-				row, err := q.CreateGeneratedCard(ctx, store.CreateGeneratedCardParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, Front: item.Front, Back: item.Back + "\n\n근거: " + item.Citation, Type: store.CardType(item.Type), MaterialID: &in.MaterialID})
+				row, err := q.CreateGeneratedCard(ctx, store.CreateGeneratedCardParams{ID: ids.New(), UserID: user.ID, SubjectID: material.subjectID, Front: item.Front, Back: item.Back + "\n\n근거: " + item.Citation, Type: store.CardType(item.Type), MaterialID: &outputMaterialID})
 				if err != nil {
 					return nil, err
 				}
@@ -251,6 +267,53 @@ type ruleGrade struct {
 	Missing  []string `json:"missing"`
 	Feedback string   `json:"feedback"`
 	Method   string   `json:"method"`
+}
+
+// judgeEssay returns the judge's quick verdict on an answer (keyword marks and a provisional score)
+// in well under a second, so the screen can show marks while the graded coaching is written. It is
+// never the grade: the grade request that follows decides the score and the feedback, and this
+// preview is served in shadow mode too. No run record is kept; the call is one bounded judgment
+// with the essay the student owns.
+func (s *Server) judgeEssay(w http.ResponseWriter, r *http.Request, user store.User) error {
+	jev := s.ai.Jev()
+	if !jev.Available() {
+		return errJudgeUnavailable
+	}
+	var in struct {
+		EssayID string `json:"essayId"`
+		Answer  string `json:"answer"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	v := &validator{}
+	v.id(in.EssayID)
+	in.Answer = v.text(in.Answer, 10_000)
+	if err := v.result(); err != nil {
+		return err
+	}
+	essay, err := s.q.GetOwnedEssay(r.Context(), store.GetOwnedEssayParams{ID: in.EssayID, UserID: user.ID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errQuestionNotFound
+	}
+	if err != nil {
+		return err
+	}
+	// A paid call like any other: it draws on the student's AI budget.
+	if err := s.aiBudget(r.Context(), user.ID); err != nil {
+		return err
+	}
+	ctx, usage := ai.CaptureUsage(r.Context())
+	verdict, err := ai.JudgeGrade(ctx, jev, ai.GradeInput{Prompt: essay.Prompt, Keywords: essay.Keywords, ModelAnswer: essay.ModelAnswer, Citation: essay.Citation, Answer: in.Answer})
+	if err != nil {
+		s.log.Info("essay judge unavailable", "reason", err.Error())
+		return errJudgeFailed
+	}
+	for _, u := range usage.Requests() {
+		s.log.Debug("essay judge", "model", u.Model, "inputTokens", u.PromptTokens, "durationMs", u.DurationMs)
+	}
+	httpx.OK(w, http.StatusOK, verdict)
+	return nil
 }
 
 func (s *Server) submitEssay(w http.ResponseWriter, r *http.Request, user store.User) error {

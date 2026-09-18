@@ -1,0 +1,317 @@
+.browser {
+  display: grid;
+  grid-template-rows:
+    var(--control-height) var(--control-size) 18px minmax(0, 1fr)
+    auto;
+  gap: var(--gap-inline);
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-inline);
+  min-height: var(--control-height);
+  padding: 0 var(--gap-related);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+}
+.search > svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.search:focus-within {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+.views {
+  display: flex;
+  gap: var(--space-1);
+}
+.browseTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-inline);
+  min-width: 0;
+}
+.browseTop > nav {
+  min-width: 0;
+}
+.resultCount {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+.views button {
+  min-height: var(--control-size);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.views button[aria-pressed='true'] {
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-size);
+  font-size: 13px;
+}
+.breadcrumb > svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.breadcrumb button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-size);
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.breadcrumb strong {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--gap-inline);
+  min-height: var(--control-size);
+}
+.toolbar p,
+.toolbar > span {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.contents {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: var(--space-1);
+}
+.folders,
+.files {
+  display: grid;
+  gap: var(--space-1);
+}
+.folder,
+.file {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-related);
+  min-height: 72px;
+  padding: var(--gap-related);
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  text-align: left;
+  color: var(--text-primary);
+}
+.folder > svg {
+  flex-shrink: 0;
+}
+.folder > svg:last-child {
+  color: var(--text-muted);
+}
+.folder > span,
+.copy {
+  flex: 1;
+  min-width: 0;
+}
+.folder strong,
+.copy strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.folder small,
+.copy small {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.fileIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 40px;
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+}
+.file[aria-checked='true'] {
+  background: var(--surface-muted);
+}
+.file[aria-checked='true'] .fileIcon {
+  background: var(--surface-raised);
+}
+.file:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+.file:disabled strong,
+.file:disabled .fileIcon {
+  color: var(--text-disabled);
+}
+.copy .unavailable {
+  color: var(--text-secondary);
+}
+.selection {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--space-2);
+  background: var(--surface-muted);
+}
+.file[aria-checked='true'] .selection {
+  background: var(--text-primary);
+  color: var(--surface-raised);
+}
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-inline);
+  padding: var(--gap-section) var(--gap-related);
+  text-align: center;
+  color: var(--text-secondary);
+}
+.empty > svg {
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+.empty strong {
+  font-size: 15px;
+}
+.empty p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.confirm {
+  display: grid;
+  gap: var(--gap-inline);
+  padding-top: var(--gap-inline);
+  background: var(--surface-sheet);
+}
+.selectionSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-inline);
+}
+.selectionSummary button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-size);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.selectionSummary strong {
+  color: var(--text-primary);
+}
+.selectionEmpty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-size);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.selectionLimit {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.selectionTools {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-related);
+}
+.selectionTools button {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.selectionHint {
+  margin: 0;
+  min-height: 18px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+.folder > .folderCount {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.page {
+  animation: folder-enter 160ms ease-out;
+}
+@keyframes folder-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page {
+    animation: none;
+  }
+}
+.folder:focus-visible,
+.file:focus-visible,
+.views button:focus-visible,
+.breadcrumb button:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .folder:hover,
+  .file:not(:disabled):hover {
+    background: color-mix(in srgb, var(--text-primary) 7%, var(--surface-raised));
+  }
+}
+.folder:active,
+.file:not(:disabled):active {
+  background: var(--surface-muted);
+}

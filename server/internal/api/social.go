@@ -1,13 +1,10 @@
 package api
 
 import (
-	"context"
-	"encoding/json"
 	"net/http"
 
 	"memoryz/server/internal/httpx"
-	"memoryz/server/internal/ids"
-	"memoryz/server/internal/jsonx"
+	"memoryz/server/internal/schools"
 	"memoryz/server/internal/store"
 )
 
@@ -21,9 +18,15 @@ func init() {
 		// follow has no role gate of its own: peer() only ever matches an account of the caller's role.
 		mux.Handle("/api/follow", httpx.Methods{http.MethodPost: s.withUser(s.toggleFollow)})
 		mux.Handle("/api/messages", httpx.Methods{
-			http.MethodGet:  s.withUser(s.listMessages, communityRoles...),
-			http.MethodPost: s.withUser(s.createMessage, communityRoles...),
+			http.MethodGet:   s.withUser(s.listMessages, communityRoles...),
+			http.MethodPost:  s.withUser(s.createMessage, communityRoles...),
+			http.MethodPatch: s.withUser(s.readMessages, communityRoles...),
 		})
+		mux.Handle("/api/messages/{id}", httpx.Methods{
+			http.MethodPatch:  s.withUser(s.reactMessage, communityRoles...),
+			http.MethodDelete: s.withUser(s.retractMessage, communityRoles...),
+		})
+		mux.Handle("/api/messages/{id}/blocks/{blockId}/{action}", httpx.Methods{http.MethodPost: s.withUser(s.messageBlockAction, communityRoles...)})
 		mux.Handle("/api/schools", httpx.Methods{http.MethodGet: s.withUser(s.searchSchools)})
 	})
 }
@@ -41,19 +44,6 @@ func userRefs[R any](rows []R, ref func(R) userRef) []userRef {
 		out = append(out, ref(row))
 	}
 	return out
-}
-
-// messageRecord is a Message row.
-type messageRecord struct {
-	ID          string     `json:"id"`
-	SenderID    string     `json:"senderId"`
-	RecipientID string     `json:"recipientId"`
-	Body        string     `json:"body"`
-	CreatedAt   jsonx.Time `json:"createdAt"`
-}
-
-func messageRecordOf(m store.Message) messageRecord {
-	return messageRecord{ID: m.ID, SenderID: m.SenderID, RecipientID: m.RecipientID, Body: m.Body, CreatedAt: jsonx.Time(m.CreatedAt)}
 }
 
 // schoolRecord is a School row.
@@ -125,75 +115,6 @@ func (s *Server) toggleFollow(w http.ResponseWriter, r *http.Request, user store
 	return s.communityFollow(w, r, user)
 }
 
-// listMessages answers GET /api/messages?userId=…: the 200 oldest messages between the two.
-func (s *Server) listMessages(w http.ResponseWriter, r *http.Request, user store.User) error {
-	ctx := r.Context()
-	if r.URL.Query().Get("inbox") == "1" {
-		rows, err := s.q.ListConversations(ctx, store.ListConversationsParams{ViewerID: user.ID, Role: user.Role})
-		if err != nil {
-			return err
-		}
-		type conversation struct {
-			ID        string     `json:"id"`
-			Nickname  string     `json:"nickname"`
-			Body      string     `json:"body"`
-			CreatedAt jsonx.Time `json:"createdAt"`
-		}
-		items := make([]conversation, 0, len(rows))
-		for _, row := range rows {
-			items = append(items, conversation{ID: row.ID, Nickname: row.Nickname, Body: row.Body, CreatedAt: jsonx.Time(row.CreatedAt)})
-		}
-		httpx.OK(w, http.StatusOK, items)
-		return nil
-	}
-	peerID := r.URL.Query().Get("userId")
-	peer, err := s.peer(ctx, user, peerID)
-	if err != nil {
-		return err
-	}
-	if r.URL.Query().Get("peer") == "1" {
-		httpx.OK(w, http.StatusOK, userRef{ID: peer.ID, Nickname: peer.Nickname})
-		return nil
-	}
-	rows, err := s.q.ListMessages(ctx, store.ListMessagesParams{UserID: user.ID, PeerID: peerID})
-	if err != nil {
-		return err
-	}
-	messages := make([]messageRecord, 0, len(rows))
-	for _, row := range rows {
-		messages = append(messages, messageRecordOf(row))
-	}
-	httpx.OK(w, http.StatusOK, messages)
-	return nil
-}
-
-// createMessage answers POST /api/messages with the new row.
-func (s *Server) createMessage(w http.ResponseWriter, r *http.Request, user store.User) error {
-	var input struct {
-		UserID string `json:"userId"`
-		Body   string `json:"body"`
-	}
-	if err := httpx.Decode(r, &input); err != nil {
-		return err
-	}
-	v := &validator{}
-	userID := v.id(input.UserID)
-	body := v.text(input.Body, 3000)
-	if err := v.result(); err != nil {
-		return err
-	}
-	ctx := r.Context()
-	if _, err := s.peer(ctx, user, userID); err != nil {
-		return err
-	}
-	message, err := s.q.CreateMessage(ctx, store.CreateMessageParams{ID: ids.New(), SenderID: user.ID, RecipientID: userID, Body: body})
-	if err != nil {
-		return err
-	}
-	httpx.OK(w, http.StatusCreated, messageRecordOf(message))
-	return nil
-}
-
 // searchSchools answers GET /api/schools?q=…: up to 30 schools whose name contains q, ignoring
 // case, by name. As before, q is cut to 100 characters and goes into the LIKE pattern as it is
 // (Prisma's `contains` did not escape % or _ either).
@@ -202,19 +123,6 @@ func (s *Server) searchSchools(w http.ResponseWriter, r *http.Request, _ store.U
 	if runes := []rune(q); len(runes) > 100 {
 		q = string(runes[:100])
 	}
-	ctx := r.Context()
-	key := "schools:" + s.version(ctx, "schools") + ":" + q
-	raw, state, err := s.fill(ctx, "schools", key, schoolsTTL, func(ctx context.Context) ([]byte, error) {
-		rows, err := s.q.SearchSchools(ctx, "%"+q+"%")
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(schoolRecords(rows))
-	})
-	if err != nil {
-		return err
-	}
-	w.Header().Set("X-Cache", state)
-	httpx.Raw(w, http.StatusOK, raw)
+	httpx.OK(w, http.StatusOK, schools.Search(q))
 	return nil
 }

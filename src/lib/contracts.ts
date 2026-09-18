@@ -4,6 +4,9 @@ export type Role = 'STUDENT' | 'PARENT' | 'ADMIN';
 export type Bucket = 'AGAIN' | 'HARD' | 'GOOD' | 'EASY' | 'MASTERED';
 export type CardType = 'CONCEPT' | 'RELATION' | 'COMPARISON' | 'BLIND';
 export interface Profile {
+  /** Only new OAuth accounts require setup; older and demo accounts retain access. */
+  onboardingRequired?: boolean;
+  avatarUrl?: string;
   srsMode?: 'FIXED' | 'FSRS';
   desiredRetention?: number;
   id: string;
@@ -48,7 +51,7 @@ export interface Material {
   uploadId?: string;
   /** Offsets in content where each page starts; empty once the text was edited. */
   pageBreaks?: number[];
-  /** pdf-text, pdf-ocr, pdf-mixed, text, image-ocr or manual. */
+  /** pdf-text, pdf-ocr, pdf-mixed, text, image-ocr, manual or combined (immutable source snapshot). */
   extraction?: string;
   pages?: number;
   imageCount?: number;
@@ -119,6 +122,7 @@ export interface SerializedFsrs {
   last_review?: string;
 }
 export interface Card {
+  sourceKind?: string;
   diagram?: LearningDiagram;
   maskedNodeIds?: string[];
   sourceQuestionId?: string;
@@ -184,6 +188,11 @@ export interface Post {
   createdAt: string;
 }
 export interface Comment {
+  deleted?: boolean;
+  editedAt?: string;
+  likes?: number;
+  liked?: boolean;
+  isPostAuthor?: boolean;
   authorId?: string;
   isMine?: boolean;
   accepted?: boolean;
@@ -209,6 +218,7 @@ export interface Notification {
   body: string;
   read: boolean;
   href: string;
+  kind?: string;
   createdAt: string;
 }
 export interface AppData {
@@ -233,6 +243,8 @@ export interface AppData {
   };
   child?: Profile;
   aiAvailable: boolean;
+  /** The quick keyword verdict (POST /api/essay/judge) may be requested while a grade is pending. */
+  judgeAvailable?: boolean;
   demo: boolean;
 }
 /** Goes to path; `replace` swaps the current history entry (for one-shot intents like home's camera link). */
@@ -245,18 +257,23 @@ export type Navigate = (
   path: string,
   options?: { replace?: boolean; keepScreen?: boolean; restore?: boolean },
 ) => void;
+/** A toast carries at most one follow-up action — "보기", "카드 열기", "만든 사람 팔로우". */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
 export interface ScreenProps {
   data: AppData;
   refresh: () => Promise<void>;
   navigate: Navigate;
   back: (fallback?: string) => void;
-  toast: (message: string) => void;
+  toast: (message: string, action?: ToastAction) => void;
   path: string;
 }
 // All mutation endpoints use { ...payload }, return JSON { data: T } or { error: string }, HTTP 4xx/5xx on failures.
 // GET /api/bootstrap; POST /api/session {role}; POST /api/logout.
 // POST /api/subjects {name,examName?,examDate?}; PATCH /api/subjects/:id {name?,examName?,examDate?:'YYYY-MM-DD'|null} (examDate null clears the exam); DELETE soft-deletes.
-// POST /api/materials {subjectId,title,content,type,url?}; POST /api/materials/sample {} => {material,questions,essays,created} (201 once, then 200); POST /api/generate {materialId,count:1..10,mode:'quiz'|'essay'|'cards'}.
+// POST /api/materials {subjectId,title,content,type,url?}; POST /api/materials/sample {} => {material,questions,essays,created} (201 once, then 200); POST /api/generate {materialId OR materialIds:1..5,subjectId?,topic?,count:1..10,mode:'quiz'|'essay'|'cards'}.
 // POST /api/quiz/answer {questionId,answer:number} => {correct,explanation,citation}; POST /api/essay/submit {essayId,answer} => {score,matched:string[],missing:string[],feedback}.
 // POST /api/cards {subjectId,front,back,type,image?,masks?}; PATCH /api/cards/:id {deleted?:boolean,front?,back?}; POST /api/cards/review {cardId,rating:'EASY'|'GOOD'|'HARD'|'AGAIN',reviewId:uuid} => Card; POST /api/wrong-notes/cards {questionIds:string[]}.
 // POST /api/schedules {title,date,start,end,kind,subjectId?}; PATCH /api/schedules/:id {done?,title?,start?,end?}; DELETE /api/schedules/:id; POST /api/planner/suggest {date,after?:'HH:MM'} => {plans:{name:string,reason?:string,blocks:Omit<Schedule,'id'>[]}[],method:string}.

@@ -45,9 +45,8 @@ export default function LearningSettings({ data, back, refresh, toast }: ScreenP
             골라 주세요
           </h1>
           <p className="text-sm text-muted mt-3 leading-relaxed">
-            같은 네 가지 평가 버튼으로,
-            <br />
-            나에게 맞게 복습 간격을 정해요.
+            개념·비교·관계·이미지 가림 카드에 모두 적용해요. 다음 복습에서 평가한 카드부터 새
+            간격으로 예약해요.
           </p>
         </div>
         <div className="space-y-3">
@@ -61,7 +60,7 @@ export default function LearningSettings({ data, back, refresh, toast }: ScreenP
             {
               id: 'FSRS',
               title: '기억에 맞춰서',
-              description: '내가 얼마나 잘 기억하는지에 따라 간격을 조절해요',
+              description: '카드마다 쌓인 복습 기록으로 다음에 볼 때를 정해요',
               icon: Brain,
             },
           ].map((item) => (
@@ -81,24 +80,51 @@ export default function LearningSettings({ data, back, refresh, toast }: ScreenP
               >
                 {item.description}
               </p>
-              {item.id === 'FSRS' && (
-                <span className="inline-block mt-3 text-[10px] font-semibold uppercase tracking-wider opacity-60">
-                  FSRS · Anki가 사용하는 기억 모델
-                </span>
-              )}
             </button>
           ))}
         </div>
         {mode === 'FSRS' && (
           <section className="mt-7">
-            <div className="flex justify-between items-center">
-              <h2 className="font-bold text-lg">얼마나 확실히 기억할까요?</h2>
-              <strong className="text-2xl">
-                {Math.round(retention * 100)}
-                <span className="text-sm">%</span>
-              </strong>
+            <h2 className="font-bold text-lg">나에게 맞는 복습량</h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              부담과 기억 사이의 균형을 골라 주세요.
+            </p>
+            <div className="mt-4 space-y-2">
+              {[
+                { value: 0.85, title: '가볍게', detail: '복습 간격을 넉넉히 두고 부담을 줄여요' },
+                { value: 0.9, title: '균형 있게', detail: '기억과 복습량을 함께 고려해요 · 추천' },
+                {
+                  value: 0.95,
+                  title: '꼼꼼하게',
+                  detail: '잊기 전에 더 자주 봐요 · 복습량이 늘어요',
+                },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setRetention(option.value)}
+                  aria-pressed={retention === option.value}
+                  className={`flex min-h-20 w-full items-center gap-3 rounded-2xl px-4 py-3 text-left ${retention === option.value ? 'bg-ink text-white' : 'bg-surface'}`}
+                >
+                  <span className="flex-1">
+                    <strong className="block text-sm">{option.title}</strong>
+                    <span
+                      className={`mt-1 block text-xs leading-relaxed ${retention === option.value ? 'text-white/75' : 'text-muted'}`}
+                    >
+                      {option.detail}
+                    </span>
+                  </span>
+                  {retention === option.value && <Check size={18} />}
+                </button>
+              ))}
             </div>
-            <div className="mt-6">
+            <details className="mt-4 rounded-2xl bg-surface p-4">
+              <summary className="min-h-6 cursor-pointer text-sm font-semibold">
+                세부 설정 · 목표 기억률 {Math.round(retention * 100)}%
+              </summary>
+              <p className="my-4 text-xs leading-relaxed text-muted">
+                예정된 복습 때 기억할 확률의 목표예요. 현재 점수나 보장된 기억률은 아니에요.
+                높일수록 더 자주 복습하게 돼요.
+              </p>
               <Slider
                 label="목표 기억률"
                 name="retention"
@@ -109,14 +135,15 @@ export default function LearningSettings({ data, back, refresh, toast }: ScreenP
                 format={(v) => `${v}%`}
                 onChange={(v) => setRetention(v / 100)}
               />
-            </div>
-            <div className="flex justify-between text-[11px] text-muted mt-1">
-              <span>복습 부담이 가벼워요</span>
-              <span>더 자주 복습해요</span>
-            </div>
-            <p className="mt-5 text-[13px] text-muted leading-relaxed">
-              처음에는 90%를 권해요. 예정된 복습 시 기억할 확률의 목표이며, 높게 설정할수록 복습할
-              양이 늘어나요.
+              <div className="flex justify-between text-[11px] text-muted mt-1">
+                <span>복습 부담이 가벼워요</span>
+                <span>더 자주 복습해요</span>
+              </div>
+            </details>
+            <p className="mt-4 text-xs leading-relaxed text-muted">
+              기억에 맞추는 방식은 1일·3일·7일을 일정 비율로 줄이는 설정이 아니에요. 처음 배우거나
+              잊은 카드는 짧게 다시 보고, 익숙해지면 간격이 길어져요. 평가 버튼에서 실제 다음 복습
+              시간을 확인할 수 있어요.
             </p>
             <div className="panel mt-5 !p-4 flex gap-3">
               <Info size={17} className="mt-1 text-muted" />
@@ -128,9 +155,10 @@ export default function LearningSettings({ data, back, refresh, toast }: ScreenP
           </section>
         )}
         <section className="mt-8">
-          <h2 className="mb-2 text-base font-bold">해설은 얼마나 볼까요?</h2>
+          <h2 className="mb-2 text-base font-bold">문제 해설 길이</h2>
           <p className="mb-3 text-sm leading-relaxed text-muted">
-            처음 펼칠 해설 길이예요. 문제마다 바꿀 수 있고, 이 기기에 저장해요.
+            문제풀이에서 처음 펼칠 해설 길이예요. 플래시카드의 답에는 적용하지 않아요. 이 기기에
+            저장해요.
           </p>
           <div className="grid grid-cols-2 gap-2">
             {(['SHORT', 'FULL'] as const).map((value) => (
@@ -154,7 +182,7 @@ export default function LearningSettings({ data, back, refresh, toast }: ScreenP
             ['보통', '생각해서 떠올렸어요'],
             ['쉬움', '바로 떠올렸어요'],
           ].map(([rating, description]) => (
-            <div key={rating} className="flex py-3 gap-4 text-sm border-b border-surface">
+            <div key={rating} className="flex py-3 gap-4 text-sm">
               <span className="w-12 font-semibold">{rating}</span>
               <span className="text-muted">{description}</span>
             </div>

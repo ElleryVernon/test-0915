@@ -7,6 +7,7 @@ import {
   restartEssayOrder,
   completeEssayOutline,
   essayPracticeStart,
+  essayKeywordState,
 } from '../src/lib/essay-interaction';
 import { exactKeywords, exactOrder } from '../src/components/study/logic';
 const correct = ['혈당량', '인슐린', '포도당 흡수', '글리코젠 합성'];
@@ -113,4 +114,20 @@ test('explicit revision prefills the prior answer, but a newer draft takes prece
     essayPracticeStart({ stage: 4, answer: '고치는 중' }, '지난 답안').answer,
     '고치는 중',
   );
+});
+
+test('keyword correctness is never disclosed before checking the attempt', () => {
+  for (const word of choices) {
+    assert.equal(essayKeywordState(word, [], correct, false), 'idle');
+    assert.equal(essayKeywordState(word, [word], correct, false), 'selected');
+  }
+});
+
+test('checked choices distinguish correct, wrong, missed, and unrelated answers', () => {
+  const selection = [correct[0], correct[1], choices[4], choices[5]];
+  assert.equal(essayKeywordState(correct[0], selection, correct, true), 'correct');
+  assert.equal(essayKeywordState(choices[4], selection, correct, true), 'incorrect');
+  assert.equal(essayKeywordState(correct[2], selection, correct, true), 'missed');
+  assert.equal(essayKeywordState(choices[6], selection, correct, true), 'idle');
+  assert.equal(essayKeywordState(correct[2], selection, correct, false), 'idle');
 });

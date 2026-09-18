@@ -7,10 +7,12 @@ import type {
   CommunityVisibility,
 } from '@/lib/community-types';
 import { api } from '@/lib/api';
+import { markFollowed, nicknameCooldown, relationLine } from '@/lib/community-nudges';
 import { Button, EmptyState, ScreenHeader, Sheet } from '@/components/ui';
 import { Checkbox } from '@/components/ui-choice';
 import { ChevronRight, UserRound } from '@/components/icons';
 import { useJourneyState } from '../journey';
+import { useLiveRefresh, useScreenRefresh } from '../refresh';
 import { ExplanationDiagram } from '../study/explanation-diagram';
 import styles from './community-profile.module.css';
 
@@ -40,12 +42,15 @@ export function profileFollowRestriction(profile: CommunityProfileData, viewerGr
 export function ProfileIdentity({
   profile,
   navigate,
+  onEditNickname,
 }: {
   profile: CommunityProfileData;
   navigate: ScreenProps['navigate'];
+  onEditNickname?: () => void;
 }) {
   const identity = profileIdentity(profile);
   const joined = new Date(profile.joinedAt);
+  const relation = relationLine(profile.relation);
   return (
     <section className={styles.identity} aria-label="커뮤니티 프로필">
       <div className={styles.person}>
@@ -53,7 +58,14 @@ export function ProfileIdentity({
           <UserRound size={24} />
         </span>
         <div>
-          <h2>{profile.nickname}</h2>
+          <h2>
+            {profile.nickname}
+            {profile.isMine && onEditNickname && (
+              <button className={styles.textButton} onClick={onEditNickname}>
+                닉네임 바꾸기
+              </button>
+            )}
+          </h2>
           {identity && <p>{identity}</p>}
           {Number.isFinite(joined.valueOf()) && (
             <p>
@@ -76,6 +88,7 @@ export function ProfileIdentity({
           <dd>{profile.stats.helpedUsers}</dd>
         </div>
       </dl>
+      {relation && <p className={styles.relation}>{relation}</p>}
       <div className={styles.relationships}>
         {profile.isMine ? (
           <button className={styles.textButton} onClick={() => navigate('/following')}>
@@ -244,11 +257,30 @@ export function PublicCommunityProfile(props: ScreenProps & { userId: string }) 
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [unfollow, setUnfollow] = useState(false);
+  const [nickOpen, setNickOpen] = useState(false);
+  const [nickname, setNickname] = useState('');
+  const [nickError, setNickError] = useState('');
   const [tab, setTab] = useJourneyState<'cards' | 'answers' | 'posts'>(
     'community.profile.tab',
     'cards',
   );
   const parent = props.data.profile.role === 'PARENT';
+  const refreshProfile = useLiveRefresh(
+    async (signal) => {
+      const next = await api<CommunityProfileData>(
+        `/community/profiles/${encodeURIComponent(props.userId)}`,
+        undefined,
+        'GET',
+        { signal },
+      );
+      if (!signal?.aborted) {
+        setProfile(next);
+        setError('');
+      }
+    },
+    { interval: 60_000, enabled: !parent, resource: props.userId },
+  );
+  useScreenRefresh(refreshProfile, !parent);
   useEffect(() => {
     if (parent) return;
     let active = true;
@@ -272,6 +304,7 @@ export function PublicCommunityProfile(props: ScreenProps & { userId: string }) 
     setBusy(true);
     try {
       await api('/follow', { userId: profile.id, following: value });
+      markFollowed(profile.id, value);
       setProfile((current) =>
         current
           ? {
@@ -292,7 +325,32 @@ export function PublicCommunityProfile(props: ScreenProps & { userId: string }) 
       setBusy(false);
     }
   }
+  async function saveNickname() {
+    if (!profile || busy) return;
+    const next = nickname.trim();
+    if (!next || next === profile.nickname) return;
+    setBusy(true);
+    setNickError('');
+    try {
+      const result = await api<{ visibility: CommunityVisibility }>(
+        '/community/profile',
+        { nickname: next },
+        'PATCH',
+      );
+      setProfile((current) =>
+        current ? { ...current, nickname: next, visibility: result.visibility } : current,
+      );
+      setNickOpen(false);
+      props.toast('닉네임을 바꿨어요. 다음 변경은 30일 뒤에 할 수 있어요.');
+      props.refresh().catch(() => {});
+    } catch (e) {
+      setNickError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   const restriction = profile ? profileFollowRestriction(profile, props.data.profile.grade) : '';
+  const cooldown = nicknameCooldown(profile?.visibility.nicknameChangedAt);
   return (
     <>
       <ScreenHeader
@@ -337,7 +395,15 @@ export function PublicCommunityProfile(props: ScreenProps & { userId: string }) 
           </p>
         ) : (
           <>
-            <ProfileIdentity profile={profile} navigate={props.navigate} />
+            <ProfileIdentity
+              profile={profile}
+              navigate={props.navigate}
+              onEditNickname={() => {
+                setNickname(profile.nickname);
+                setNickError('');
+                setNickOpen(true);
+              }}
+            />
             {!profile.isMine && (
               <div className={styles.stack}>
                 <div className={styles.actions}>
@@ -475,6 +541,43 @@ export function PublicCommunityProfile(props: ScreenProps & { userId: string }) 
           <Button className={styles.inkButton} disabled={busy} onClick={() => void follow(false)}>
             {busy ? '변경 중…' : '팔로우 해제'}
           </Button>
+        </div>
+      </Sheet>
+      <Sheet
+        open={nickOpen}
+        onClose={() => {
+          if (!busy) setNickOpen(false);
+        }}
+        title="닉네임 바꾸기"
+        description="닉네임은 30일에 한 번 바꿀 수 있어요. 익명 글에는 어떤 닉네임도 표시되지 않아요."
+      >
+        <div className={styles.stack}>
+          {cooldown.allowed ? (
+            <>
+              <input
+                className={styles.nicknameInput}
+                value={nickname}
+                maxLength={24}
+                onChange={(e) => setNickname(e.target.value)}
+                aria-label="새 닉네임"
+                placeholder="1~12자"
+              />
+              <Button
+                className={styles.inkButton}
+                disabled={busy || !nickname.trim() || nickname.trim() === profile?.nickname}
+                onClick={() => void saveNickname()}
+              >
+                {busy ? '바꾸는 중…' : '닉네임 저장'}
+              </Button>
+            </>
+          ) : (
+            <p className={styles.hint}>{cooldown.daysLeft}일 뒤에 다시 바꿀 수 있어요.</p>
+          )}
+          {nickError && (
+            <p role="alert" className="text-danger">
+              {nickError}
+            </p>
+          )}
         </div>
       </Sheet>
     </>

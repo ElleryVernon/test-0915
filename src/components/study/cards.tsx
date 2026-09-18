@@ -1,17 +1,10 @@
 'use client';
+import { CardLibrary } from './card-library';
+import { libraryCards } from './card-library-model';
+import { EditCard } from './card-editor';
 import { CommunityAsk } from '../social/community-ask';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ArrowRight,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  CloudOff,
-  MoreHorizontal,
-  Plus,
-  Sparkles,
-  WifiOff,
-} from '@/components/icons';
+import { Check, ChevronDown, CloudOff, MoreHorizontal, WifiOff } from '@/components/icons';
 import type { Bucket, Card, ScreenProps } from '@/lib/contracts';
 import { Button, EmptyState, IconButton, Sheet } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -27,13 +20,18 @@ import {
 } from '@/lib/offline';
 import { BUCKETS, intervalLabel, localReview, reviewLabel, TYPES } from './logic';
 import { previewIntervals } from '@/lib/srs';
-import { BusyText, ErrorNote, errorMessage, GenerationSheet, params, useAction } from './shared';
+import {
+  readStudySessions,
+  resumableStudySessions,
+  saveStudySession,
+  removeStudySession,
+  studySessionRevision,
+} from '@/lib/study-sessions';
+import { CommunityAnswersRow, ErrorNote, errorMessage, params, useAction } from './shared';
 import { useJourneyLayer, useJourneyState } from '../journey';
 import { StudyHeader } from './study-header';
 import { DiagramCardContent } from './explanation-card';
 import {
-  bucketDistribution,
-  libraryGroups,
   nextReviewDay,
   recordReviewSession,
   reviewMinutes,
@@ -54,11 +52,20 @@ const recallLabel: Record<string, string> = {
   EASY: '바로',
 };
 const bucketLabel = (bucket: Bucket) => BUCKETS.find((b) => b.id === bucket)?.label ?? '';
-const reviewable = (card: Card) => !card.deleted && !(card.bucket === 'MASTERED' && !card.fsrs);
 const cardTypeLabel = (card: Card) => (card.diagram ? '다이어그램' : TYPES[card.type][0]);
 
 export function Flashcards(props: ScreenProps) {
   const query = params(props.path);
+  const [savedSession] = useState(() =>
+    resumableStudySessions(props.data, readStudySessions(props.data.profile.id)).find(
+      (s) => s.kind === 'cards' && s.id === query.get('checkpoint'),
+    ),
+  );
+  const resumed = savedSession?.kind === 'cards' ? savedSession : undefined;
+  const [checkpointId, setCheckpointId] = useJourneyState(
+    'cards.checkpointId',
+    () => resumed?.id || crypto.randomUUID(),
+  );
   // The library needs a recognizable question; masked review fronts stay source-label free.
   const questionPrompts = new Map(
     props.data.questions.map((question) => [question.id, question.prompt]),
@@ -69,12 +76,9 @@ export function Flashcards(props: ScreenProps) {
       : card.front;
   const [cards, setCards] = useState(props.data.cards);
   const [subject, setSubject] = useJourneyState('cards.subject', query.get('subject') || '');
-  const [bucket, setBucket] = useJourneyState<Bucket | null>('cards.bucket', null);
-  const [dueOnly, setDueOnly] = useJourneyState('cards.dueOnly', false);
-  const [trash, setTrash] = useState(query.get('trash') === '1');
   // Home's "복습 카드 만들기" opens the sheet on the material it names, once: the intent is removed
   // from the address so back navigation or a reload does not open it again.
-  const [generation, setGeneration] = useState(query.get('generate') === '1');
+  const [generation] = useState(query.get('generate') === '1');
   const [generateMaterial] = useState(() => query.get('material') || undefined);
   useEffect(() => {
     if (query.get('generate') !== '1') return;
@@ -98,24 +102,35 @@ export function Flashcards(props: ScreenProps) {
   );
   // A session walks the cards in the order the library lists them: the longest overdue first.
   const [reviewIds, setReviewIds] = useJourneyState<string[] | null>('cards.reviewIds', () =>
-    query.get('card')
-      ? initial.filter((c) => c.id === query.get('card')).map((c) => c.id)
-      : query.get('review') === '1'
-        ? libraryGroups(initial).today.map((c) => c.id)
-        : null,
+    resumed
+      ? resumed.ids
+      : query.get('card')
+        ? initial.filter((c) => c.id === query.get('card')).map((c) => c.id)
+        : query.get('review') === '1'
+          ? libraryCards(props.data, initial, {
+              subject,
+              scope: 'due',
+              query: '',
+              bucket: '',
+              sort: 'due',
+              trash: false,
+            }).map((c) => c.id)
+          : null,
   );
-  const [ratings, setRatings] = useJourneyState<SessionRating[]>('cards.ratings', []);
-  const [startedAt, setStartedAt] = useJourneyState('cards.startedAt', () => Date.now());
+  const [ratings, setRatings] = useJourneyState<SessionRating[]>(
+    'cards.ratings',
+    resumed?.ratings ?? [],
+  );
+  const [startedAt, setStartedAt] = useJourneyState(
+    'cards.startedAt',
+    () => resumed?.startedAt ?? Date.now(),
+  );
   const [finishedAt, setFinishedAt] = useJourneyState<number | null>('cards.finishedAt', null);
   const [recorded, setRecorded] = useJourneyState('cards.recorded', false);
-  const [index, setIndex] = useJourneyState('cards.index', 0);
-  const [flipped, setFlipped] = useJourneyState('cards.flipped', false);
+  const [index, setIndex] = useJourneyState('cards.index', resumed?.index ?? 0);
+  const [flipped, setFlipped] = useJourneyState('cards.flipped', resumed?.flipped ?? false);
   const [expanded, setExpanded] = useState(false);
   const [menu, setMenu] = useState(false);
-  const [libraryMenu, setLibraryMenu] = useState(false);
-  const [subjectSheet, setSubjectSheet] = useState(false);
-  const [bucketSheet, setBucketSheet] = useState(false);
-  const [preview, setPreview] = useState<Card | null>(null);
   const [edit, setEdit] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [ratingBusy, setRatingBusy] = useState(false);
@@ -206,6 +221,39 @@ export function Flashcards(props: ScreenProps) {
     : undefined;
   const finished = !!reviewIds && !current;
   useEffect(() => {
+    if (!reviewIds?.length) return;
+    setCheckpointId(checkpointId);
+    if (finished) {
+      removeStudySession(userId, checkpointId);
+      return;
+    }
+    saveStudySession(userId, {
+      kind: 'cards',
+      reviewStates: Object.fromEntries(
+        cards
+          .filter((c) => reviewIds.includes(c.id))
+          .map((c) => [c.id, JSON.stringify([c.nextReviewAt, c.reviewCount])]),
+      ),
+      id: checkpointId,
+      ids: reviewIds,
+      index,
+      flipped,
+      ratings,
+      startedAt,
+      updatedAt: new Date().toISOString(),
+      revisions: Object.fromEntries(
+        cards.filter((c) => reviewIds.includes(c.id)).map((c) => [c.id, studySessionRevision(c)]),
+      ),
+    });
+    // Rating/sync changes must not make an untouched session look recently active.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewIds, index, flipped, ratings, startedAt, finished, checkpointId, userId]);
+  useEffect(() => {
+    if (query.get('checkpoint') && !resumed)
+      props.toast('카드가 바뀌었거나 복습을 마쳤어요. 카드를 다시 골라 주세요.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
     if (!finished || recorded || !ratings.length) return;
     setRecorded(true);
     setFinishedAt(Date.now());
@@ -227,14 +275,14 @@ export function Flashcards(props: ScreenProps) {
     setRatings([]);
     setStartedAt(Date.now());
     setFinishedAt(null);
-    setPreview(null);
     setRecorded(false);
   }
   function exitReview() {
     setReviewIds(null);
     setRatings([]);
   }
-  const directReview = !!query.get('card') || query.get('review') === '1';
+  const directReview =
+    !!query.get('checkpoint') || !!query.get('card') || query.get('review') === '1';
   const closeReview = useJourneyLayer(reviewIds !== null && !directReview, exitReview);
   const leaveReview = () => (directReview ? props.back('/flashcards') : closeReview());
   function advance() {
@@ -402,6 +450,7 @@ export function Flashcards(props: ScreenProps) {
               복습 기록 {pending}개가 기기에 저장되었어요. 연결되면 반영돼요.
             </p>
           )}
+          <CommunityAnswersRow props={props} />
           <ErrorNote error={syncError} />
         </div>
         <div className="study-fixed-cta">
@@ -410,16 +459,13 @@ export function Flashcards(props: ScreenProps) {
               <Button className="w-full" onClick={() => start(again.map((c) => c.id))}>
                 못 떠올린 {again.length}장 한 번 더 보기
               </Button>
-              <button
-                className="recall-done-back"
-                onClick={() => props.navigate('/study', { replace: true })}
-              >
-                학습으로 돌아가기
+              <button className="recall-done-back" onClick={leaveReview}>
+                카드 목록으로 돌아가기
               </button>
             </>
           ) : (
-            <Button className="w-full" onClick={() => props.navigate('/study', { replace: true })}>
-              학습으로 돌아가기
+            <Button className="w-full" onClick={leaveReview}>
+              카드 목록으로 돌아가기
             </Button>
           )}
         </div>
@@ -621,400 +667,31 @@ export function Flashcards(props: ScreenProps) {
     );
   }
 
-  const nowMs = Date.now();
-  const scoped = cards.filter((c) => !subject || c.subjectId === subject);
-  const live = scoped.filter((c) => !c.deleted);
-  const deleted = scoped.filter((c) => c.deleted);
-  const dist = bucketDistribution(live);
-  const groups = libraryGroups(live, nowMs);
-  const due = groups.today;
-  const lists = bucket
-    ? [
-        {
-          key: 'bucket',
-          label: `${bucketLabel(bucket)} 상자`,
-          cards: [...groups.today, ...groups.later].filter((c) => c.bucket === bucket),
-        },
-      ]
-    : [
-        { key: 'today', label: '오늘', cards: groups.today },
-        ...(dueOnly ? [] : [{ key: 'later', label: '이후', cards: groups.later }]),
-      ];
-  const subjectName = props.data.subjects.find((s) => s.id === subject)?.name;
-  const cardRow = (card: Card) => {
-    const when = whenLabel(card, nowMs);
-    return (
-      <button key={card.id} className="recall-list-row" onClick={() => setPreview(card)}>
-        <span className="recall-row-type" title={cardTypeLabel(card)}>
-          {card.diagram ? '도식' : TYPES[card.type][0]}
-        </span>
-        <span className="recall-row-front">{libraryTitle(card)}</span>
-        <span className={`recall-row-when${when.strong ? ' is-strong' : ''}`}>{when.text}</span>
-      </button>
-    );
-  };
   return (
-    <>
-      <StudyHeader
-        title={trash ? '카드 휴지통' : '복습 카드'}
-        back={() => (trash ? setTrash(false) : props.back('/study'))}
-        action={
-          !trash && (
-            <IconButton label="카드 보관함 메뉴" onClick={() => setLibraryMenu(true)}>
-              <MoreHorizontal size={24} />
-            </IconButton>
-          )
-        }
-      />
-      <div className={`page-inset recall-library${trash ? ' is-trash' : ''}`}>
-        {banner}
-        <ErrorNote
-          error={
-            syncError && pending > 0
-              ? `${pending}개 기록은 기기에 저장되어 있어요. ${syncError}`
-              : ''
-          }
-        />
-        <div className="recall-filters">
-          <button
-            className="study-chip"
-            aria-haspopup="dialog"
-            onClick={() => setSubjectSheet(true)}
-          >
-            {subjectName ?? '모든 과목'}
-            <ChevronDown size={12} />
-          </button>
-          {!trash && (
-            <button
-              className="study-chip"
-              aria-pressed={dueOnly}
-              onClick={() => {
-                setDueOnly((v) => !v);
-                setBucket(null);
-              }}
-            >
-              오늘 복습만
-            </button>
-          )}
-        </div>
-        {trash ? (
-          <div className="recall-groups">
-            {deleted.map((card) => (
-              <div key={card.id} className="recall-list-row">
-                <span className="recall-row-type" title={cardTypeLabel(card)}>
-                  {card.diagram ? '도식' : TYPES[card.type][0]}
-                </span>
-                <span className="recall-row-front">{libraryTitle(card)}</span>
-                <button
-                  className="recall-restore"
-                  onClick={() =>
-                    action.run(async () => {
-                      await api(`/cards/${card.id}`, { deleted: false }, 'PATCH');
-                      await props.refresh();
-                      props.toast('카드를 복원했어요');
-                    })
-                  }
-                >
-                  복원
-                </button>
-              </div>
-            ))}
-            {!deleted.length && (
-              <EmptyState title="휴지통이 비어 있어요" description="삭제한 카드가 여기 보관돼요." />
-            )}
-          </div>
-        ) : live.length ? (
-          <>
-            <section className="recall-summary" aria-label="오늘 복습할 카드">
-              <div className="recall-summary-head">
-                <div className="recall-summary-copy">
-                  <span>오늘 복습할 카드</span>
-                  <p>
-                    <strong>{due.length}</strong>
-                    <b>장</b>
-                    {due.length > 0 && <small>약 {reviewMinutes(due.length)}분</small>}
-                  </p>
-                </div>
-                {due.length > 0 ? (
-                  <Button
-                    className="recall-summary-start"
-                    onClick={() => start(due.map((c) => c.id))}
-                  >
-                    복습 시작
-                    <ArrowRight size={16} />
-                  </Button>
-                ) : (
-                  <Button
-                    variant="secondary"
-                    className="recall-summary-start"
-                    disabled={!live.some(reviewable)}
-                    onClick={() => start(groups.later.filter(reviewable).map((c) => c.id))}
-                  >
-                    미리 복습
-                  </Button>
-                )}
-              </div>
-              <div
-                className="recall-dist"
-                role="img"
-                aria-label={`상자별 카드 ${dist.map((d) => `${d.label} ${d.count}장`).join(', ')}`}
-              >
-                {dist
-                  .filter((d) => d.count)
-                  .map((d) => (
-                    <span key={d.id} data-bucket={d.id} style={{ flexGrow: d.count }} />
-                  ))}
-              </div>
-              <div className="recall-legend" aria-hidden="true">
-                {dist.map((d) => (
-                  <span key={d.id}>
-                    <i data-bucket={d.id} />
-                    {d.label} {d.count}
-                  </span>
-                ))}
-              </div>
-            </section>
-            <div className="recall-groups">
-              {lists.map((list, i) => (
-                <div key={list.key} className="recall-group">
-                  <div className="recall-group-head">
-                    <h2>
-                      {list.label} <span>{list.cards.length}</span>
-                    </h2>
-                    {i === 0 && (
-                      <button
-                        className="study-chip is-compact"
-                        aria-haspopup="dialog"
-                        onClick={() => setBucketSheet(true)}
-                      >
-                        {bucket ? '상자 바꾸기' : '상자별 보기'}
-                        <ChevronDown size={12} />
-                      </button>
-                    )}
-                  </div>
-                  {list.cards.map(cardRow)}
-                  {!list.cards.length && (
-                    <p className="recall-group-empty">
-                      {list.key === 'today'
-                        ? '오늘 복습할 카드를 모두 마쳤어요.'
-                        : list.key === 'later'
-                          ? '예정된 카드가 없어요.'
-                          : '이 상자는 비어 있어요.'}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <EmptyState
-            title="첫 복습 카드를 만들어 볼까요?"
-            description="직접 만들거나 올린 자료로 카드를 만들 수 있어요."
+    <CardLibrary
+      props={props}
+      cards={cards}
+      initialSubject={subject}
+      initialTrash={query.get('trash') === '1'}
+      initialGeneration={generation}
+      initialMaterial={generateMaterial}
+      banner={
+        <>
+          {banner}
+          <ErrorNote
+            error={
+              syncError && pending > 0
+                ? `${pending}개 기록은 기기에 저장되어 있어요. ${syncError}`
+                : ''
+            }
           />
-        )}
-        <ErrorNote error={action.error} />
-      </div>
-      {!trash && (
-        <div className="recall-library-actions">
-          <Button
-            variant="secondary"
-            onClick={() => props.navigate(`/create-card${subject ? `?subject=${subject}` : ''}`)}
-          >
-            <Plus size={16} />
-            직접 만들기
-          </Button>
-          <Button variant="secondary" onClick={() => setGeneration(true)}>
-            <Sparkles size={16} className="recall-sparkle" />
-            자료로 만들기
-          </Button>
-        </div>
-      )}
-      <Sheet open={libraryMenu} onClose={() => setLibraryMenu(false)} title="카드 보관함">
-        <div className="study-options">
-          <button
-            onClick={() => {
-              setLibraryMenu(false);
-              setTrash(true);
-              setBucket(null);
-              setDueOnly(false);
-            }}
-          >
-            <span>휴지통</span>
-            <small>{deleted.length}장</small>
-            <ChevronRight size={18} className="text-disabled" />
-          </button>
-          <button onClick={() => props.navigate('/settings/learning')}>
-            <span>복습 방식</span>
-            <small>{mode === 'FSRS' ? '기억에 맞춘 간격' : '정해진 간격'}</small>
-            <ChevronRight size={18} className="text-disabled" />
-          </button>
-          <button disabled={!online} onClick={() => void sync()}>
-            <span>기록 동기화</span>
-            <small>{statusText}</small>
-          </button>
-        </div>
-      </Sheet>
-      <Sheet open={subjectSheet} onClose={() => setSubjectSheet(false)} title="과목 선택">
-        <div className="study-options">
-          {[{ id: '', name: '모든 과목' }, ...props.data.subjects].map((s) => (
-            <button
-              key={s.id || 'all'}
-              aria-pressed={subject === s.id}
-              onClick={() => {
-                setSubject(s.id);
-                setSubjectSheet(false);
-              }}
-            >
-              <span>{s.name}</span>
-              {subject === s.id && <Check size={20} />}
-            </button>
-          ))}
-        </div>
-      </Sheet>
-      <Sheet open={bucketSheet} onClose={() => setBucketSheet(false)} title="상자별 보기">
-        <div className="study-options">
-          {[{ id: null, label: '모든 상자', count: live.length }, ...dist].map((d) => (
-            <button
-              key={d.id ?? 'all'}
-              aria-pressed={bucket === d.id}
-              onClick={() => {
-                setBucket(d.id);
-                setDueOnly(false);
-                setBucketSheet(false);
-              }}
-            >
-              <span>{d.label}</span>
-              <small>{d.count}장</small>
-              {bucket === d.id && <Check size={20} />}
-            </button>
-          ))}
-        </div>
-      </Sheet>
-      <Sheet
-        open={!!preview && !edit}
-        onClose={() => {
-          setPreview(null);
-          setDeleting(false);
-        }}
-        title={preview ? `${cardTypeLabel(preview)} 카드` : '카드'}
-      >
-        {preview && (
-          <div className="space-y-2">
-            <p className="text-[13px] text-muted">
-              {bucketLabel(preview.bucket)} 상자 · {reviewLabel(preview)}
-            </p>
-            {preview.diagram ? (
-              <DiagramCardContent card={preview} />
-            ) : (
-              <p className="recall-preview-front">{preview.front}</p>
-            )}
-            <Button className="w-full" onClick={() => start([preview.id])}>
-              이 카드 복습하기
-            </Button>
-            {!preview.diagram && (
-              <Button variant="secondary" className="w-full" onClick={() => setEdit(true)}>
-                카드 내용 수정
-              </Button>
-            )}
-            {!deleting ? (
-              <Button variant="ghost" className="w-full" onClick={() => setDeleting(true)}>
-                휴지통으로 옮기기
-              </Button>
-            ) : (
-              <div className="rounded-2xl bg-surface p-4">
-                <p className="mb-3 text-sm leading-relaxed">
-                  휴지통으로 옮길까요? 카드 보관함에서 다시 복원할 수 있어요.
-                </p>
-                <Button
-                  className="w-full"
-                  disabled={action.busy}
-                  onClick={() =>
-                    action.run(async () => {
-                      await api(`/cards/${preview.id}`, { deleted: true }, 'PATCH');
-                      await props.refresh();
-                      setPreview(null);
-                      setDeleting(false);
-                      props.toast('카드를 휴지통으로 옮겼어요');
-                    })
-                  }
-                >
-                  휴지통으로 옮기기
-                </Button>
-              </div>
-            )}
-            <ErrorNote error={action.error} />
-          </div>
-        )}
-      </Sheet>
-      {edit && preview && (
-        <EditCard
-          props={props}
-          card={preview}
-          onClose={() => {
-            setEdit(false);
-            setPreview(null);
-          }}
-        />
-      )}
-      <GenerationSheet
-        open={generation}
-        onClose={() => setGeneration(false)}
-        props={props}
-        mode="cards"
-        initialMaterial={generateMaterial}
-      />
-    </>
-  );
-}
-function EditCard({
-  card,
-  props,
-  onClose,
-}: {
-  card: Card;
-  props: ScreenProps;
-  onClose: () => void;
-}) {
-  const [front, setFront] = useState(card.front);
-  const [back, setBack] = useState(card.back);
-  const action = useAction();
-  return (
-    <Sheet open onClose={onClose} title="카드 내용 수정">
-      <div className="space-y-4">
-        <label className="block text-sm font-semibold">
-          앞면
-          <textarea
-            className="field mt-2 min-h-28"
-            value={front}
-            onChange={(e) => setFront(e.target.value)}
-            maxLength={2000}
-          />
-        </label>
-        <label className="block text-sm font-semibold">
-          뒷면
-          <textarea
-            className="field mt-2 min-h-36"
-            value={back}
-            onChange={(e) => setBack(e.target.value)}
-            maxLength={4000}
-          />
-        </label>
-        <ErrorNote error={action.error} />
-        <Button
-          className="w-full"
-          disabled={!front.trim() || !back.trim() || action.busy}
-          onClick={() =>
-            action.run(async () => {
-              await api(`/cards/${card.id}`, { front: front.trim(), back: back.trim() }, 'PATCH');
-              await props.refresh();
-              onClose();
-              props.toast('카드를 수정했어요');
-            })
-          }
-        >
-          {action.busy ? <BusyText>저장 중</BusyText> : '변경 사항 저장'}
-        </Button>
-      </div>
-    </Sheet>
+        </>
+      }
+      sync={{ status: statusText, online, run: sync }}
+      onReview={(ids, scope) => {
+        setSubject(scope);
+        start(ids);
+      }}
+    />
   );
 }

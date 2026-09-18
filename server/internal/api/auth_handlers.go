@@ -31,9 +31,10 @@ const (
 
 func (s *Server) configHandler(w http.ResponseWriter, r *http.Request) error {
 	httpx.OK(w, http.StatusOK, struct {
-		Demo      bool     `json:"demo"`
-		Providers []string `json:"providers"`
-	}{Demo: s.cfg.DemoMode, Providers: s.cfg.ConfiguredProviders()})
+		Demo       bool     `json:"demo"`
+		Providers  []string `json:"providers"`
+		AuthOrigin string   `json:"authOrigin"`
+	}{Demo: s.cfg.DemoMode, Providers: s.cfg.ConfiguredProviders(), AuthOrigin: s.cfg.AppURL})
 	return nil
 }
 
@@ -99,7 +100,13 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request, user store.User) error {
-	httpx.OK(w, http.StatusOK, profileOf(user))
+	profile := profileOf(user)
+	pending, err := s.auth.NeedsOnboarding(r.Context(), user.ID)
+	if err != nil {
+		return err
+	}
+	profile.OnboardingRequired = pending
+	httpx.OK(w, http.StatusOK, profile)
 	return nil
 }
 

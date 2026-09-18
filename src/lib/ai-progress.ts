@@ -54,7 +54,7 @@ export function progressCopy(
   const stage = AI_STAGES.includes(last as AiStage) ? (last as AiStage) : 'LOAD_CONTEXT';
   const step = AI_STAGES.indexOf(stage);
   let hint: string;
-  if (elapsedMs < 20_000) hint = '보통 20초에서 1분 정도 걸려요.';
+  if (elapsedMs < 20_000) hint = '자료 분량과 검토 과정에 따라 시간이 달라요.';
   else if (elapsedMs < 60_000)
     hint = '원문을 꼼꼼히 확인하고 있어요. 자료가 길면 1분을 넘길 수 있어요.';
   else if (elapsedMs < 120_000)

@@ -18,8 +18,8 @@ const gateTimeout = 3 * time.Second
 // front of the static build so a parent never lands on a student screen (the API enforces the
 // real boundary).
 var (
-	gatedPaths   = regexp.MustCompile(`^/(study|subjects|quiz|essay|flashcards|wrong-notes|create-card|completed-subjects|community|boards|planner|parent|parent-boards|cheer|admin)(/|$)`)
-	studentPaths = regexp.MustCompile(`^/(study|subjects|quiz|essay|flashcards|wrong-notes|create-card|completed-subjects|community|boards|planner)(/|$)`)
+	gatedPaths   = regexp.MustCompile(`^/(start|study|subjects|quiz|essay|flashcards|wrong-notes|create-card|completed-subjects|community|boards|planner|parent|parent-boards|cheer|admin)(/|$)`)
+	studentPaths = regexp.MustCompile(`^/(start|study|subjects|quiz|essay|flashcards|wrong-notes|create-card|completed-subjects|community|boards|planner)(/|$)`)
 	parentPaths  = regexp.MustCompile(`^/(parent|parent-boards)(/|$)`)
 	adminPaths   = regexp.MustCompile(`^/admin(/|$)`)
 )
@@ -48,6 +48,11 @@ func (a *Auth) GateHTML(next http.Handler) http.Handler {
 			// The database or cache is slow or down: the page itself holds no data, and every API call
 			// it makes is checked again, so it is served rather than bouncing a signed-in learner home.
 			next.ServeHTTP(w, r)
+			return
+		}
+		if pending, err := a.NeedsOnboarding(r.Context(), user.ID); err == nil && pending {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Redirect(w, r, "/onboarding", http.StatusFound)
 			return
 		}
 		if (user.Role == store.RolePARENT && studentPaths.MatchString(path)) ||

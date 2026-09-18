@@ -301,11 +301,7 @@ func (s *Server) wrongNoteCards(w http.ResponseWriter, r *http.Request, user sto
 	err = s.locked(ctx, user.ID, func(tx pgx.Tx, q *store.Queries) error {
 		for _, id := range unique {
 			question := byID[id]
-			answer := ""
-			if int(question.Answer) >= 0 && int(question.Answer) < len(question.Options) {
-				answer = question.Options[question.Answer]
-			}
-			card, err := q.UpsertWrongNoteCard(ctx, store.UpsertWrongNoteCardParams{ID: ids.New(), UserID: user.ID, SubjectID: question.SubjectID, Front: question.Prompt, Back: answer + "\n\n" + question.Explanation, SourceQuestionID: &question.ID})
+			card, err := queueReviewQuestionCard(ctx, q, user.ID, question, time.Now())
 			if err != nil {
 				return err
 			}

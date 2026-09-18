@@ -1,0 +1,132 @@
+.keywords {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.keyword {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: 60px;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: left;
+}
+.keywordWord {
+  overflow-wrap: anywhere;
+}
+.keyword[data-state='selected'] {
+  background: var(--text-primary);
+  color: white;
+}
+.keyword:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.keyword:disabled[data-state='idle'] {
+  color: var(--text-secondary);
+}
+.keyword[data-state='correct'],
+.keyword[data-state='missed'] {
+  background: #eaf5ee;
+  color: #21613e;
+}
+.keyword[data-state='incorrect'] {
+  background: var(--danger-surface);
+  color: var(--danger);
+}
+.keywordStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.keyword:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
+}
+@media (hover: hover) {
+  .keyword:not(:disabled):hover {
+    filter: brightness(0.95);
+  }
+}
+.keyword:not(:disabled):active {
+  transform: scale(0.98);
+}
+.chunks {
+  display: grid;
+  gap: var(--space-3);
+  overflow-wrap: anywhere;
+}
+.chunks p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.structure {
+  display: grid;
+  gap: var(--space-4);
+}
+.structureNote {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.flow {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.connector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.node {
+  padding: var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+}
+.nodeHeading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  font-weight: 700;
+}
+.number {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-primary);
+  color: white;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.node p {
+  margin: var(--space-3) 0 0;
+  font-size: 14px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.outline li {
+  border: 0;
+  background: var(--surface-muted);
+}

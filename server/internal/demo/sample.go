@@ -57,3 +57,29 @@ func Sample() SampleMaterial {
 	}
 	return out
 }
+
+// Items returns every sample material with its questions and essays; the slices are fresh copies.
+// Offline evaluations read the seeded items from here instead of a database.
+func Items() []SampleMaterial {
+	out := make([]SampleMaterial, 0, len(materials))
+	for _, m := range materials {
+		item := SampleMaterial{Title: m.title, Content: m.content}
+		for _, s := range subjects {
+			if s.id == m.subjectID {
+				item.Subject = s.name
+			}
+		}
+		for _, q := range questions {
+			if q.materialID == m.id {
+				item.Questions = append(item.Questions, SampleQuestion{Prompt: q.prompt, Options: append([]string(nil), q.options...), Answer: q.answer, Explanation: q.explanation, Citation: q.citation, Past: q.past, Future: q.future})
+			}
+		}
+		for _, e := range essays {
+			if e.materialID == m.id {
+				item.Essays = append(item.Essays, SampleEssay{Prompt: e.prompt, Keywords: append([]string(nil), e.keywords...), Distractors: append([]string(nil), e.distractors...), ModelAnswer: e.modelAnswer, Citation: e.citation})
+			}
+		}
+		out = append(out, item)
+	}
+	return out
+}

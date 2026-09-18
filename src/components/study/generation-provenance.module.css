@@ -1,0 +1,79 @@
+.provenance {
+  display: grid;
+  gap: var(--gap-related);
+  padding: var(--gap-block);
+  border-radius: var(--radius-panel);
+  background: var(--surface-muted);
+}
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-inline);
+  font-size: 14px;
+}
+.provenance > p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.source {
+  background: var(--surface-raised);
+  border-radius: var(--radius-control);
+}
+.source summary {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-inline);
+  min-height: var(--control-height);
+  padding: var(--gap-related);
+  cursor: pointer;
+  list-style: none;
+}
+.source summary::-webkit-details-marker {
+  display: none;
+}
+.source summary > span {
+  flex: 1;
+  min-width: 0;
+}
+.source summary strong {
+  display: block;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.source summary small {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.source summary svg {
+  flex-shrink: 0;
+}
+.source[open] summary svg {
+  transform: rotate(180deg);
+}
+.source summary:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+.body {
+  padding: 0 var(--gap-related) var(--gap-related);
+  font-size: 14px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.expandedLabel {
+  display: none;
+}
+.source[open] .expandedLabel {
+  display: inline;
+}
+.source[open] .collapsedLabel {
+  display: none;
+}

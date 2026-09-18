@@ -307,7 +307,7 @@ func (q *Queries) ListMaterialsWithUpload(ctx context.Context, userid string) ([
 }
 
 const listNotifications = `-- name: ListNotifications :many
-SELECT id, "userId", title, body, read, href, "createdAt" FROM "Notification" WHERE "userId" = $1 ORDER BY "createdAt" DESC LIMIT 100
+SELECT id, "userId", title, body, read, href, "createdAt", kind FROM "Notification" WHERE "userId" = $1 ORDER BY "createdAt" DESC LIMIT 100
 `
 
 func (q *Queries) ListNotifications(ctx context.Context, userid string) ([]Notification, error) {
@@ -327,6 +327,7 @@ func (q *Queries) ListNotifications(ctx context.Context, userid string) ([]Notif
 			&i.Read,
 			&i.Href,
 			&i.CreatedAt,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}

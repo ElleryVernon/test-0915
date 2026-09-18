@@ -108,3 +108,11 @@ test('invalid or empty registration never produces writable dates', () => {
     assert.deepEqual(previewSchoolRegistration(invalid, [], today), []);
   }
 });
+
+test('a sixteen-week semester produces exactly eighty selected school days', () => {
+  const semester = { ...form, weeks: 16 };
+  assert.equal(schoolRegistrationError(semester, today), '');
+  assert.equal(previewSchoolRegistration(semester, [], today).length, 80);
+  assert.equal(schoolPeriodEnd(semester), '2027-01-06');
+  assert.ok(schoolRegistrationError({ ...form, weeks: 100 }, today));
+});

@@ -16,7 +16,7 @@ test('progress copy follows the recorded stage and the elapsed time', () => {
   assert.equal(accepted.stage, '자료 본문을 읽는 중');
   assert.equal(accepted.step, 0);
   assert.equal(accepted.elapsed, '1초');
-  assert.equal(accepted.hint, '보통 20초에서 1분 정도 걸려요.');
+  assert.equal(accepted.hint, '자료 분량과 검토 과정에 따라 시간이 달라요.');
   const generating = progressCopy(
     copy,
     [

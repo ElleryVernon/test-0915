@@ -1,22 +1,36 @@
 import { findAiTask, inspectAiTask } from '@/lib/ai-task';
 import type { GenerationMode } from './logic';
+import { generationSourcePayload } from '@/lib/generation-sources';
 
 /** Reopening a sheet restores its saved request, regardless of the UI's default count. */
 export async function recoverGenerationTask({
   userId,
   materialId,
+  materialIds,
+  subjectId = '',
+  topic = '',
   mode,
   signal,
 }: {
   userId: string;
-  materialId: string;
+  materialId?: string;
+  materialIds?: string[];
+  subjectId?: string;
+  topic?: string;
   mode: GenerationMode;
   signal?: AbortSignal;
 }) {
   const stored = await findAiTask({
     userId,
     endpoint: '/generate',
-    match: { materialId, mode },
+    match: {
+      ...(materialIds?.length
+        ? generationSourcePayload(materialIds, subjectId, topic)
+        : materialId
+          ? { materialId }
+          : {}),
+      mode,
+    },
   });
   if (!stored || signal?.aborted) return null;
   const count = stored.payload.count;

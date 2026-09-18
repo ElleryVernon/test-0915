@@ -59,13 +59,14 @@ export function CompletedSubjects(props: ScreenProps) {
   };
   return (
     <>
-      <ScreenHeader title="배운 과목" back={() => props.back('/study')} />
+      <ScreenHeader title="이전에 배운 과목" back={() => props.back('/study')} />
       <div className="page-inset curriculum-page">
         <h2 className="text-[22px] leading-[1.35] font-bold tracking-[-.035em]">
-          배운 과목만 골라 주세요
+          이수한 과목을 기록해요
         </h2>
         <p className="mt-2 text-[13px] leading-relaxed text-muted">
-          시간표나 교과서의 과목명을 기준으로 골라 주세요.
+          시간표나 교과서의 과목명을 기준으로 골라 주세요. 저장한 학습 이력은 자료를 담는 내 과목과
+          별도로 관리돼요. 문제 해설의 개념 연결에서 이미 배운 과목을 구분해 드려요.
         </p>
         <div className="curriculum-context">
           <OptionField

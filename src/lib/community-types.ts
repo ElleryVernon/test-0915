@@ -29,6 +29,8 @@ export interface CommunityVisibility {
   followerCount: boolean;
   cardsDefault: boolean;
   whoCanFollow: 'ALL' | 'SAME_GRADE' | 'NONE';
+  /** Server-owned 30-day nickname cooldown marker; echoed on the owner's own profile. */
+  nicknameChangedAt?: string;
 }
 export interface CommunityProfileData {
   id: string;
@@ -40,6 +42,8 @@ export interface CommunityProfileData {
   isMine: boolean;
   visibility: CommunityVisibility;
   stats: { accepted: number; cardsCloned: number; helpedUsers: number; answers: number };
+  /** How this profile intersects the viewer's own history; absent on the owner's own profile. */
+  relation?: { answersToMe: number; acceptedForMe: number; cardsICloned: number };
   followers?: number;
   followingCount: number;
   posts: Post[];

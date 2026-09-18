@@ -1,0 +1,94 @@
+/* Actions own a foreground/background pair. Variants change tokens, never just
+   one hover color. "outline" is the legacy name for a borderless secondary action. */
+.btn,
+.control-outline,
+.control-neutral {
+  --action-fill: var(--control-fill);
+  --action-text: var(--text-primary);
+  --action-hover-fill: color-mix(in srgb, var(--action-fill), var(--action-text) 6%);
+  --action-pressed-fill: color-mix(in srgb, var(--action-fill), var(--action-text) 12%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-inline);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--action-fill);
+  color: var(--action-text);
+  font-weight: 600;
+  text-align: center;
+  word-break: keep-all;
+  transition: background-color 0.16s, color 0.16s, transform 0.16s;
+}
+.btn {
+  min-height: var(--control-height);
+  padding: var(--space-3) var(--space-5);
+  font-size: 16px;
+  line-height: 1.4;
+}
+.control-outline,
+.control-neutral,
+.btn.btn-compact {
+  min-height: var(--control-size);
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.btn-primary {
+  --action-fill: var(--brand);
+  --action-text: var(--on-primary);
+  --action-hover-fill: var(--brand-pressed);
+  --action-pressed-fill: var(--brand-pressed);
+  font-weight: 700;
+}
+.btn-neutral,
+.control-neutral {
+  --action-fill: var(--text-primary);
+  --action-text: var(--surface-raised);
+}
+.btn-ghost {
+  --action-fill: transparent;
+  --action-text: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+}
+@media (hover: hover) and (pointer: fine) {
+  :is(.btn, .control-outline, .control-neutral):not(.btn-ghost):enabled:hover {
+    background: var(--action-hover-fill);
+    color: var(--action-text);
+  }
+  .btn-ghost:enabled:hover {
+    --action-text: var(--text-primary);
+    text-decoration-thickness: 2px;
+  }
+}
+:is(.btn, .control-outline, .control-neutral):enabled:active {
+  transform: scale(0.98);
+}
+:is(.btn, .control-outline, .control-neutral):not(.btn-ghost):enabled:active {
+  background: var(--action-pressed-fill);
+  color: var(--action-text);
+}
+.btn-ghost:enabled:active {
+  --action-text: var(--text-primary);
+}
+:is(.btn, .control-outline, .control-neutral):disabled {
+  background: var(--control-fill);
+  color: var(--text-disabled);
+  opacity: 1;
+  transform: none;
+  cursor: not-allowed;
+}
+.btn-ghost:disabled {
+  background: transparent;
+  text-decoration: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn, .control-outline, .control-neutral {
+    transition: none;
+  }
+  :is(.btn, .control-outline, .control-neutral):enabled:active {
+    transform: none;
+  }
+}

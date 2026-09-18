@@ -1,10 +1,20 @@
 package api
 
 import (
+	"bytes"
 	"context"
-	"github.com/jackc/pgx/v5"
+	"encoding/json"
+	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"memoryz/server/internal/auth"
+	"memoryz/server/internal/ids"
+	"memoryz/server/internal/store"
 )
 
 func communityData(t *testing.T, r *httptest.ResponseRecorder, status int) map[string]any {
@@ -264,12 +274,122 @@ func TestCommunityCommentNotificationsAndAnonymousBlock(t *testing.T) {
 	}
 	var n int
 	var href string
-	_ = h.pool.QueryRow(ctx, `SELECT count(*),min("href") FROM "Notification" WHERE "userId"='anon-owner'`).Scan(&n, &href)
+	_ = h.pool.QueryRow(ctx, `SELECT count(*),min("href") FROM "Notification" WHERE "userId"='anon-owner' AND "kind"='FIRST_ANSWER'`).Scan(&n, &href)
 	if n != 1 || href != "/community?post=anon-post" {
 		t.Fatal("first answer notification", n, href)
+	}
+	var body string
+	_ = h.pool.QueryRow(ctx, `SELECT "body" FROM "Notification" WHERE "userId"='anon-owner' AND "kind"='MORE_ANSWERS'`).Scan(&body)
+	if body != "답변이 1개 더 왔어요" {
+		t.Fatal("more-answers bundle", body)
+	}
+	communityData(t, h.do("POST", "/api/posts/anon-post/comments", map[string]any{"body": "셋째", "requestId": "reply-three"}), 201)
+	_ = h.pool.QueryRow(ctx, `SELECT count(*),max("body") FROM "Notification" WHERE "userId"='anon-owner' AND "kind"='MORE_ANSWERS'`).Scan(&n, &body)
+	if n != 1 || body != "답변이 2개 더 왔어요" {
+		t.Fatal("more-answers bundle refresh", n, body)
 	}
 	communityData(t, h.do("POST", "/api/blocks", map[string]any{"postId": "anon-post"}), 200)
 	if r := h.do("GET", "/api/posts/anon-post", nil); r.Code != 404 {
 		t.Fatal("anonymous author block bypass", r.Code)
+	}
+}
+
+func TestCommunityFrontier(t *testing.T) {
+	h := newAIHarness(t, nil)
+	ctx := context.Background()
+	peer := "frontier-peer-" + ids.Token(3)
+	if _, e := h.pool.Exec(ctx, `INSERT INTO "User"("id","name","nickname","role","grade") VALUES($1,'실명','친구','STUDENT','고3'); UPDATE "User" SET "grade"='고3' WHERE "id"=$2`, pgx.QueryExecModeSimpleProtocol, peer, h.student); e != nil {
+		t.Fatal(e)
+	}
+	peerSession, _, e := h.s.auth.Create(ctx, peer)
+	if e != nil {
+		t.Fatal(e)
+	}
+	doAs := func(cookie, method, path string, body any) *httptest.ResponseRecorder {
+		var reader io.Reader
+		if body != nil {
+			raw, _ := json.Marshal(body)
+			reader = bytes.NewReader(raw)
+		}
+		req := httptest.NewRequest(method, path, reader)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Cookie", cookie+"; "+auth.SignedInCookie+"=1")
+		rec := httptest.NewRecorder()
+		h.handler.ServeHTTP(rec, req)
+		return rec
+	}
+	peerCookie := strings.Split(peerSession, ";")[0]
+	p := communityData(t, h.do("POST", "/api/posts", map[string]any{"title": "질문", "body": "본문", "category": "질문", "anonymous": false, "requestId": "rel-post"}), 201)
+	post := p["id"].(string)
+	c := communityData(t, doAs(peerCookie, "POST", "/api/posts/"+post+"/comments", map[string]any{"body": "이렇게 풀어요", "requestId": "rel-comment"}), 201)
+	communityData(t, h.do("POST", "/api/posts/"+post+"/accept", map[string]any{"commentId": c["id"]}), 200)
+	if _, e = h.pool.Exec(ctx, `INSERT INTO "Card"("id","userId","subjectId","front","back","type","bucket") VALUES('rel-card',$1,(SELECT "id" FROM "Subject" WHERE "userId"=$2 LIMIT 1),'앞','뒤','CONCEPT','AGAIN'); INSERT INTO "CommunityCard"("cardId","public") VALUES('rel-card',true)`, pgx.QueryExecModeSimpleProtocol, peer, h.student); e != nil {
+		t.Fatal(e)
+	}
+	communityData(t, h.do("POST", "/api/community/cards/rel-card/clone", map[string]any{}), 200)
+	profile := communityData(t, h.do("GET", "/api/community/profiles/"+peer, nil), 200)
+	relation, ok := profile["relation"].(map[string]any)
+	if !ok || relation["answersToMe"] != float64(1) || relation["acceptedForMe"] != float64(1) || relation["cardsICloned"] != float64(1) {
+		t.Fatal("relation stats", profile["relation"])
+	}
+	own := communityData(t, h.do("GET", "/api/community/profiles/"+h.student, nil), 200)
+	if _, ok = own["relation"]; ok {
+		t.Fatal("own profile must not carry a relation line")
+	}
+	communityData(t, h.do("PATCH", "/api/community/profile", map[string]any{"nickname": "새닉네임"}), 200)
+	if r := h.do("PATCH", "/api/community/profile", map[string]any{"nickname": "또다른닉"}); r.Code != 429 {
+		t.Fatal("nickname cooldown", r.Code, r.Body.String())
+	}
+	communityData(t, h.do("PATCH", "/api/community/profile", map[string]any{"nickname": "새닉네임"}), 200)
+	if r := h.do("PATCH", "/api/community/profile", map[string]any{"nickname": "열세글자를넘는닉네임은안돼"}); r.Code != 400 {
+		t.Fatal("nickname length", r.Code)
+	}
+	// The 7-day accept ask and the 21:00 digest materialise on the nudge pass.
+	old := time.Now().Add(-8 * 24 * time.Hour)
+	if _, e = h.pool.Exec(ctx, `INSERT INTO "Post"("id","userId","role","category","title","body","anonymous","createdAt") VALUES('old-q',$1,'STUDENT','질문','오래된 질문','본문',false,$2); INSERT INTO "CommunityPost"("postId","userId") VALUES('old-q',$1); INSERT INTO "Comment"("id","postId","userId","body") VALUES('old-c','old-q',$3,'답변 있음')`, pgx.QueryExecModeSimpleProtocol, h.student, old, peer); e != nil {
+		t.Fatal(e)
+	}
+	communityData(t, h.do("POST", "/api/follow", map[string]any{"userId": peer, "following": true}), 200)
+	year, month, day := time.Now().In(seoul).Date()
+	fixed := time.Date(year, month, day, 21, 30, 0, 0, seoul)
+	// A same-day Korean answer can have the previous UTC calendar date.
+	// Pin this boundary so the digest regression is independent of test time.
+	acceptedAt := time.Date(year, month, day, 0, 30, 0, 0, seoul).UTC()
+	if _, e = h.pool.Exec(ctx, `UPDATE "CommunityPost" SET "solvedAt"=$2 WHERE "postId"=$1`, post, acceptedAt); e != nil {
+		t.Fatal(e)
+	}
+	h.s.now = func() time.Time { return fixed }
+	defer func() { h.s.now = func() time.Time { return time.Now().UTC().Truncate(time.Millisecond) } }()
+	if e = h.s.communityNudges(ctx, store.User{ID: h.student, Role: store.RoleSTUDENT}); e != nil {
+		t.Fatal(e)
+	}
+	var kind, digestBody string
+	var n int
+	_ = h.pool.QueryRow(ctx, `SELECT "kind",count(*) FROM "Notification" WHERE "userId"=$1 AND "kind" IN ('ACCEPT_ASK','FOLLOWING_DIGEST') GROUP BY 1`, h.student).Scan(&kind, &n)
+	rows, e := h.pool.Query(ctx, `SELECT "kind","body" FROM "Notification" WHERE "userId"=$1 AND "kind" IN ('ACCEPT_ASK','FOLLOWING_DIGEST')`, h.student)
+	if e != nil {
+		t.Fatal(e)
+	}
+	seen := map[string]string{}
+	for rows.Next() {
+		var k, b string
+		if e = rows.Scan(&k, &b); e != nil {
+			t.Fatal(e)
+		}
+		seen[k] = b
+	}
+	rows.Close()
+	if !strings.Contains(seen["ACCEPT_ASK"], "해결") && !strings.Contains(seen["ACCEPT_ASK"], "일 전 질문") {
+		t.Fatal("accept-ask nudge", seen)
+	}
+	if digestBody = seen["FOLLOWING_DIGEST"]; !strings.Contains(digestBody, "채택된 답변 1개") {
+		t.Fatal("following digest", seen)
+	}
+	if e = h.s.communityNudges(ctx, store.User{ID: h.student, Role: store.RoleSTUDENT}); e != nil {
+		t.Fatal(e)
+	}
+	_ = h.pool.QueryRow(ctx, `SELECT count(*) FROM "Notification" WHERE "userId"=$1 AND "kind" IN ('ACCEPT_ASK','FOLLOWING_DIGEST')`, h.student).Scan(&n)
+	if n != 2 {
+		t.Fatal("nudges must be idempotent", n)
 	}
 }

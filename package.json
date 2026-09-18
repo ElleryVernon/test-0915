@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3000",
     "dev:api": "node scripts/dev-api.mjs",
-    "build": "next build && node scripts/precompress.mjs out",
+    "build": "node scripts/build-web.mjs",
     "start": "node scripts/start-local.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --import ./tests/register-css.mjs --test tests/*.test.ts",

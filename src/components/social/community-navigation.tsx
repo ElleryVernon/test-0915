@@ -1,27 +1,21 @@
 'use client';
-import { useEffect, useState } from 'react';
-import {
-  Bookmark,
-  FileText,
-  MessageCircle,
-  PencilLine,
-  Search,
-  UserRound,
-} from '@/components/icons';
-import { Button, EmptyState, IconButton, ListRow, ScreenHeader } from '@/components/ui';
-import { api } from '@/lib/api';
+import { Bookmark, FileText, MessageCircle, Search, UserRound } from '@/components/icons';
+import { IconButton, ListRow, ScreenHeader } from '@/components/ui';
 import type { ScreenProps } from '@/lib/contracts';
-import SocialHub, { type SocialData, type SocialUser } from './social-hub';
-import { relativeTime } from './helpers';
-import { useJourneyState } from '../journey';
+import { CommunityMessages } from './community-messages';
 
 export const communityBase = (props: ScreenProps) =>
   props.data.profile.role === 'PARENT' ? '/parent-boards' : '/community';
 export function CommunityHeader({
   active = 'all',
   onSearch,
+  searchLabel = '게시글 검색',
   ...props
-}: ScreenProps & { active?: 'all' | 'school' | 'messages'; onSearch?: () => void }) {
+}: ScreenProps & {
+  active?: 'all' | 'school' | 'messages';
+  onSearch?: () => void;
+  searchLabel?: string;
+}) {
   const base = communityBase(props);
   const tabs = [
     { id: 'all', label: '전체 커뮤니티', href: base },
@@ -43,7 +37,7 @@ export function CommunityHeader({
       </nav>
       <div className="community-header-actions">
         {onSearch && (
-          <IconButton label="게시글 검색" onClick={onSearch}>
+          <IconButton label={searchLabel} onClick={onSearch}>
             <Search size={20} />
           </IconButton>
         )}
@@ -119,184 +113,13 @@ export function CommunityProfile(props: ScreenProps) {
     </>
   );
 }
-type Conversation = SocialUser & { body: string; createdAt: string };
 export function CommunityInbox(props: ScreenProps) {
-  const base = communityBase(props);
-  const inboxPath = `${base}?space=messages`;
-  const params = new URLSearchParams(props.path.split('?')[1]);
-  const peer = params.get('peer');
-  const [items, setItems] = useState<Conversation[]>([]);
-  const [peerUser, setPeerUser] = useState<SocialUser | null>(null);
-  const [social, setSocial] = useState<SocialData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [retry, setRetry] = useState(0);
-  const [query, setQuery] = useJourneyState('inbox.query', '');
-  const choosing = params.get('new') === '1';
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setError('');
-    Promise.all([
-      api<Conversation[]>('/messages?inbox=1'),
-      api<SocialData>('/social'),
-      peer
-        ? api<SocialUser>(`/messages?peer=1&userId=${encodeURIComponent(peer)}`)
-        : Promise.resolve(null),
-    ])
-      .then(([list, people, person]) => {
-        if (active) {
-          setItems(list);
-          setPeerUser(person);
-          setSocial(people);
-        }
-      })
-      .catch((e) => {
-        if (active) setError(e.message);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [retry, peer]);
-  const target =
-    peerUser || items.find((u) => u.id === peer) || social?.users.find((u) => u.id === peer);
-  const contacts = [
-    ...new Map(
-      [...(social?.following ?? []), ...(social?.followers ?? []), ...items].map((u) => [u.id, u]),
-    ).values(),
-  ];
-  const candidates = (choosing ? contacts : items).filter((u) =>
-    u.nickname.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
-  );
-  function open(user: SocialUser) {
-    props.navigate(`${inboxPath}${choosing ? '&new=1' : ''}&peer=${encodeURIComponent(user.id)}`);
-  }
   return (
-    <>
-      <CommunityHeader {...props} active="messages" />
-      <div className="page-inset pb-8 community-inbox">
-        {peer ? (
-          loading ? (
-            <p role="status" className="py-8 text-muted">
-              대화를 불러오고 있어요…
-            </p>
-          ) : target ? (
-            <SocialHub
-              key={peer}
-              {...props}
-              initialTab="messages"
-              initialUser={target}
-              onCloseConversation={() => props.back(inboxPath)}
-            />
-          ) : (
-            <EmptyState
-              title="대화를 열 수 없어요"
-              description={error || '상대가 탈퇴했거나 대화할 수 없는 계정이에요.'}
-              action={
-                <Button
-                  variant="secondary"
-                  onClick={() => props.navigate(inboxPath, { replace: true })}
-                >
-                  쪽지 목록으로
-                </Button>
-              }
-            />
-          )
-        ) : (
-          <>
-            <div className="community-inbox-heading">
-              <h1>{choosing ? '새 쪽지' : '쪽지함'}</h1>
-              <Button
-                size="compact"
-                variant="outline"
-                onClick={() =>
-                  choosing
-                    ? props.navigate(inboxPath, { replace: true })
-                    : props.navigate(`${inboxPath}&new=1`)
-                }
-              >
-                {choosing ? (
-                  '대화 목록'
-                ) : (
-                  <>
-                    <PencilLine size={16} />새 쪽지
-                  </>
-                )}
-              </Button>
-            </div>
-            <label className="community-search">
-              <Search size={18} />
-              <input
-                aria-label={choosing ? '쪽지 보낼 사람 검색' : '대화 상대 검색'}
-                placeholder={choosing ? '팔로우·대화 목록에서 찾기' : '대화 상대 검색'}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </label>
-            {error ? (
-              <div role="alert" className="layout-group py-6">
-                <p>{error}</p>
-                <Button variant="secondary" onClick={() => setRetry((v) => v + 1)}>
-                  다시 불러오기
-                </Button>
-              </div>
-            ) : loading ? (
-              <p role="status" className="py-8 text-muted">
-                쪽지함을 불러오고 있어요…
-              </p>
-            ) : candidates.length ? (
-              <div className="community-conversations">
-                {candidates.map((user) => (
-                  <button
-                    key={user.id}
-                    className="community-conversation"
-                    onClick={() => open(user)}
-                  >
-                    <span className="community-avatar">
-                      <MessageCircle size={22} />
-                    </span>
-                    <span className="community-conversation-copy">
-                      <strong>{user.nickname}</strong>
-                      {'body' in user && <span>{String(user.body)}</span>}
-                    </span>
-                    {'createdAt' in user && <time>{relativeTime(String(user.createdAt))}</time>}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                title={
-                  query
-                    ? '검색 결과가 없어요'
-                    : choosing
-                      ? '아직 연결된 사람이 없어요'
-                      : '아직 주고받은 쪽지가 없어요'
-                }
-                description={
-                  query
-                    ? '다른 닉네임으로 찾아보세요.'
-                    : choosing
-                      ? '도움이 된 답변의 프로필에서 쪽지를 시작할 수 있어요.'
-                      : '새 쪽지에서 대화할 상대를 선택할 수 있어요.'
-                }
-                action={
-                  !choosing && !query ? (
-                    <Button
-                      variant="secondary"
-                      onClick={() => props.navigate(`${inboxPath}&new=1`)}
-                    >
-                      첫 쪽지 시작하기
-                    </Button>
-                  ) : undefined
-                }
-              />
-            )}
-          </>
-        )}
-      </div>
-    </>
+    <CommunityMessages
+      {...props}
+      renderHeader={(onSearch) => (
+        <CommunityHeader {...props} active="messages" onSearch={onSearch} searchLabel="쪽지 검색" />
+      )}
+    />
   );
 }

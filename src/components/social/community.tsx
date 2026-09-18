@@ -12,21 +12,30 @@ import {
   PencilLine,
   Plus,
   Search,
-  Send,
   X,
 } from '@/components/icons';
 import { api } from '@/lib/api';
 import type { Comment, Post, ScreenProps } from '@/lib/contracts';
 import type { CommunityBlock } from '@/lib/community-types';
 import { communityGroup, readCommunityDraft } from '@/lib/community-draft';
+import {
+  longTitles,
+  markFollowed,
+  markFollowSuggested,
+  maySuggestFollow,
+  recordPostVisit,
+} from '@/lib/community-nudges';
 import { Button, EmptyState, IconButton, ScreenHeader, Sheet } from '@/components/ui';
-import { OptionField, Segmented } from '@/components/ui-choice';
+import { OptionField } from '@/components/ui-choice';
 import { relativeTime } from './helpers';
 import { useJourneyState } from '../journey';
+import { useLiveRefresh, useScreenRefresh } from '../refresh';
 import { CommunityHeader, communityBase } from './community-navigation';
 import { CommunityComposer } from './community-composer';
-import { BlockPicker, BlockView, BlockDraftList } from './community-blocks';
+import { BlockView } from './community-blocks';
+import { CommunityComments, type CommentThreadHandle } from './community-comments';
 import styles from './community-v3.module.css';
+import { SchoolJoin } from './school-join';
 const names: Record<string, string> = {
   QUESTION: '문제',
   CARD: '카드',
@@ -47,27 +56,35 @@ function PostRow({ post, onClick }: { post: Post; onClick: () => void }) {
   return (
     <button className={styles.postRow} onClick={onClick}>
       <span className={styles.postCopy}>
-        <span className={styles.postTitle}>
+        <span className={`${styles.postTitle}${longTitles() ? ` ${styles.postTitleLong}` : ''}`}>
           {post.solvedAt && <span className={styles.solved}>해결됨</span>}
           {post.title}
         </span>
-        {attachments(post) && <span className={styles.attachmentMeta}>{attachments(post)}</span>}
+        {post.body.trim() && (
+          <span className={styles.postExcerpt}>{post.body.replace(/\s+/g, ' ').trim()}</span>
+        )}
+        <span className={styles.postContext}>
+          <span>
+            {post.category}
+            {post.tags?.subjectName ? ` · ${post.tags.subjectName}` : ''}
+          </span>
+          {attachments(post) && <span className={styles.attachmentMeta}>{attachments(post)}</span>}
+        </span>
         <span className={styles.postMeta}>
-          {[
-            post.author,
-            post.tags?.grade,
-            post.tags?.subjectName,
-            relativeTime(post.createdAt),
-            post.commentCount
-              ? `댓글 ${post.commentCount}`
-              : post.category === '질문' && !post.solvedAt
-                ? '첫 답변을 기다려요'
-                : '',
-            post.likes ? `공감 ${post.likes}` : '',
-            post.editedAt ? '수정됨' : '',
-          ]
-            .filter(Boolean)
-            .join(' · ')}
+          <span className={styles.postByline}>
+            {post.author} · {relativeTime(post.createdAt)}
+            {post.editedAt ? ' · 수정' : ''}
+          </span>
+          <span className={styles.postCounts}>
+            <span aria-label={`공감 ${post.likes}`}>
+              <Heart size={13} />
+              {post.likes}
+            </span>
+            <span aria-label={`댓글 ${post.commentCount}`}>
+              <MessageCircle size={13} />
+              {post.commentCount}
+            </span>
+          </span>
         </span>
       </span>
       {photo && (
@@ -88,7 +105,10 @@ export default function Community(props: ScreenProps) {
     commented = params.get('commented') === '1';
   const activity = mine || saved || commented;
   const selectedId = params.get('post');
-  const [group, setGroup] = useJourneyState('community.v3.group', parent ? '공부 이야기' : '질문');
+  const [group, setGroup] = useJourneyState(
+    `community.feed.category.${school ? 'school' : 'all'}`,
+    '전체',
+  );
   const [sort, setSort] = useJourneyState('community.v3.sort', 'latest');
   const [query, setQuery] = useJourneyState('community.v3.query', '');
   const [searchOpen, setSearchOpen] = useJourneyState('community.searchOpen', false);
@@ -105,11 +125,63 @@ export default function Community(props: ScreenProps) {
   const [reloadKey, setReloadKey] = useState(0);
   const [composing, setComposing] = useState<'new' | 'resume' | null>(null);
   const [schoolInfo, setSchoolInfo] = useState(false);
+  const [pendingFeed, setPendingFeed] = useState<{
+    posts: Post[];
+    following: Post[];
+    cards: typeof followingCards;
+  } | null>(null);
+  const liveSequence = useRef(0);
   const draft = readCommunityDraft(data.profile.id);
   const allowed =
     (parent && path.startsWith('/parent-boards')) ||
     (!parent && data.profile.role === 'STUDENT' && path.startsWith('/community'));
   const postQuery = `/posts?role=${data.profile.role}${school ? '&scope=school' : ''}${mine ? '&mine=1' : ''}${saved ? '&saved=1' : ''}${commented ? '&commented=1' : ''}`;
+  const readLatest = async (signal?: AbortSignal, apply = false) => {
+    const sequence = ++liveSequence.current;
+    if (selectedId) {
+      const next = await api<Post>(`/posts/${encodeURIComponent(selectedId)}`, undefined, 'GET', {
+        signal,
+      });
+      if (!signal?.aborted && sequence === liveSequence.current) {
+        setDetail(next);
+        setError('');
+        setLoading(false);
+      }
+      return;
+    }
+    const [next, followed] = await Promise.all([
+      api<Post[]>(postQuery, undefined, 'GET', { signal }),
+      !parent && !activity && !school
+        ? api<{ posts: Post[]; cards: typeof followingCards }>(
+            '/community/following',
+            undefined,
+            'GET',
+            { signal },
+          )
+        : Promise.resolve({ posts: [], cards: [] }),
+    ]);
+    if (signal?.aborted || sequence !== liveSequence.current) return;
+    setError('');
+    setLoading(false);
+    if (apply || !posts.length) {
+      setPosts(next);
+      setFollowing(followed.posts);
+      setFollowingCards(followed.cards);
+      setPendingFeed(null);
+    } else if (
+      JSON.stringify([next, followed.posts, followed.cards]) !==
+      JSON.stringify([posts, following, followingCards])
+    ) {
+      setPendingFeed({ posts: next, following: followed.posts, cards: followed.cards });
+    } else setPendingFeed(null);
+  };
+  const pullLatest = async (signal?: AbortSignal) => readLatest(signal, true);
+  useScreenRefresh(pullLatest, allowed && !missing && !composing);
+  useLiveRefresh(readLatest, {
+    interval: selectedId ? 15_000 : 30_000,
+    enabled: allowed && !missing && !composing,
+    resource: `${postQuery}:${selectedId}`,
+  });
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -153,6 +225,16 @@ export default function Community(props: ScreenProps) {
       active = false;
     };
   }, [parent, activity, school, reloadKey]);
+  // A visit that ends in under 3 s means the row didn't say enough; five in a row widen titles.
+  const openedAt = useRef(0);
+  useEffect(() => {
+    if (selectedId) {
+      openedAt.current = Date.now();
+    } else if (openedAt.current) {
+      recordPostVisit(Date.now() - openedAt.current);
+      openedAt.current = 0;
+    }
+  }, [selectedId]);
   const subjects = new Set(data.subjects.map((s) => s.name));
   const unanswered = posts.filter(
     (p) =>
@@ -164,10 +246,14 @@ export default function Community(props: ScreenProps) {
   );
   const visible = useMemo(
     () =>
-      posts
+      (group === '팔로잉' && !activity ? following : posts)
         .filter(
           (p) =>
-            (activity || communityGroup(p.category) === group) &&
+            (activity ||
+              group === '전체' ||
+              group === '팔로잉' ||
+              p.category === group ||
+              (group === '입시' && communityGroup(p.category) === '입시')) &&
             (activity || !subject || p.tags?.subjectName === subject) &&
             (activity || !unansweredOnly || unanswered.some((u) => u.id === p.id)) &&
             (!query ||
@@ -180,6 +266,7 @@ export default function Community(props: ScreenProps) {
         ),
     [
       posts,
+      following,
       activity,
       group,
       subject,
@@ -200,8 +287,7 @@ export default function Community(props: ScreenProps) {
     return `${base}${p.size ? '?' + p : ''}`;
   };
   const reload = async () => {
-    if (selectedId) setDetail(await api<Post>(`/posts/${selectedId}`));
-    else setReloadKey((k) => k + 1);
+    await readLatest(undefined, true);
   };
   if (!allowed)
     return (
@@ -248,9 +334,17 @@ export default function Community(props: ScreenProps) {
             }
           />
         ) : (
-          <p className="page-inset py-8" role="status">
-            글을 불러오고 있어요…
-          </p>
+          <div className="page-inset py-4" aria-busy="true" aria-label="글을 불러오고 있어요">
+            <div className={styles.skeletonRow}>
+              <span className={styles.skeletonLine} style={{ width: '32%' }} />
+              <span className={`${styles.skeletonLine} ${styles.skeletonTitle}`} />
+              <span
+                className={`${styles.skeletonLine} ${styles.skeletonTitle}`}
+                style={{ width: '74%' }}
+              />
+              <span className={styles.skeletonLine} style={{ width: '46%' }} />
+            </div>
+          </div>
         )}
       </>
     );
@@ -274,13 +368,23 @@ export default function Community(props: ScreenProps) {
         />
       )}
       {missing ? (
-        <EmptyState
-          title="학교를 먼저 등록해 주세요"
-          description="프로필에 등록한 학교의 커뮤니티를 이용할 수 있어요."
-          action={<Button onClick={() => props.navigate('/profile')}>학교 정보 등록하기</Button>}
-        />
+        <SchoolJoin refresh={props.refresh} />
       ) : (
         <div className={`page-inset ${styles.feed}`}>
+          {pendingFeed && (
+            <button
+              className={styles.newUpdates}
+              onClick={() => {
+                setPosts(pendingFeed.posts);
+                setFollowing(pendingFeed.following);
+                setFollowingCards(pendingFeed.cards);
+                setPendingFeed(null);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            >
+              새 소식 보기
+            </button>
+          )}
           {searchOpen && (
             <div className={styles.search}>
               <Search size={18} />
@@ -303,24 +407,29 @@ export default function Community(props: ScreenProps) {
             </div>
           )}
           {!activity && (
-            <div className={styles.filters}>
-              <Segmented label="이야기 종류" value={group}
-                options={(parent ? ['공부 이야기', '입시'] : ['질문', '공부 이야기', '입시']).map((g) => ({value: g, label: g}))}
-                onChange={(g) => {setGroup(g); setUnansweredOnly(false);}} />
-              {!parent && (
-                <OptionField
-                  compact
-                  label="과목 필터"
-                  name="feed-subject"
-                  value={subject}
-                  onChange={setSubject}
-                  options={[
-                    { value: '', label: '모든 과목' },
-                    ...data.subjects.map((s) => ({ value: s.name, label: s.name })),
-                  ]}
-                />
-              )}
-            </div>
+            <nav className={styles.categories} aria-label="게시판 종류">
+              {[
+                '전체',
+                ...(!parent ? ['질문'] : []),
+                '자유',
+                '공부 팁',
+                '입시',
+                ...(!parent && !school ? ['팔로잉'] : []),
+              ].map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  aria-pressed={group === category}
+                  onClick={() => {
+                    setGroup(category);
+                    setUnansweredOnly(false);
+                    setSubject('');
+                  }}
+                >
+                  {category}
+                </button>
+              ))}
+            </nav>
           )}
           <div className="community-feed-toolbar">
             {school ? (
@@ -335,17 +444,32 @@ export default function Community(props: ScreenProps) {
             ) : (
               <span className="community-feed-context">{activity ? '내 활동' : '모든 학교'}</span>
             )}
-            <OptionField
-              compact
-              label="게시글 정렬"
-              name="feed-sort"
-              value={sort}
-              onChange={setSort}
-              options={[
-                { value: 'latest', label: '최신순' },
-                { value: 'popular', label: '공감순' },
-              ]}
-            />
+            <div className={styles.feedTools}>
+              {!activity && !parent && group === '질문' && (
+                <OptionField
+                  compact
+                  label="과목 필터"
+                  name="feed-subject"
+                  value={subject}
+                  onChange={setSubject}
+                  options={[
+                    { value: '', label: '모든 과목' },
+                    ...data.subjects.map((s) => ({ value: s.name, label: s.name })),
+                  ]}
+                />
+              )}
+              <OptionField
+                compact
+                label="게시글 정렬"
+                name="feed-sort"
+                value={sort}
+                onChange={setSort}
+                options={[
+                  { value: 'latest', label: '최신순' },
+                  { value: 'popular', label: '인기순' },
+                ]}
+              />
+            </div>
           </div>
           {!!draft && !activity && (
             <button className={styles.summaryRow} onClick={() => setComposing('resume')}>
@@ -359,7 +483,7 @@ export default function Community(props: ScreenProps) {
               </span>
             </button>
           )}
-          {!activity && !!unanswered.length && (
+          {!activity && group === '질문' && !!unanswered.length && (
             <button
               className={styles.summaryRow}
               aria-pressed={unansweredOnly}
@@ -369,40 +493,12 @@ export default function Community(props: ScreenProps) {
                 setUnansweredOnly((v) => !v);
               }}
             >
-              <span>내 과목 질문 {unanswered.length}개가 답변을 기다려요</span>
+              <span>답변 기다리는 내 과목 질문 · {unanswered.length}</span>
               <span>
                 {unansweredOnly ? '전체 질문' : '보기'}
                 <ChevronRight size={16} />
               </span>
             </button>
-          )}
-          {!activity && !school && !!(following.length + followingCards.length) && (
-            <details className={styles.following}>
-              <summary>
-                팔로잉의 글 {following.length}개 · 카드 {followingCards.length}개
-                <ChevronDown size={16} />
-              </summary>
-              {following.slice(0, 5).map((p) => (
-                <PostRow key={p.id} post={p} onClick={() => openPost(p)} />
-              ))}
-              {followingCards.slice(0, 5).map((c) => (
-                <button
-                  key={c.block.id}
-                  className={styles.postRow}
-                  onClick={() =>
-                    props.navigate(`/community/profile?user=${encodeURIComponent(c.authorId)}`)
-                  }
-                >
-                  <span className={styles.postCopy}>
-                    <span className={styles.postTitle}>
-                      {String(c.block.payload.front || '공개 학습 카드')}
-                    </span>
-                    <span className={styles.postMeta}>{c.author} · 공개 카드 보기</span>
-                  </span>
-                  <ChevronRight size={18} />
-                </button>
-              ))}
-            </details>
           )}
           {error ? (
             <EmptyState
@@ -415,9 +511,15 @@ export default function Community(props: ScreenProps) {
               }
             />
           ) : loading ? (
-            <p role="status" className="py-8 text-muted">
-              이야기를 가져오고 있어요…
-            </p>
+            <div aria-busy="true" aria-label="이야기를 가져오고 있어요">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className={styles.skeletonRow}>
+                  <span className={styles.skeletonLine} style={{ width: '34%' }} />
+                  <span className={`${styles.skeletonLine} ${styles.skeletonTitle}`} />
+                  <span className={styles.skeletonLine} style={{ width: '58%' }} />
+                </div>
+              ))}
+            </div>
           ) : !visible.length ? (
             <EmptyState
               title={
@@ -425,9 +527,11 @@ export default function Community(props: ScreenProps) {
                   ? '검색 결과가 없어요'
                   : activity
                     ? '아직 모인 글이 없어요'
-                    : group === '질문'
-                      ? '첫 질문을 남겨 보세요'
-                      : '첫 이야기를 들려주세요'
+                    : group === '팔로잉'
+                      ? '팔로우한 사람의 새 글이 여기에 모여요'
+                      : group === '질문'
+                        ? '첫 질문을 남겨 보세요'
+                        : '첫 이야기를 들려주세요'
               }
               description={
                 subject || query || unansweredOnly
@@ -452,6 +556,32 @@ export default function Community(props: ScreenProps) {
           ) : (
             visible.map((p) => <PostRow key={p.id} post={p} onClick={() => openPost(p)} />)
           )}
+          {!activity && group === '팔로잉' && !school && !parent && (
+            <section className={styles.following} aria-label="팔로잉의 공개 카드">
+              {!following.length && !followingCards.length && (
+                <p className={styles.followingEmpty}>
+                  도움이 된 답변이나 카드에서 팔로우하면 여기 모여요
+                </p>
+              )}
+              {followingCards.slice(0, 5).map((c) => (
+                <button
+                  key={c.block.id}
+                  className={styles.postRow}
+                  onClick={() =>
+                    props.navigate(`/community/profile?user=${encodeURIComponent(c.authorId)}`)
+                  }
+                >
+                  <span className={styles.postCopy}>
+                    <span className={styles.postTitle}>
+                      {String(c.block.payload.front || '공개 학습 카드')}
+                    </span>
+                    <span className={styles.postMeta}>{c.author} · 공개 카드 보기</span>
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+              ))}
+            </section>
+          )}
           <div className={styles.fab}>
             <Button onClick={() => setComposing('new')}>
               <PencilLine size={18} />
@@ -465,10 +595,19 @@ export default function Community(props: ScreenProps) {
           {...props}
           autoResume={composing === 'resume'}
           scope={school ? 'school' : 'all'}
+          initial={{
+            category: ['질문', '자유', '공부 팁'].includes(group)
+              ? group
+              : group === '입시'
+                ? '수시'
+                : '자유',
+          }}
           onClose={() => setComposing(null)}
           onPublished={(post) => {
             setReloadKey((k) => k + 1);
-            props.navigate(`${base}?${post.school ? 'space=school&' : ''}post=${encodeURIComponent(post.id)}`);
+            props.navigate(
+              `${base}?${post.school ? 'space=school&' : ''}post=${encodeURIComponent(post.id)}`,
+            );
           }}
         />
       )}
@@ -504,18 +643,8 @@ export function CommunityPostDetail({
   const { data, toast } = props;
   const own = post.isMine || post.authorId === data.profile.id;
   const base = communityBase(props);
-  const [comments, setComments] = useState<Comment[]>([]),
-    [loading, setLoading] = useState(true),
-    [error, setError] = useState('');
-  const [body, setBody] = useJourneyState(`community.comment.${post.id}`, '');
-  const [block, setBlock] = useJourneyState<CommunityBlock | null>(
-    `community.commentBlock.${post.id}`,
-    null,
-  );
-  const [reply, setReply] = useJourneyState<Comment | null>(`community.reply.${post.id}`, null);
-  const [requestId, setRequestId] = useJourneyState(`community.commentRequest.${post.id}`, () =>
-    crypto.randomUUID(),
-  );
+  const commentThread = useRef<CommentThreadHandle>(null);
+  const [error, setError] = useState('');
   const [busy, setBusy] = useState(false),
     [menu, setMenu] = useState(false),
     [report, setReport] = useState(false),
@@ -523,32 +652,9 @@ export function CommunityPostDetail({
     [blockConfirm, setBlockConfirm] = useState(false),
     [remove, setRemove] = useState(false),
     [editing, setEditing] = useState(false),
-    [picker, setPicker] = useState(false),
-    [accept, setAccept] = useState<Comment | null>(null),
-    [reloadKey, setReloadKey] = useState(0);
+    [accept, setAccept] = useState<Comment | null>(null);
   const [cloneAccepted, setCloneAccepted] = useState(false);
-  const textarea = useRef<HTMLTextAreaElement>(null);
   const lock = useRef(false);
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    api<Comment[]>(`/posts/${post.id}/comments`)
-      .then((c) => {
-        if (active) {
-          setComments(c);
-          setError('');
-        }
-      })
-      .catch((e) => {
-        if (active) setError(e.message);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [post.id, reloadKey]);
   async function run(action: () => Promise<void>) {
     if (lock.current) return;
     lock.current = true;
@@ -564,82 +670,12 @@ export function CommunityPostDetail({
     }
   }
   const refreshComments = async () => {
-    setComments(await api<Comment[]>(`/posts/${post.id}/comments`));
+    await commentThread.current?.reload();
     await onChange();
   };
   const profile = (id: string) =>
     props.navigate(`/community/profile?user=${encodeURIComponent(id)}`);
-  const focusReply = (comment?: Comment) => {
-    setReply(comment || null);
-    setRequestId(crypto.randomUUID());
-    textarea.current?.focus();
-  };
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!body.trim() && !block) return;
-    await run(async () => {
-      await api(`/posts/${post.id}/comments`, {
-        body: body.trim(),
-        parentId: reply?.id,
-        block,
-        requestId,
-      });
-      setBody('');
-      setBlock(null);
-      setReply(null);
-      setRequestId(crypto.randomUUID());
-      toast(reply ? '답글을 남겼어요' : '댓글을 남겼어요');
-      try {
-        await refreshComments();
-      } catch {
-        setError('댓글은 저장됐어요. 다시 불러오면 확인할 수 있어요.');
-      }
-    });
-  }
-  const commentNode = (c: Comment, nested = false) => (
-    <div
-      key={c.id}
-      className={`${styles.comment} ${nested ? styles.reply : ''} ${c.accepted ? styles.acceptedComment : ''}`}
-    >
-      <div className={styles.commentMeta}>
-        {c.authorId && data.profile.role === 'STUDENT' ? (
-          <button onClick={() => profile(c.authorId!)}>
-            {c.author}
-            <ChevronRight size={12} />
-          </button>
-        ) : (
-          <strong>{c.author}</strong>
-        )}
-        <span>{relativeTime(c.createdAt)}</span>
-        {c.accepted && <span className={styles.solved}>채택</span>}
-      </div>
-      <p className={styles.commentBody}>{c.body}</p>
-      {c.block && (
-        <BlockView
-          block={c.block}
-          postId={post.id}
-          data={data}
-          navigate={props.navigate}
-          toast={toast}
-          onChanged={onChange}
-        />
-      )}
-      <div className={styles.commentActions}>
-        {!nested && <button onClick={() => focusReply(c)}>답글 달기</button>}
-        {own && post.category === '질문' && !c.isMine && c.authorId !== data.profile.id && (
-          <button
-            disabled={busy || c.accepted}
-            onClick={() => {
-              setAccept(c);
-              setCloneAccepted(false);
-            }}
-          >
-            {c.accepted ? '채택한 답변' : '이 답변 채택'}
-          </button>
-        )}
-      </div>
-    </div>
-  );
+  const focusReply = () => commentThread.current?.focus();
   return (
     <>
       {!embedded && (
@@ -688,6 +724,7 @@ export function CommunityPostDetail({
               toast={toast}
               onChanged={onChange}
               onFeedback={() => focusReply()}
+              postAuthor={{ id: post.authorId, name: post.author }}
             />
           ))}
         </div>
@@ -736,128 +773,25 @@ export function CommunityPostDetail({
             복사
           </button>
         </div>
-        <section className={styles.comments} aria-label="댓글">
-          <div className={styles.sectionHeading}>
-            <h2>댓글 {comments.length}</h2>
-            <Button
-              size="compact"
-              variant="ghost"
-              disabled={loading}
-              onClick={() => setReloadKey((k) => k + 1)}
-            >
-              새로고침
-            </Button>
-          </div>
-          {loading ? (
-            <p role="status">댓글을 가져오고 있어요…</p>
-          ) : !comments.length ? (
-            <p className="text-sm text-muted">
-              아는 만큼만 답해도 돼요. 카드나 문제를 붙여도 좋아요.
-            </p>
-          ) : (
-            comments
-              .filter((c) => !c.parentId)
-              .sort(
-                (a, b) =>
-                  Number(
-                    comments.some((c) => c.accepted && (c.id === b.id || c.parentId === b.id)),
-                  ) -
-                  Number(
-                    comments.some((c) => c.accepted && (c.id === a.id || c.parentId === a.id)),
-                  ),
-              )
-              .map((c) => (
-                <div key={c.id}>
-                  {commentNode(c)}
-                  {comments.filter((r) => r.parentId === c.id).map((r) => commentNode(r, true))}
-                </div>
-              ))
-          )}
-        </section>
+        <CommunityComments
+          ref={commentThread}
+          key={post.id}
+          {...props}
+          data={data}
+          post={post}
+          embedded={embedded}
+          onChange={onChange}
+          onAccept={(comment) => {
+            setAccept(comment);
+            setCloneAccepted(false);
+          }}
+        />
         {error && (
           <p role="alert" className="text-sm text-danger">
             {error}
           </p>
         )}
       </article>
-      <form
-        onSubmit={submit}
-        className={`${styles.commentComposer} ${embedded ? styles.embeddedComposer : ''}`}
-      >
-        {reply && (
-          <div className={styles.replyTo}>
-            <span>{reply.author}님에게 답글</span>
-            <IconButton
-              label="답글 취소"
-              disabled={busy}
-              onClick={() => {
-                setReply(null);
-                setRequestId(crypto.randomUUID());
-              }}
-            >
-              <X size={16} />
-            </IconButton>
-          </div>
-        )}
-        {block && (
-          <div className={styles.commentAttachment}>
-            <span>{names[block.type]} 첨부 1/1</span>
-            <IconButton
-              label="댓글 첨부 제거"
-              disabled={busy}
-              onClick={() => {
-                setBlock(null);
-                setRequestId(crypto.randomUUID());
-              }}
-            >
-              <X size={16} />
-            </IconButton>
-          </div>
-        )}
-        <div className={styles.commentInput}>
-          <IconButton label="댓글 첨부" disabled={busy || !!block} onClick={() => setPicker(true)}>
-            <Plus size={20} />
-          </IconButton>
-          <textarea
-            ref={textarea}
-            disabled={busy}
-            aria-label={reply ? '답글 내용' : '댓글 내용'}
-            value={body}
-            maxLength={2000}
-            rows={2}
-            placeholder="아는 만큼만 답해도 돼요"
-            onChange={(e) => {
-              setBody(e.target.value);
-              setRequestId(crypto.randomUUID());
-            }}
-          />
-          <IconButton
-            type="submit"
-            label={reply ? '답글 보내기' : '댓글 보내기'}
-            className={styles.send}
-            disabled={busy || (!body.trim() && !block)}
-          >
-            <Send size={18} />
-          </IconButton>
-        </div>
-        {error && (
-          <p role="alert" className="text-xs text-danger">
-            {error}
-          </p>
-        )}
-      </form>
-      <BlockPicker
-        data={data}
-        open={picker}
-        comment
-        remaining={block ? 0 : 1}
-        onClose={() => setPicker(false)}
-        onAdd={(b) => {
-          setBlock(b);
-          setPicker(false);
-          setRequestId(crypto.randomUUID());
-        }}
-      />
       {editing && (
         <CommunityComposer
           {...props}
@@ -901,7 +835,22 @@ export function CommunityPostDetail({
                 }
                 setAccept(null);
                 await refreshComments();
-                toast(resultMessage);
+                const answerer = accept.authorId;
+                if (answerer && !accept.isMine && maySuggestFollow(answerer)) {
+                  markFollowSuggested(answerer);
+                  toast(`${accept.author}님이 해결을 도왔어요 · 팔로우하면 새 카드를 받아요`, {
+                    label: '팔로우',
+                    onClick: () =>
+                      api('/follow', { userId: answerer, following: true })
+                        .then(() => {
+                          markFollowed(answerer, true);
+                          toast(`${accept.author}님의 새 카드 알림을 받아요`);
+                        })
+                        .catch((e) => toast((e as Error).message)),
+                  });
+                } else {
+                  toast(resultMessage);
+                }
                 props.refresh().catch(() => {});
               })
             }

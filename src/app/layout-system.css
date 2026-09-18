@@ -2,6 +2,12 @@
    Public semantic roles below are preferred over scale values in new components. */
 :root {
   --space-unit: 4px;
+  /* Visual viewport (src/lib/keyboard-inset.ts): the strip hidden behind the on-screen keyboard,
+     the visible height, and the status-bar inset of the installed web app. */
+  --keyboard-inset: 0px;
+  --vv-height: 100dvh;
+  --vv-top: 0px;
+  --safe-top: env(safe-area-inset-top, 0px);
   --space-1: var(--space-unit);
   --space-2: calc(var(--space-unit) * 2);
   --space-3: calc(var(--space-unit) * 3);
@@ -24,9 +30,19 @@
   --header-height: 64px;
   --control-size: 44px;
   --control-height: 52px;
+  --bottom-nav-padding-top: calc(var(--space-unit) * 1.25);
+  --bottom-nav-padding-bottom: env(safe-area-inset-bottom, 0px);
+  --bottom-nav-height: calc(
+    var(--control-size) + var(--bottom-nav-padding-top) + var(--bottom-nav-padding-bottom) + 1px
+  );
   --radius: 20px;
   --radius-panel: 16px;
   --radius-control: 12px;
+}
+@media (min-width: 700px) {
+  :root {
+    --bottom-nav-padding-bottom: max(var(--space-4), env(safe-area-inset-bottom, 0px));
+  }
 }
 /* Reading groups own gaps. Children must not add a second sibling margin. */
 .layout-section {
@@ -39,41 +55,28 @@
   gap: var(--gap-block);
   min-width: 0;
 }
-.control-outline,
-.btn-outline {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--gap-inline);
-  min-height: var(--control-size);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
-  background: white;
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.5;
-  font-weight: 600;
-  text-align: center;
+/* Route focus announces the new screen; only interactive controls need a visible ring. */
+.app-main:focus {
+  outline: none;
 }
-.control-outline:hover,
-.btn-outline:hover {
-  background: var(--surface-muted);
+
+/* Fixed primary actions reserve the same space in short and long page content. */
+.has-page-action-dock {
+  padding-bottom: calc(
+    var(--control-height) + var(--space-6) + max(var(--space-3), env(safe-area-inset-bottom))
+  );
 }
-.control-outline:active,
-.btn-outline:active {
-  background: var(--border-subtle);
+.page-action-dock {
+  position: fixed;
+  z-index: 30;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--app-width);
+  padding: var(--space-3) var(--page-gutter) max(var(--space-3), env(safe-area-inset-bottom));
+  background: var(--surface-raised);
 }
-/* Explicit size variants replace ad-hoc !min-h overrides. */
-.btn.btn-compact {
-  min-height: var(--control-size);
-  padding: var(--space-2) var(--space-3);
-  font-size: 13px;
-}
-.btn.btn-outline {
-  border: 1px solid var(--border-strong);
-  background: white;
-}
-.btn.btn-outline:hover {
-  background: var(--surface-muted);
+.page-action-dock > .btn {
+  width: 100%;
 }
