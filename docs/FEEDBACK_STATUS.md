@@ -111,7 +111,9 @@
 
 초기 `.unlazy/community-v3-frontier` / `community-v3-editor`의 미체크 목록은 이후 변경된 글쓰기·커뮤니티 구조를 전제로 한 옛 항목도 포함한다. 이를 현재 미구현 기능이나 이번 새 검증 성공으로 집계하지 않는다. 후속 사용자 요청에 맞춘 `community-familiar`·`editor-tools` 등의 기록을 함께 참조한다.
 
-## TypeSafe Jev 평가
+## TypeSafe Jev 평가와 통합
+
+판정 모델을 제품에 넣었다(`AI_JUDGE=off|shadow|on`, 기본 off): 서술형 채점의 별도 검수 호출을 판정 일치로 대체하고, 생성 검수를 판정으로 선별하며, 서술형 화면은 채점을 기다리는 동안 `POST /api/essay/judge`의 빠른 판정으로 핵심 개념 표시를 먼저 보여 준다. LLM 경로·통합 경로·판정 단독의 비교표와 측정 방법은 [TypeSafe Jev 평가](TYPESAFE_JEV_EVALUATION.md)에 있고, 구조는 [AI 아키텍처](AI_ARCHITECTURE.md)의 판정 모델 절에 있다. 운영 배포에서는 `shadow`로 일치율을 먼저 기록한다.
 
 생성이 아닌 판정 호출(서술형 채점의 키워드 상태·유형·지시 삽입, 객관식 독립 풀이, 키워드/방해어 근거)을 실제 API로 측정했다. 답안 유형 98%, 근거 판정 100%, 지시 삽입 감지 100%, 요청 p50 0.27초·전체 $0.018. 권장 순서와 통합 계획은 [TypeSafe Jev 평가](TYPESAFE_JEV_EVALUATION.md)에 있다. 제품 코드는 바꾸지 않았다.
 

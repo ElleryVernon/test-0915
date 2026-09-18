@@ -330,7 +330,8 @@ func TestCLIInfrastructureStopStillPreservesLaterCheckpoints(t *testing.T) {
 	defer srv.Close()
 	out := filepath.Join(t.TempDir(), "stopped")
 	output, exit := runnerCLI(t, srv.URL, "--allow-live", "--cases", casesPath, "--tasks", "grade", "--count", "1", "--judge=false", "--stop-on-infrastructure-error", "--resume-products", saved, "--out", out)
-	if exit != 2 || calls.Load() != 1 {
+	// The provider re-sends a never-billed 429 ai.UpstreamRetries times before it counts as an outage.
+	if exit != 2 || calls.Load() != int32(1+ai.UpstreamRetries) {
 		t.Fatalf("infrastructure did not stop: exit=%d calls=%d %s", exit, calls.Load(), output)
 	}
 	kept, err := loadProductCheckpoints(filepath.Join(out, "report.json"), cfg, inputHash, 1)

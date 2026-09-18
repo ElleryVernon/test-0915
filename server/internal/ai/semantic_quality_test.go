@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"memoryz/server/internal/apierr"
 )
@@ -232,6 +233,7 @@ func TestUpstreamFailureKeepsUnknownUsageAndInfrastructureStatus(t *testing.T) {
 	for _, status := range []int{429, 500, 503} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) })
+			p.retryBase, p.retryCap = time.Millisecond, 2*time.Millisecond
 			ctx, usage := CaptureUsage(context.Background())
 			_, err := p.JSON(ctx, "test", object(map[string]any{"ok": map[string]any{"type": "boolean"}}, "ok"), "memoryz_test", nil)
 			e, ok := apierr.From(err)
@@ -239,8 +241,17 @@ func TestUpstreamFailureKeepsUnknownUsageAndInfrastructureStatus(t *testing.T) {
 				t.Fatalf("upstream failure was classified as invalid model output: %v", err)
 			}
 			rows := usage.Requests()
-			if len(rows) != 1 || !rows[0].TransportFailure || rows[0].HTTPStatus != status || rows[0].Cost != nil || rows[0].ModelReported || rows[0].ProviderReported {
-				t.Fatalf("unknown failed usage was lost or attributed as confirmed: %+v", rows)
+			want := 1
+			if status == 429 {
+				want = 1 + UpstreamRetries // every refused attempt is recorded
+			}
+			if len(rows) != want {
+				t.Fatalf("expected %d recorded attempts, got %+v", want, rows)
+			}
+			for _, row := range rows {
+				if !row.TransportFailure || row.HTTPStatus != status || row.Cost != nil || row.ModelReported || row.ProviderReported {
+					t.Fatalf("unknown failed usage was lost or attributed as confirmed: %+v", rows)
+				}
 			}
 		})
 	}

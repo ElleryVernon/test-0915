@@ -306,7 +306,8 @@ func TestGradeReviewDoesNotTurnUpstreamFailureIntoRepair(t *testing.T) {
 		calls := 0
 		p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 			calls++
-			if calls == 2 {
+			// The review fails; a 429 keeps failing through the provider's bounded re-sends.
+			if calls == 2 || (status == 429 && calls > 2) {
 				w.WriteHeader(status)
 				return
 			}
@@ -314,8 +315,13 @@ func TestGradeReviewDoesNotTurnUpstreamFailureIntoRepair(t *testing.T) {
 			writeGradeTestResponse(w, raw)
 		})
 		p.cfg.AIQualityReview = true
+		p.retryBase, p.retryCap = time.Millisecond, 2*time.Millisecond
+		wantCalls := 2
+		if status == 429 {
+			wantCalls = 2 + UpstreamRetries
+		}
 		in, _ := semanticGradeFixture()
-		if _, err := GradeWithAI(context.Background(), p, in); err == nil || calls != 2 {
+		if _, err := GradeWithAI(context.Background(), p, in); err == nil || calls != wantCalls {
 			t.Fatalf("status=%d calls=%d err=%v", status, calls, err)
 		}
 	}
@@ -327,7 +333,12 @@ func TestGradeRepairDoesNotRetryUpstreamFailures(t *testing.T) {
 		calls := 0
 		p := testProvider(t, func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(status) })
 		p.cfg.AIQualityReview = true
-		if _, err := GradeWithAI(context.Background(), p, in); err == nil || calls != 1 {
+		p.retryBase, p.retryCap = time.Millisecond, 2*time.Millisecond
+		wantCalls := 1 // only a never-billed 429 is re-sent, and only by the provider itself
+		if status == 429 {
+			wantCalls = 1 + UpstreamRetries
+		}
+		if _, err := GradeWithAI(context.Background(), p, in); err == nil || calls != wantCalls {
 			t.Fatalf("status=%d calls=%d err=%v", status, calls, err)
 		}
 	}

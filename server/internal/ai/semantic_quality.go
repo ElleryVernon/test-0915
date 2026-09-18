@@ -37,13 +37,34 @@ type qualityReview struct {
 // Its outcome is still probabilistic; offline gold evaluation remains a separate gate.
 func reviewItems(ctx context.Context, p *Provider, content string, mode Kind, count int, raw any) (string, error) {
 	p = p.qualityReviewer()
-	if mode == KindQuiz {
+	// The judge solves the batch first: an item it rejects goes straight back to the generator, and
+	// a batch it accepts with confidence lets the separate model solve be skipped when AI_JUDGE=on.
+	// Anything the judge cannot do (no key, long source, transport) leaves the path unchanged.
+	solved := false
+	if (mode == KindQuiz || mode == KindEssay) && p.jev.Available() {
+		issues, confident, err := judgeGeneratedItems(ctx, p.jev, content, mode, count, raw)
+		switch {
+		case err != nil:
+			p.log.Info("jev review judgment unavailable", "reason", err.Error())
+		case issues != "":
+			noteJudgment(ctx, "generation review: judge rejected items (mode "+p.jev.Mode()+")")
+			if p.jev.Active() {
+				return issues, nil
+			}
+		case confident && p.jev.Active():
+			noteJudgment(ctx, "generation review: model solve skipped, judge confident")
+			solved = true
+		default:
+			noteJudgment(ctx, fmt.Sprintf("generation review: judge %s (mode %s)", map[bool]string{true: "confident", false: "unsure"}[confident], p.jev.Mode()))
+		}
+	}
+	if mode == KindQuiz && !solved {
 		issues, err := solveQuizBlind(ctx, p, content, count, raw)
 		if err != nil || issues != "" {
 			return issues, err
 		}
 	}
-	if mode == KindEssay {
+	if mode == KindEssay && !solved {
 		issues, err := solveEssayChoicesBlind(ctx, p, content, count, raw)
 		if err != nil || issues != "" {
 			return issues, err

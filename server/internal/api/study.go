@@ -28,6 +28,7 @@ func init() {
 		mux.Handle("/api/generate", httpx.Methods{http.MethodPost: httpx.Deadline(aiTimeout, s.withUser(s.generate, store.RoleSTUDENT))})
 		mux.Handle("/api/quiz/answer", httpx.Methods{http.MethodPost: s.withUser(s.answerQuiz, store.RoleSTUDENT)})
 		mux.Handle("/api/essay/submit", httpx.Methods{http.MethodPost: httpx.Deadline(aiTimeout, s.withUser(s.submitEssay, store.RoleSTUDENT))})
+		mux.Handle("/api/essay/judge", httpx.Methods{http.MethodPost: s.withUser(s.judgeEssay, store.RoleSTUDENT)})
 		mux.Handle("/api/planner/suggest", httpx.Methods{http.MethodPost: httpx.Deadline(aiTimeout, s.withUser(s.suggestPlans, store.RoleSTUDENT))})
 		mux.Handle("/api/ai-runs/{id}", httpx.Methods{http.MethodGet: s.withUser(s.readAiRun)})
 	})
@@ -38,6 +39,8 @@ const aiTimeout = ai.RequestTimeout
 
 var (
 	errQuestionNotFound = apierr.New(404, "문제를 찾을 수 없어요.")
+	errJudgeUnavailable = apierr.New(503, "빠른 판정을 지금은 사용할 수 없어요.")
+	errJudgeFailed      = apierr.New(503, "빠른 판정을 받지 못했어요. 채점 결과를 기다려 주세요.")
 	errMaterialTooShort = apierr.New(400, "학습 자료에 본문을 20자 이상 추가해 주세요.")
 	errMaterialChanged  = apierr.New(409, "생성 중 학습 자료가 변경됐어요. 최신 자료를 확인하고 다시 시도해 주세요.")
 	ruleGradeMethod     = "키워드·순서 기반 연습 채점"
@@ -264,6 +267,52 @@ type ruleGrade struct {
 	Missing  []string `json:"missing"`
 	Feedback string   `json:"feedback"`
 	Method   string   `json:"method"`
+}
+
+// judgeEssay returns the judge's quick verdict on an answer (keyword marks and a provisional score)
+// in well under a second, so the screen can show marks while the graded coaching is written. It is
+// never the grade: the grade request that follows decides the score and the feedback. No run record
+// is kept; the call is one bounded judgment with the essay the student owns.
+func (s *Server) judgeEssay(w http.ResponseWriter, r *http.Request, user store.User) error {
+	jev := s.ai.Jev()
+	if !jev.Active() {
+		return errJudgeUnavailable
+	}
+	var in struct {
+		EssayID string `json:"essayId"`
+		Answer  string `json:"answer"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	v := &validator{}
+	v.id(in.EssayID)
+	in.Answer = v.text(in.Answer, 10_000)
+	if err := v.result(); err != nil {
+		return err
+	}
+	essay, err := s.q.GetOwnedEssay(r.Context(), store.GetOwnedEssayParams{ID: in.EssayID, UserID: user.ID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errQuestionNotFound
+	}
+	if err != nil {
+		return err
+	}
+	// A paid call like any other: it draws on the student's AI budget.
+	if err := s.aiBudget(r.Context(), user.ID); err != nil {
+		return err
+	}
+	ctx, usage := ai.CaptureUsage(r.Context())
+	verdict, err := ai.JudgeGrade(ctx, jev, ai.GradeInput{Prompt: essay.Prompt, Keywords: essay.Keywords, ModelAnswer: essay.ModelAnswer, Citation: essay.Citation, Answer: in.Answer})
+	if err != nil {
+		s.log.Info("essay judge unavailable", "reason", err.Error())
+		return errJudgeFailed
+	}
+	for _, u := range usage.Requests() {
+		s.log.Debug("essay judge", "model", u.Model, "inputTokens", u.PromptTokens, "durationMs", u.DurationMs)
+	}
+	httpx.OK(w, http.StatusOK, verdict)
+	return nil
 }
 
 func (s *Server) submitEssay(w http.ResponseWriter, r *http.Request, user store.User) error {

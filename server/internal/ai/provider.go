@@ -20,6 +20,7 @@ import (
 
 	"memoryz/server/internal/apierr"
 	"memoryz/server/internal/config"
+	"memoryz/server/internal/jitter"
 	"memoryz/server/internal/telemetry"
 )
 
@@ -135,13 +136,19 @@ type Image struct {
 type Provider struct {
 	cfg     *config.Config
 	baseURL string
-	// jitter: none — no retry loop: paid calls are never retried, and HTTP/2 shares one connection [site server/internal/ai/provider.go:123]
+	// jitter: none — the transport itself never retries (a timed-out or failed call may have reached the model and been billed); the only re-send is the bounded upstream-429 loop in JSON, which is never billed [site server/internal/ai/provider.go:123]
 	client *http.Client
-	log    *slog.Logger
+	// retryBase/retryCap shape the wait before re-sending a call the upstream refused with 429 (not
+	// billed: the model did not run); rand draws the jitter. Tests shrink them.
+	retryBase, retryCap time.Duration
+	rand                jitter.Rand
+	log                 *slog.Logger
 	// slots admits paid model calls first come, first served (AI_CONCURRENCY per instance); a call
 	// waits at most wait for one.
 	slots *semaphore.Weighted
 	wait  time.Duration
+	// jev is the judgment model that runs beside the generator; inert unless configured.
+	jev *Jev
 }
 
 const (
@@ -154,6 +161,10 @@ const (
 	admissionWait = 30 * time.Second
 	// busySpread spreads the retries of callers refused together (admission or upstream 429).
 	busyMin, busySpread = 10 * time.Second, 10 * time.Second
+	// UpstreamRetries is how many times a call the upstream refused with 429 is re-sent, each after the provider's
+	// own short hint plus full jitter U[0, min(upstreamRetryCap, upstreamRetryBase·2^k)).
+	UpstreamRetries                     = 2
+	upstreamRetryBase, upstreamRetryCap = time.Second, 8 * time.Second
 	// upstreamMax bounds how long a provider's Retry-After can push a learner away.
 	upstreamMax = 10 * time.Minute
 )
@@ -168,8 +179,15 @@ func NewProvider(cfg *config.Config, baseURL string, log *slog.Logger) *Provider
 		slots = defaultConcurrency
 	}
 	return &Provider{cfg: cfg, baseURL: strings.TrimRight(baseURL, "/"), client: &http.Client{Timeout: ProviderTimeout}, log: log,
-		slots: semaphore.NewWeighted(slots), wait: admissionWait}
+		slots: semaphore.NewWeighted(slots), wait: admissionWait, jev: NewJev(cfg, cfg.TypeSafeBaseURL, log),
+		retryBase: upstreamRetryBase, retryCap: upstreamRetryCap, rand: jitter.Std}
 }
+
+// Jev is the judgment model attached to this provider (never nil; inert unless configured).
+func (p *Provider) Jev() *Jev { return p.jev }
+
+// SetJev replaces the judge; tests point it at a fake.
+func (p *Provider) SetJev(j *Jev) { p.jev = j }
 
 // admit queues the call for a slot. Our own wait running out is a 429 whose hint spreads the
 // refused callers over [10 s, 20 s); the caller's deadline or a drain ending first returns that
@@ -193,6 +211,22 @@ func (p *Provider) admit(ctx context.Context) (func(), error) {
 
 // upstreamWait reads a provider's Retry-After (delta-seconds or an HTTP date), kept within
 // [10 s, 10 min]; a missing or unreadable header gives the 10 s floor.
+// retryAfterHint reads Retry-After as a plain duration (seconds or an HTTP date), 0 when absent
+// or unreadable, for the in-process re-send decision; upstreamWait derives the learner's hint.
+func retryAfterHint(header string, now time.Time) time.Duration {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return 0
+	}
+	if secs, err := strconv.ParseInt(header, 10, 64); err == nil {
+		return max(0, time.Duration(secs)*time.Second)
+	}
+	if at, err := http.ParseTime(header); err == nil {
+		return max(0, at.Sub(now))
+	}
+	return 0
+}
+
 func upstreamWait(header string, now time.Time) time.Duration {
 	wait := busyMin
 	if header = strings.TrimSpace(header); header != "" {
@@ -339,14 +373,6 @@ func (p *Provider) JSON(ctx context.Context, prompt string, schema map[string]an
 		return nil, err
 	}
 	started := time.Now()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+p.cfg.OpenRouterAPIKey)
-	req.Header.Set("X-OpenRouter-Title", "Memoryz")
-	req.Header.Set("User-Agent", "Memoryz/1.0 (+https://github.com/memoryz)")
 	recorded, httpStatus := false, 0
 	defer func() {
 		if !recorded {
@@ -359,14 +385,59 @@ func (p *Provider) JSON(ctx context.Context, prompt string, schema map[string]an
 			}
 		}
 	}()
-	res, err := p.client.Do(req)
-	if err != nil {
-		// The caller's own deadline or a drain ended the call: that is the caller's error (a hinted
-		// 504 timeout, or an interrupted run), not a slow provider.
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+	var res *http.Response
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
 		}
-		return nil, errProviderSlow
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+p.cfg.OpenRouterAPIKey)
+		req.Header.Set("X-OpenRouter-Title", "Memoryz")
+		req.Header.Set("User-Agent", "Memoryz/1.0 (+https://github.com/memoryz)")
+		res, err = p.client.Do(req)
+		if err != nil {
+			// The caller's own deadline or a drain ended the call: that is the caller's error (a hinted
+			// 504 timeout, or an interrupted run), not a slow provider.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, errProviderSlow
+		}
+		if res.StatusCode != http.StatusTooManyRequests {
+			break
+		}
+		// An upstream 429 refused the call before the model ran, so nothing was billed and the same
+		// call can be sent again. Wait the provider's own hint (when short) plus full jitter, at most
+		// UpstreamRetries times, and only while the caller's deadline still leaves a model call's worth;
+		// otherwise the learner gets the hinted 429 as before.
+		telemetry.AIUpstream429(ctx)
+		header := res.Header.Get("Retry-After")
+		_, _ = io.Copy(io.Discard, res.Body)
+		_ = res.Body.Close()
+		if c, ok := ctx.Value(usageKey{}).(*UsageCollector); ok {
+			c.add(Usage{RequestedModel: p.cfg.OpenRouterModel, Model: p.cfg.OpenRouterModel, Task: name, Effort: p.cfg.OpenRouterEffort,
+				HTTPStatus: http.StatusTooManyRequests, TransportFailure: true, DurationMs: time.Since(started).Milliseconds()})
+		}
+		hint := retryAfterHint(header, time.Now())
+		wait := hint + jitter.Full(p.rand, attempt, p.retryBase, p.retryCap)
+		deadline, limited := ctx.Deadline()
+		if attempt >= UpstreamRetries || hint > p.retryCap || (limited && time.Until(deadline) < wait+retryBudget) {
+			recorded = true
+			// jitter: retry-after clamp(upstream Retry-After, 10 s, 10 min) + U[0,10 s) once the in-process re-sends are exhausted or would not fit the deadline [site server/internal/ai/provider.go:248]
+			return nil, errBusy.Retry(upstreamWait(header, time.Now()), busySpread)
+		}
+		if c, ok := ctx.Value(usageKey{}).(*UsageCollector); ok {
+			c.note(Retry{Kind: "upstream_429", Reason: fmt.Sprintf("attempt %d refused; re-sending after %d ms", attempt+1, wait.Milliseconds())})
+		}
+		p.log.Info("ai upstream 429", slog.String("task", name), slog.Int("attempt", attempt+1), slog.Int64("waitMs", wait.Milliseconds()))
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		// jitter: backoff upstream 429 re-send: Retry-After (≤ 8 s) + U[0, min(8 s, 1 s·2^k)), at most 2 re-sends, only with ≥ 60 s of the caller's deadline left; a refused call was never billed [site server/internal/ai/provider.go:upstream-429]
+		case <-time.After(wait):
+		}
+		started = time.Now()
 	}
 	defer res.Body.Close()
 	httpStatus = res.StatusCode
@@ -374,13 +445,9 @@ func (p *Provider) JSON(ctx context.Context, prompt string, schema map[string]an
 		switch res.StatusCode {
 		case http.StatusPaymentRequired:
 			return nil, errQuota
-		case http.StatusTooManyRequests:
-			// Never retried here: the learner decides, after the provider's own wait plus a spread.
-			// jitter: retry-after clamp(upstream Retry-After, 10 s, 10 min) + U[0,10 s); the paid call is never retried [site server/internal/ai/provider.go:248]
-			telemetry.AIUpstream429(ctx)
-			return nil, errBusy.Retry(upstreamWait(res.Header.Get("Retry-After"), time.Now()), busySpread)
 		}
 		if res.StatusCode >= 500 {
+			// jitter: retry-after U[10 s, 20 s) for an upstream 5xx; the call may have reached the model, so it is never re-sent [site server/internal/ai/provider.go:5xx]
 			return nil, apierr.WithCode(503, "AI 서비스가 일시적으로 응답하지 않아요. 잠시 후 다시 시도해 주세요.", "AI_UPSTREAM_UNAVAILABLE").Retry(busyMin, busySpread)
 		}
 		return nil, apierr.New(502, fmt.Sprintf("AI 서비스에 연결하지 못했어요. (응답 %d)", res.StatusCode))

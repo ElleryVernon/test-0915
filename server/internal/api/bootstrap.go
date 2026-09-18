@@ -131,7 +131,9 @@ type appData struct {
 	Notifications []notificationView `json:"notifications"`
 	Stats         statsView          `json:"stats"`
 	AIAvailable   bool               `json:"aiAvailable"`
-	Demo          bool               `json:"demo"`
+	// JudgeAvailable: the quick keyword verdict (POST /api/essay/judge) may be requested.
+	JudgeAvailable bool `json:"judgeAvailable"`
+	Demo           bool `json:"demo"`
 }
 
 func jsRound(v float64) int { return int(math.Floor(v + 0.5)) }
@@ -277,7 +279,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 		out := appData{
 			Profile: profileOf(user), Subjects: []subjectView{}, Materials: []materialView{}, Questions: []questionRow{}, Essays: []essayRow{},
 			Cards: []cardView{}, Attempts: []attemptView{}, Schedules: []scheduleView{}, Posts: posts, Cheers: []cheerView{}, Notifications: []notificationView{},
-			AIAvailable: s.ai.Available(), Demo: user.ID == demo.Student || user.ID == demo.Parent || user.ID == demo.Admin,
+			AIAvailable: s.ai.Available(), JudgeAvailable: s.ai.Jev().Active(), Demo: user.ID == demo.Student || user.ID == demo.Parent || user.ID == demo.Admin,
 		}
 		pendingOnboarding, err := s.auth.NeedsOnboarding(ctx, user.ID)
 		if err != nil {

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"memoryz/server/internal/apierr"
 	"memoryz/server/internal/config"
@@ -87,6 +88,7 @@ func TestProviderJSON(t *testing.T) {
 	if order := lastBody["provider"].(map[string]any)["order"].([]any); len(order) != 2 || lastBody["provider"].(map[string]any)["allow_fallbacks"] != false {
 		t.Fatalf("provider routing: %v", lastBody["provider"])
 	}
+	p.retryBase, p.retryCap = time.Millisecond, 2*time.Millisecond // a 429 is re-sent twice before the hint
 	for header, want := range map[string]int{"content": 0, "402": 503, "429": 429, "500": 503, "length": 502, "refusal": 422, "garbage": 502} {
 		p.client.Transport = headerTransport{"X-Test": header}
 		value, err := p.JSON(context.Background(), "prompt", object(map[string]any{"text": str(0, 10)}, "text"), "memoryz_ocr", nil)

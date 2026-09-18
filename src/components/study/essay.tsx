@@ -5,6 +5,8 @@ import { StudyLibraryAction } from './subjects';
 import styles from './essay-structure.module.css';
 import writing from './essay-writing.module.css';
 import { CommunityAsk } from '../social/community-ask';
+import { QuickJudgment, type EssayJudgment } from './essay-judgment';
+import { api } from '@/lib/api';
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Eye, PencilLine, RotateCcw, X } from '@/components/icons';
 import type { Essay, Material, ScreenProps } from '@/lib/contracts';
@@ -184,6 +186,9 @@ function EssayExercise({
     setWritingHelp(null);
   };
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  // The judge's quick verdict on the submitted answer, shown until the graded coaching arrives.
+  const [quick, setQuick] = useState<EssayJudgment | null>(null);
+  const [quickPending, setQuickPending] = useState(false);
   const [viewer, setViewer] = useState<{ material: Material; citation?: string } | null>(null);
   const [task, setTask] = useState<AiTaskRecord | null>(null);
   const action = useAction();
@@ -672,16 +677,18 @@ function EssayExercise({
               </div>
               {writingHelp === 'structure' && (
                 <>
-                <EssayStructure
-                  modelAnswer={essay.modelAnswer}
-                  citation={essay.citation}
-                  keywords={essay.keywords}
-                />
-                <Citation
-                  citation={essay.citation}
-                  material={material}
-                  onOpen={() => setViewer(material ? { material, citation: essay.citation } : null)}
-                />
+                  <EssayStructure
+                    modelAnswer={essay.modelAnswer}
+                    citation={essay.citation}
+                    keywords={essay.keywords}
+                  />
+                  <Citation
+                    citation={essay.citation}
+                    material={material}
+                    onOpen={() =>
+                      setViewer(material ? { material, citation: essay.citation } : null)
+                    }
+                  />
                 </>
               )}
               {writingHelp === 'coaching' && <EssayAnswerChunks text={coaching} />}
@@ -726,6 +733,7 @@ function EssayExercise({
                   시작해요.
                 </p>
               )}
+              <QuickJudgment judgment={quick} keywords={essay.keywords} pending={quickPending} />
               <ErrorNote error={action.error} />
               {unchangedRevision && (
                 <p className="text-sm text-muted" role="status">
@@ -747,6 +755,15 @@ function EssayExercise({
                       endpoint: '/essay/submit' as const,
                       payload: { essayId: essay.id, answer: answer.trim() },
                     };
+                    if (props.data.judgeAvailable) {
+                      // Ask the judge beside the grade; its marks arrive in well under a second.
+                      setQuick(null);
+                      setQuickPending(true);
+                      api<EssayJudgment>('/essay/judge', lookup.payload)
+                        .then(setQuick)
+                        .catch(() => setQuick(null))
+                        .finally(() => setQuickPending(false));
+                    }
                     try {
                       // jitter: none — students finish their answers at different times; the wait loop's timing is runAiTask's [site src/components/study/essay.tsx:486]
                       const response = await runAiTask<Feedback>({
@@ -755,6 +772,8 @@ function EssayExercise({
                         onStatus: setTask,
                       });
                       setFeedback(response);
+                      setQuick(null);
+                      setQuickPending(false);
                       await props.refresh();
                       await acknowledgeAiTask(lookup);
                       window.scrollTo({ top: 0 });
@@ -823,7 +842,9 @@ function EssayExercise({
               </div>
             </div>
             <div className="rounded-[20px] bg-ink p-5 text-white">
-              <h2 className="text-[15px] font-bold">{feedback.score === 100 ? '잘 설명했어요' : '이렇게 다듬어 보세요'}</h2>
+              <h2 className="text-[15px] font-bold">
+                {feedback.score === 100 ? '잘 설명했어요' : '이렇게 다듬어 보세요'}
+              </h2>
               <EssayAnswerChunks
                 text={feedback.feedback}
                 className="mt-3 text-sm leading-[1.8] text-white/85"

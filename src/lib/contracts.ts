@@ -243,6 +243,8 @@ export interface AppData {
   };
   child?: Profile;
   aiAvailable: boolean;
+  /** The quick keyword verdict (POST /api/essay/judge) may be requested while a grade is pending. */
+  judgeAvailable?: boolean;
   demo: boolean;
 }
 /** Goes to path; `replace` swaps the current history entry (for one-shot intents like home's camera link). */

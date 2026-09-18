@@ -73,6 +73,10 @@ type Config struct {
 	OpenRouterBaseURL        string // empty means openrouter.ai; tests point it at a fake
 	AIRatePerMinute          int    // paid model requests one student may start per minute
 	AIRatePerDay             int
+	TypeSafeAPIKey           string // secret: TypeSafe (Jev) judgment model
+	TypeSafeModel            string // jev-latest unless pinned
+	TypeSafeBaseURL          string // empty means api.typesafe.ai; tests point it at a fake
+	AIJudge                  string // off (default): no judgments; shadow: record verdicts only; on: agreement may replace the separate review call
 
 	PDFWorkers       int
 	AIConcurrency    int
@@ -168,6 +172,10 @@ func Load(get func(string) (string, bool)) (*Config, error) {
 		OpenRouterBaseURL:        env("OPENROUTER_BASE_URL", ""),
 		AIRatePerMinute:          intOf("AI_RATE_PER_MINUTE", 10),
 		AIRatePerDay:             intOf("AI_RATE_PER_DAY", 200),
+		TypeSafeAPIKey:           env("TYPESAFE_API_KEY", ""),
+		TypeSafeModel:            env("TYPESAFE_MODEL", "jev-latest"),
+		TypeSafeBaseURL:          env("TYPESAFE_BASE_URL", ""),
+		AIJudge:                  env("AI_JUDGE", "off"),
 		PDFWorkers:               intOf("PDF_WORKERS", 2),
 		AIConcurrency:            intOf("AI_CONCURRENCY", 16),
 		AIQualityReview:          env("AI_QUALITY_REVIEW", "true") != "false",
@@ -364,6 +372,20 @@ func Load(get func(string) (string, bool)) (*Config, error) {
 	if c.AIRatePerMinute < 1 || c.AIRatePerDay < 1 {
 		problems = append(problems, "AI_RATE_PER_MINUTE and AI_RATE_PER_DAY must be positive")
 	}
+	if c.AIJudge != "off" && c.AIJudge != "shadow" && c.AIJudge != "on" {
+		problems = append(problems, "AI_JUDGE must be off, shadow or on")
+	}
+	if c.AIJudge != "off" && c.TypeSafeAPIKey == "" {
+		problems = append(problems, "AI_JUDGE needs TYPESAFE_API_KEY")
+	}
+	if c.TypeSafeModel == "" || !regexp.MustCompile(`^[a-zA-Z0-9._:/-]+$`).MatchString(c.TypeSafeModel) {
+		problems = append(problems, "TYPESAFE_MODEL has unexpected characters")
+	}
+	if c.TypeSafeBaseURL != "" {
+		if u, err := url.Parse(c.TypeSafeBaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			problems = append(problems, "TYPESAFE_BASE_URL must be an absolute http(s) URL")
+		}
+	}
 	if c.PprofAddr != "" && !strings.HasPrefix(c.PprofAddr, "127.0.0.1:") && !strings.HasPrefix(c.PprofAddr, "localhost:") {
 		problems = append(problems, "PPROF_ADDR must bind loopback")
 	}
@@ -392,6 +414,11 @@ func Load(get func(string) (string, bool)) (*Config, error) {
 
 // AIAvailable reports whether AI-backed features can run.
 func (c *Config) AIAvailable() bool { return c.OpenRouterAPIKey != "" && c.OpenRouterModel != "" }
+
+// JudgeAvailable reports whether the Jev judgment model may be called (shadow or on, with a key).
+func (c *Config) JudgeAvailable() bool {
+	return c.TypeSafeAPIKey != "" && (c.AIJudge == "shadow" || c.AIJudge == "on")
+}
 
 // Secure reports whether cookies must carry the Secure flag.
 func (c *Config) Secure() bool { return strings.HasPrefix(c.AppURL, "https:") }
@@ -431,6 +458,7 @@ func (c *Config) Redacted() map[string]any {
 		"openRouterApiKey": set(c.OpenRouterAPIKey), "openRouterModel": c.OpenRouterModel, "openRouterEffort": c.OpenRouterEffort, "openRouterQualityModel": c.OpenRouterQualityModel,
 		"openRouterProviderOrder": c.OpenRouterProviderOrder, "openRouterBaseUrl": c.OpenRouterBaseURL, "aiRatePerMinute": c.AIRatePerMinute, "aiRatePerDay": c.AIRatePerDay,
 		"pdfWorkers": c.PDFWorkers, "aiConcurrency": c.AIConcurrency,
+		"typeSafeApiKey": set(c.TypeSafeAPIKey), "typeSafeModel": c.TypeSafeModel, "typeSafeBaseUrl": c.TypeSafeBaseURL, "aiJudge": c.AIJudge,
 		"uploadLegacyDirs": c.UploadLegacyDirs, "migrateOnStart": c.MigrateOnStart, "logLevel": c.LogLevel, "googleProject": c.GoogleProject, "trustProxy": c.TrustProxy, "trustedProxies": len(c.TrustedProxies), "pprofAddr": c.PprofAddr,
 	}
 }

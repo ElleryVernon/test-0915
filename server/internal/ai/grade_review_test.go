@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func evidenceGradeReviewTestIssue(kind string, index int, reason string) map[string]any {
@@ -266,9 +267,14 @@ func TestEvidenceGradeReviewProviderPropagatesFailuresWithoutRetry(t *testing.T)
 				w.WriteHeader(tc.status)
 				_, _ = io.WriteString(w, tc.body)
 			})
+			p.retryBase, p.retryCap = time.Millisecond, 2*time.Millisecond
+			wantCalls := int32(1)
+			if tc.status == 429 {
+				wantCalls = 1 + UpstreamRetries // the provider re-sends a never-billed 429, nothing else does
+			}
 			input, raw := evidenceGradeReviewTestData()
 			issues, err := reviewEvidenceGrade(context.Background(), p, input, raw)
-			if issues != "" || err == nil || calls.Load() != 1 || (tc.want != nil && !errors.Is(err, tc.want)) || (tc.want == nil && errors.Is(err, errGradeReview)) {
+			if issues != "" || err == nil || calls.Load() != wantCalls || (tc.want != nil && !errors.Is(err, tc.want)) || (tc.want == nil && errors.Is(err, errGradeReview)) {
 				t.Fatalf("failure changed or retried: %q %v calls=%d", issues, err, calls.Load())
 			}
 		})

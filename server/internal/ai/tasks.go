@@ -527,6 +527,33 @@ func GradeWithAI(ctx context.Context, p *Provider, input GradeInput) (planner.Gr
 	if p.cfg.AIQualityReview {
 		requestedSchema = evidenceGradeSchema(len(input.Keywords))
 	}
+	// The judge reads the same answer beside the grader. Its verdict is ready long before the grade;
+	// when it agrees with the validated grade with confidence and AI_JUDGE=on, the separate review
+	// call is skipped. Any judge failure means "no judgment" and the review runs as before.
+	judgment := make(chan *GradeJudgment, 1)
+	if p.cfg.AIQualityReview && p.jev.Available() {
+		jctx, cancel := context.WithTimeout(ctx, jevTimeout)
+		defer cancel()
+		go func() {
+			g, err := JudgeGrade(jctx, p.jev, input)
+			if err != nil {
+				p.log.Info("jev grade judgment unavailable", "reason", err.Error())
+				judgment <- nil
+				return
+			}
+			judgment <- &g
+		}()
+	} else {
+		judgment <- nil
+	}
+	var verdict *GradeJudgment
+	verdictKnown := false
+	awaitVerdict := func() *GradeJudgment {
+		if !verdictKnown {
+			verdict, verdictKnown = <-judgment, true
+		}
+		return verdict
+	}
 	return runTyped(ctx, KindGrade,
 		func(ctx context.Context) (any, error) {
 			for attempt := 0; attempt < 2; attempt++ {
@@ -541,7 +568,18 @@ func GradeWithAI(ctx context.Context, p *Provider, input GradeInput) (planner.Gr
 				if err == nil {
 					_, err = validatedEvidenceGrade(raw, input)
 				}
+				skipReview := false
 				if err == nil {
+					if g := awaitVerdict(); g != nil {
+						agree, reason := g.Agreement(raw)
+						noteJudgment(ctx, fmt.Sprintf("grade %s: %s (mode %s)", map[bool]string{true: "agreement", false: "disagreement"}[agree], reason, p.jev.Mode()))
+						skipReview = agree && p.jev.Active()
+					}
+				}
+				if err == nil && skipReview {
+					noteJudgment(ctx, "grade review skipped: judge agrees")
+				}
+				if err == nil && !skipReview {
 					issues, err = reviewEvidenceGrade(ctx, p.qualityReviewer(), input, raw)
 					if err != nil && !errors.Is(err, errGradeReview) && !errors.Is(err, errBadFormat) && !errors.Is(err, errNoResult) && !errors.Is(err, errUnfinished) {
 						return nil, err
