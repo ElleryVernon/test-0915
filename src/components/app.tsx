@@ -528,17 +528,25 @@ function SearchScreen({ data, navigate, back }: ScreenProps) {
           />
         </label>
         {!term ? (
-          <>
-            <SectionTitle title="내 과목에서 찾기" />
-            <div className="flex gap-2 flex-wrap">
-              {data.subjects.map((s) => (
-                <button className="pill" key={s.id} onClick={() => navigate(`/subjects/${s.id}`)}>
-                  {s.name}
-                  <ChevronRight size={13} />
-                </button>
-              ))}
-            </div>
-          </>
+          data.subjects.length ? (
+            <>
+              <SectionTitle title="내 과목에서 찾기" />
+              <div className="flex gap-2 flex-wrap">
+                {data.subjects.map((s) => (
+                  <button className="pill" key={s.id} onClick={() => navigate(`/subjects/${s.id}`)}>
+                    {s.name}
+                    <ChevronRight size={13} />
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <EmptyState
+              title="아직 만든 과목이 없어요"
+              description="과목을 만들고 자료를 올리면 여기에서 바로 검색할 수 있어요."
+              action={<Button onClick={() => navigate('/subjects')}>첫 과목 만들기</Button>}
+            />
+          )
         ) : (
           <>
             <SectionTitle title={`자료 ${materials.length}`} />

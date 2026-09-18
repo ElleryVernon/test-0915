@@ -141,15 +141,18 @@ Scope: 바텀 네브 env() 플랫폼 분기 유지 + 제로 인셋 플로어(≥
 Scope: UI/UX 동결. 쓸모없는 함수래퍼·기능상 병목·리팩토링 대상을 코드베이스 전반에서 찾아 검수하고, 확실한 개선만 적용. 회귀 없어야 함.
 
 - [ ] R1: 감사 결과(찾은 문제·적용한 개선·보류 사유)가 보고됨
-- [ ] R2: 적용된 개선이 타입체크·전체 테스트 통과
+- [x] R2: 적용된 개선이 타입체크·전체 테스트 통과
   CHECK: npm run typecheck && npm run test 2>&1 | tail -5
   EXPECT: fail 0
-- [ ] R3: 정적 웹 검사·키보드 브라우저 체크 회귀 없음
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=ℹ todo 0 | ℹ duration_ms 13593.088667
+- [x] R3: 정적 웹 검사·키보드 브라우저 체크 회귀 없음
   CHECK: npm run check:web && rm -rf .data/keyboard-web-check && cp -R out .data/keyboard-web-check && KB_EXPORT=.data/keyboard-web-check npx tsx scripts/keyboard-browser-check.ts 2>&1 | tail -3
   EXPECT: KEYBOARD_BROWSER_OK
-- [ ] R4: Go 서버 측 변경이 있으면 go build·테스트 통과
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=49 simulated-viewport checks passed at http://127.0.0.1:53379 | KEYBOARD_BROWSER_OK evidence=/var/folders/z0/1vqg6kys5t74k2zxq11x31fh0000gn/T/memoryz-kb-check-xbIEIQ
+- [x] R4: Go 서버 측 변경이 있으면 go build·테스트 통과
   CHECK: cd server && go build ./... && go test ./... 2>&1 | tail -5
   EXPECT: ok
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=?   	memoryz/server/internal/testenv	[no test files] | ok  	memoryz/server/internal/textmatch	(cached)
 
 ## mobile-nav-pattern — 모바일 내비 패턴 리서치·결정 (2026-09-18)
 
@@ -174,18 +177,46 @@ Scope: 현재 바텀 네브(학생 5탭·학부모 4탭)를 햄버거/사이드�
 
 Scope: 커뮤니티 탭 unread 닷 배지(app.tsx·globals.css·테스트) 커밋 → 이미지 → Cloud Run → 프로덕션 검증.
 
-- [ ] D1: 변경 4파일이 커밋되고 작업 트리가 깨끗함
+- [x] D1: 변경 4파일이 커밋되고 작업 트리가 깨끗함
   CHECK: git status --porcelain -- src tests | wc -l | tr -d ' '
   EXPECT: 0
-- [ ] D2: linux/amd64 이미지 빌드·푸시
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=0
+- [x] D2: linux/amd64 이미지 빌드·푸시
   CHECK: node scripts/deploy.mjs image --tag $(git rev-parse --short=12 HEAD)
   EXPECT: IMAGE_PUSHED
-- [ ] D3: Artifact Registry 이미지 검증
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=#26 pushing manifest for asia-northeast3-docker.pkg.dev/memoryz-prod/memoryz/server:37944fcf3411@sha256:1a02de95dfb2dd23cec567d28ceb5cd19a98f6b80e1250e8f3f002e83a5c1fea 1.0s done | #26 DONE 7.3s
+- [x] D3: Artifact Registry 이미지 검증
   CHECK: node scripts/deploy.mjs verify-image --tag $(git rev-parse --short=12 HEAD)
   EXPECT: IMAGE_OK
-- [ ] D4: Cloud Run 배포·검증
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=IMAGE_OK sha=37944fcf3411 size=37MB digest=sha256:1a02de95dfb2 static=bundled
+- [x] D4: Cloud Run 배포·검증
   CHECK: node scripts/deploy.mjs service --tag $(git rev-parse --short=12 HEAD) && node scripts/deploy.mjs verify-service
   EXPECT: SERVICE_OK
-- [ ] D5: 프로덕션 CSS에 .nav-dot 서빙 + 헬스 정상
+  EVIDENCE: exit=0 (재실행); 첫 실행 SERVICE_NOT_OK 오류 → 원인: dev-proxy 체크(R3)가 tsconfig.json 을 더럽혀 treeTag()가 37944fcf3411-dirty-* 기대값 생성, 라이브 이미지는 :37944fcf3411 로 정상 배포됨. tsconfig 복원 후 verify-service → SERVICE_OK revision=memoryz-00025-2mc image=37944fcf3411 ready=True, gcloud 확인: 100% traffic·latestReady 일치.
+- [x] D5: 프로덕션 CSS에 .nav-dot 서빙 + 헬스 정상
   CHECK: for c in $(curl -s https://memoryz.kr/ | grep -o '/_next/static/chunks/[a-zA-Z0-9_-]*\.css' | sort -u); do curl -s "https://memoryz.kr$c"; done | grep -o '\.nav-dot{' | head -1 && curl -s https://memoryz.kr/api/health | grep -o '"status":"ok"'
   EXPECT: .nav-dot{
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=.nav-dot{ | "status":"ok"
+
+## search-empty-deploy — 검색 빈 과목 CTA + 푸시·배포 (2026-09-18)
+
+Scope: 검색 화면 빈 과목 CTA(app.tsx·신규 테스트) 커밋 → origin/main 푸시(보류 중이던 커밋 포함) → 이미지 → Cloud Run → 프로덕션 검증.
+
+- [ ] E1: 변경이 커밋되고 src/tests 트리가 깨끗함
+  CHECK: git status --porcelain -- src tests | wc -l | tr -d ' '
+  EXPECT: 0
+- [ ] E2: origin/main 에 모든 로컬 커밋이 푸시됨
+  CHECK: git rev-list --count origin/main..HEAD
+  EXPECT: 0
+- [ ] E3: linux/amd64 이미지 빌드·푸시
+  CHECK: node scripts/deploy.mjs image --tag $(git rev-parse --short=12 HEAD)
+  EXPECT: IMAGE_PUSHED
+- [ ] E4: Artifact Registry 이미지 검증
+  CHECK: node scripts/deploy.mjs verify-image --tag $(git rev-parse --short=12 HEAD)
+  EXPECT: IMAGE_OK
+- [ ] E5: Cloud Run 배포·검증
+  CHECK: node scripts/deploy.mjs service --tag $(git rev-parse --short=12 HEAD) && node scripts/deploy.mjs verify-service
+  EXPECT: SERVICE_OK
+- [ ] E6: 프로덕션 번들에 빈 과목 CTA 카피 서빙 + 헬스 정상
+  CHECK: for c in $(curl -s https://memoryz.kr/ | grep -o '/_next/static/chunks/[a-zA-Z0-9_-]*\.js' | sort -u | head -40); do curl -s "https://memoryz.kr$c"; done | grep -o '아직 만든 과목이 없어요' | head -1 && curl -s https://memoryz.kr/api/health | grep -o '"status":"ok"'
+  EXPECT: 아직 만든 과목이 없어요
