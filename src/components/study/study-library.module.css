@@ -1,7 +1,7 @@
 .home {
   display: grid;
   gap: var(--gap-section);
-  padding: var(--gap-block) var(--page-gutter) var(--gap-section);
+  padding: var(--space-3) var(--page-gutter) var(--gap-section);
 }
 .addFolder {
   display: flex;

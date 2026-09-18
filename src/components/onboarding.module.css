@@ -388,7 +388,7 @@
   background: var(--source-highlight);
   color: inherit;
   border-radius: 3px;
-  padding: 0 1px;
+  padding: 0 calc(var(--space-unit) * 0.25);
 }
 .schoolResults button:focus-visible {
   outline: var(--focus-ring);

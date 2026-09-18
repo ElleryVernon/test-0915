@@ -116,7 +116,7 @@ test('the picker keeps its search header fixed and lets only the results scroll'
   const list = block('.schoolResults');
   assert.equal(prop(list, 'list-style'), 'none');
   const row = block('.schoolResults button');
-  assert.equal(prop(row, 'min-height'), '76px');
+  assert.equal(prop(row, 'min-height'), '68px');
   assert.equal(prop(row, 'background'), null, 'flat rows, not nested cards');
   const name = block('.schoolResults strong');
   assert.equal(prop(name, 'overflow-wrap'), 'anywhere', 'long school names wrap inside the row');
@@ -134,7 +134,7 @@ test('the grade row and its fieldset can shrink to the column instead of overflo
       `${selector} cannot be pushed wider by an item`,
     );
   }
-  const name = block('.schoolResults button > span');
+  const name = block('.schoolRowText');
   assert.equal(prop(name, 'min-width'), '0');
   const address = block('.schoolResults small');
   assert.equal(prop(address, 'overflow-wrap'), 'anywhere', 'long addresses wrap inside the row');

@@ -167,8 +167,8 @@ svg {
   isolation: isolate;
 }
 .app-main {
-  min-height: calc(100dvh - 84px);
-  padding-bottom: calc(var(--space-unit) * 28);
+  min-height: calc(100dvh - var(--bottom-nav-height));
+  padding-bottom: calc(var(--bottom-nav-height) + var(--space-6));
 }
 .app-main-focus {
   min-height: 100dvh;
@@ -369,9 +369,6 @@ svg {
 .bg-primary,
 .bg-accent {
   color: var(--on-primary);
-}
-.app-main:has(> .home-screen) {
-  padding-bottom: calc(calc(var(--space-unit) * 18) + env(safe-area-inset-bottom, 0));
 }
 .home-screen {
   padding-top: env(safe-area-inset-top, 0);
@@ -2688,9 +2685,6 @@ button.recall-card:active {
     bottom: 24px;
     border-radius: 28px;
     max-height: calc(100dvh - 48px);
-  }
-  .app-main {
-    padding-bottom: calc(var(--space-unit) * 30);
   }
 }
 @media (prefers-reduced-motion: reduce) {

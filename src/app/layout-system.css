@@ -32,18 +32,15 @@
   --control-size: 44px;
   --control-height: 52px;
   --bottom-nav-padding-top: calc(var(--space-unit) * 1.25);
-  --bottom-nav-padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* env() tracks the platform: Safari's floating toolbar on iOS, the home indicator in the
+     installed app, ~0 on Android/desktop where the floor keeps the bar off the edge. */
+  --bottom-nav-padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--space-4));
   --bottom-nav-height: calc(
     var(--control-size) + var(--bottom-nav-padding-top) + var(--bottom-nav-padding-bottom) + 1px
   );
   --radius: 20px;
   --radius-panel: 16px;
   --radius-control: 12px;
-}
-@media (min-width: 700px) {
-  :root {
-    --bottom-nav-padding-bottom: max(var(--space-4), env(safe-area-inset-bottom, 0px));
-  }
 }
 /* Reading groups own gaps. Children must not add a second sibling margin. */
 .layout-section {

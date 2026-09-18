@@ -110,3 +110,28 @@ Scope: 검색 전 화면을 콘텐츠로 채움(지역 빠른선택 칩·최근 
 
 - [x] P4: iOS 실제 소프트 키보드에서 새 피커 검색·스크롤·선택·닫힘·복귀 전체 흐름 확인 (네이티브, S4 이어서)
   EVIDENCE: 2026-09-18 S4와 동일 네이티브 세션 — 새 피커 UI에서 idle 상태(최근 선택·지역 칩·전국 고등학교 둘러보기) 실기기 렌더 확인(nat11/24), "서울" 실입력→14개 결과 하이라이트(nat12), 결과 탭→선택→복귀(nat21), 재오픈→최근 선택 주황 체크(nat24), ← 취소→선택 보존(nat26). 리스트 스크롤 네이티브 확인은 합성 pan 미도달로 브라우저 체크 커버리지 사용.
+
+## layout-spacing-deploy — 바텀 네브 세이프에어리어·상단 여백 정리 + 배포 (2026-09-18)
+
+Scope: 바텀 네브 env() 플랫폼 분기 유지 + 제로 인셋 플로어(≥700px 중복 규칙 제거), 콘텐츠 하단 예약·min-height를 네브 실측 추적으로 통일, 학습 탭 상단 여백 축소(.home 16→12, .welcome 16→8), 이전 커밋의 테스트 드리프트 3건 수정. 커밋 → 이미지 → Cloud Run → 프로덕션 검증.
+
+- [x] L1: 간격 변경·테스트 수정 6파일이 커밋되고 작업 트리가 깨끗함
+  CHECK: git status --porcelain -- src tests | wc -l | tr -d ' '
+  EXPECT: 0
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=0
+- [x] L2: linux/amd64 이미지가 빌드·푸시됨
+  CHECK: node scripts/deploy.mjs image --tag $(git rev-parse --short=12 HEAD)
+  EXPECT: IMAGE_PUSHED
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=#26 pushing manifest for asia-northeast3-docker.pkg.dev/memoryz-prod/memoryz/server:25f7e8a794d5@sha256:aaf67ad5eb2cf491bbe063e9ba0366375d89f5b70f0add2083eb012b7b7c8eda 1.0s done | #26 DONE 8.7s
+- [x] L3: Artifact Registry 이미지 검증 통과
+  CHECK: node scripts/deploy.mjs verify-image --tag $(git rev-parse --short=12 HEAD)
+  EXPECT: IMAGE_OK
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=IMAGE_OK sha=25f7e8a794d5 size=37MB digest=sha256:aaf67ad5eb2c static=bundled
+- [x] L4: Cloud Run 서비스 배포·검증 통과
+  CHECK: node scripts/deploy.mjs service --tag $(git rev-parse --short=12 HEAD) && node scripts/deploy.mjs verify-service
+  EXPECT: SERVICE_OK
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=SERVICE_DEPLOYED https://memoryz.kr ingress=internal-and-cloud-load-balancing image=asia-northeast3-docker.pkg.dev/memoryz-prod/memoryz/server:25f7e8a794d5 | SERVICE_OK url=https://memoryz.kr runUrl=https://memoryz-omkrrmofrq-du.a.run.app i
+- [x] L5: 프로덕션이 새 CSS 번들을 서빙하고 헬스가 정상
+  CHECK: for c in $(curl -s https://memoryz.kr/ | grep -o '/_next/static/chunks/[a-zA-Z0-9_-]*\.css' | sort -u); do curl -s "https://memoryz.kr$c"; done | grep -o 'bottom-nav-padding-bottom:max(env' | head -1 && curl -s https://memoryz.kr/api/health | grep -o '"status":"ok"'
+  EXPECT: bottom-nav-padding-bottom:max(env
+  EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=bottom-nav-padding-bottom:max(env | "status":"ok"
