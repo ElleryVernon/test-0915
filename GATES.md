@@ -135,3 +135,57 @@ Scope: 바텀 네브 env() 플랫폼 분기 유지 + 제로 인셋 플로어(≥
   CHECK: for c in $(curl -s https://memoryz.kr/ | grep -o '/_next/static/chunks/[a-zA-Z0-9_-]*\.css' | sort -u); do curl -s "https://memoryz.kr$c"; done | grep -o 'bottom-nav-padding-bottom:max(env' | head -1 && curl -s https://memoryz.kr/api/health | grep -o '"status":"ok"'
   EXPECT: bottom-nav-padding-bottom:max(env
   EVIDENCE: exit=0; shell=/bin/sh; cwd=/Users/seongminhan/test; path=0f43a6ea1da9/31 entries; output=bottom-nav-padding-bottom:max(env | "status":"ok"
+
+## code-audit — 함수래퍼·병목·리팩토링 검토 (2026-09-18)
+
+Scope: UI/UX 동결. 쓸모없는 함수래퍼·기능상 병목·리팩토링 대상을 코드베이스 전반에서 찾아 검수하고, 확실한 개선만 적용. 회귀 없어야 함.
+
+- [ ] R1: 감사 결과(찾은 문제·적용한 개선·보류 사유)가 보고됨
+- [ ] R2: 적용된 개선이 타입체크·전체 테스트 통과
+  CHECK: npm run typecheck && npm run test 2>&1 | tail -5
+  EXPECT: fail 0
+- [ ] R3: 정적 웹 검사·키보드 브라우저 체크 회귀 없음
+  CHECK: npm run check:web && rm -rf .data/keyboard-web-check && cp -R out .data/keyboard-web-check && KB_EXPORT=.data/keyboard-web-check npx tsx scripts/keyboard-browser-check.ts 2>&1 | tail -3
+  EXPECT: KEYBOARD_BROWSER_OK
+- [ ] R4: Go 서버 측 변경이 있으면 go build·테스트 통과
+  CHECK: cd server && go build ./... && go test ./... 2>&1 | tail -5
+  EXPECT: ok
+
+## mobile-nav-pattern — 모바일 내비 패턴 리서치·결정 (2026-09-18)
+
+Scope: 현재 바텀 네브(학생 5탭·학부모 4탭)를 햄버거/사이드바/기타 패턴과 실레퍼런스 10개+ 비교 후 채택 여부 결정. 사용자 지적한 "첫 사용자 기능 발견성" 문제 포함 분석. 채택 시 회귀 없어야 함.
+
+- [x] N1: 실제 레퍼런스 10개+ 조사·비교 (가이드라인+실앱), 근거 표 기록
+  EVIDENCE: 2026-09-18 — 14개 레퍼런스 조사. 가이드라인: NN/g 햄버거 정량연구(179명, 숨김 내비=발견성 ~1/2·작업시간 증가), Material 3(nav bar=3-5 목적지), Apple HIG(3-5탭·가시 유지·배지 권장). 실측 전환 사례: Facebook(2013, 10M 배치 테스트로 드로어→탭바 채택), Spotify(2016, 햄버거→탭바로 메뉴 항목 클릭 +30%·첫 세션 내비 사용 증가), Redbooth(세션 2배·시간 +70%·DAU +65%), Zeebox/Polar(숨김 메뉴 참여율 하락), Moovweb(햄버거 탭률 ~20%·콘텐츠 사이트 2%). 실앱: 카카오톡(5탭+더보기), 네이버(7개 커스텀 툴바=브라우저 멘탈모델 예외), 인스타그램(5탭), 듀오링고(바텀탭+탭별 헤더), Quizlet(바텀탭), Cursa 패턴 가이드(1개 primary switcher 규칙·tabs+More 하이브리드·폰 탭→태블릿 사이드바). 학위논문(DiVA 20명, 3단계 내비) 바텀바 완료시간 우위.
+- [x] N2: 이 앱 맥락 분석 (탭 수·사용자·사용 빈도·숨겨진 기능 목록)
+  EVIDENCE: 2026-09-18 — 학생 5탭(홈/학습/시간표/커뮤니티/마이)·학부모 4탭으로 3-5 가이드라인 범위 내. 데일리 학습 앱(작업 전환형, browse-mostly 아님)→햄버거 부적합. 한국 학생 사용자=카카오톡/인스타 바텀탭 멘탈모델. 숨겨진 기능: 알림(홈 벨 배지), 검색, 설정(마이 하위)=표준 2차 목적지. 실제 갭: 탭 배지 없음(communityUnreadCount 함수가 미사용 상태로 존재), DM unread는 bootstrap 미포함.
+- [x] N3: 결론과 근거가 보고됨 (변경 or 유지+개선)
+  EVIDENCE: 2026-09-18 — 결론: 바텀 네브 유지. 14개 레퍼런스 전부 3-5 목적지에 바텀 탭 우위, 사용자가 지적한 첫 사용자 발견성은 Spotify 첫세션 내비 참여 증가 데이터로 바텀탭이 유일하게 검증됨. 적용 개선: 커뮤니티 탭 unread 닷 배지(Apple HIG 배지 권장사항, communityUnreadCount 미사용 함수 연결, 학생/학부모 커뮤니티 탭 모두 적용, aria-label 포함). DM unread는 bootstrap 미포함으로 범위 제외 — dot이 "읽지 않은 활동" 의미론에 정직.
+- [x] N4: 코드 변경이 있으면 타입체크·전체 테스트 통과
+  CHECK: npm run typecheck && npm run test 2>&1 | tail -5
+  EXPECT: fail 0
+  EVIDENCE: 2026-09-18 typecheck 통과 / tests 428 pass 428 fail 0 (community-v3-frontier 11개 — 배지 배선 테스트 신규 포함)
+- [x] N5: 코드 변경이 있으면 check:web·키보드 브라우저 체크 회귀 없음
+  CHECK: npm run check:web && rm -rf .data/keyboard-web-check && cp -R out .data/keyboard-web-check && KB_EXPORT=.data/keyboard-web-check npx tsx scripts/keyboard-browser-check.ts 2>&1 | tail -3
+  EXPECT: KEYBOARD_BROWSER_OK
+  EVIDENCE: 2026-09-18 WEB_BUILD_OK(49)/WEB_STATIC_OK(21)/DEV_PROXY_OK(5)/KEYBOARD_BROWSER_OK(49). out/ 번들에 .nav-dot 규칙 포함 확인.
+
+## nav-badge-deploy — 커뮤니티 탭 unread 배지 배포 (2026-09-18)
+
+Scope: 커뮤니티 탭 unread 닷 배지(app.tsx·globals.css·테스트) 커밋 → 이미지 → Cloud Run → 프로덕션 검증.
+
+- [ ] D1: 변경 4파일이 커밋되고 작업 트리가 깨끗함
+  CHECK: git status --porcelain -- src tests | wc -l | tr -d ' '
+  EXPECT: 0
+- [ ] D2: linux/amd64 이미지 빌드·푸시
+  CHECK: node scripts/deploy.mjs image --tag $(git rev-parse --short=12 HEAD)
+  EXPECT: IMAGE_PUSHED
+- [ ] D3: Artifact Registry 이미지 검증
+  CHECK: node scripts/deploy.mjs verify-image --tag $(git rev-parse --short=12 HEAD)
+  EXPECT: IMAGE_OK
+- [ ] D4: Cloud Run 배포·검증
+  CHECK: node scripts/deploy.mjs service --tag $(git rev-parse --short=12 HEAD) && node scripts/deploy.mjs verify-service
+  EXPECT: SERVICE_OK
+- [ ] D5: 프로덕션 CSS에 .nav-dot 서빙 + 헬스 정상
+  CHECK: for c in $(curl -s https://memoryz.kr/ | grep -o '/_next/static/chunks/[a-zA-Z0-9_-]*\.css' | sort -u); do curl -s "https://memoryz.kr$c"; done | grep -o '\.nav-dot{' | head -1 && curl -s https://memoryz.kr/api/health | grep -o '"status":"ok"'
+  EXPECT: .nav-dot{

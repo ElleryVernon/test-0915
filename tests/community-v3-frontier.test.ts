@@ -179,3 +179,13 @@ test('community notifications group by kind for the session-end row', () => {
     true,
   );
 });
+
+test('the community tab surfaces unread notifications as a nav badge', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../src/components/app.tsx', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
+  assert.match(app, /communityUnreadCount\(data\.notifications\)/);
+  assert.match(app, /className="nav-dot"/);
+  assert.match(app, /읽지 않은 알림/);
+  assert.match(css, /\.nav-dot\s*\{/);
+});

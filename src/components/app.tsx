@@ -56,6 +56,7 @@ import {
 import { readEssayDrafts, type EssayDraft } from '@/lib/study-drafts';
 import { formatMinutes, relativeTime } from './social/helpers';
 import { wrongQuestions, wrongEssays } from './study/logic';
+import { communityUnreadCount } from '@/lib/community-nudges';
 import { cachedCards, clearStudyCache, pendingReviews, syncReviews } from '@/lib/offline';
 import { forgetMaterialDetails, rememberSavedMaterial } from '@/lib/materials';
 import ActivityNotifications from '@/components/social/activity-notifications';
@@ -980,6 +981,7 @@ export default function App() {
       !!new URLSearchParams(path.split('?')[1]).get('peer') &&
       (base === '/messages' ||
         new URLSearchParams(path.split('?')[1]).get('space') === 'messages'));
+  const communityUnread = communityUnreadCount(data.notifications);
   const nav = isParent
     ? [
         { label: '자녀 현황', href: '/parent', icon: Home },
@@ -994,6 +996,8 @@ export default function App() {
         { label: '커뮤니티', href: '/community', icon: MessagesSquare },
         { label: '마이', href: '/profile', icon: UserRound },
       ];
+  const navUnread = (href: string) =>
+    href === '/community' || href === '/parent-boards' ? communityUnread : 0;
   return (
     <JourneyContext.Provider value={journey.current}>
       <JourneyUserContext.Provider value={data.profile.id}>
@@ -1083,14 +1087,19 @@ export default function App() {
             <nav className="bottom-nav" aria-label="메인 메뉴">
               {nav.map((n) => {
                 const active = mainTab(path, isParent) === n.href;
+                const unread = navUnread(n.href);
                 return (
                   <button
                     key={n.href}
                     className={`nav-item ${active ? 'active' : ''}`}
                     aria-current={active ? 'page' : undefined}
+                    aria-label={
+                      unread ? `${n.label}, 읽지 않은 알림 ${unread}개` : undefined
+                    }
                     onClick={() => navigate(n.href, { restore: true })}
                   >
                     <n.icon />
+                    {unread > 0 && <span className="nav-dot" aria-hidden="true" />}
                     <span>{n.label}</span>
                   </button>
                 );

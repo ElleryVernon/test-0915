@@ -899,6 +899,15 @@ svg {
 .nav-item.active svg {
   color: currentColor;
 }
+.nav-dot {
+  position: absolute;
+  top: -1px;
+  left: calc(50% + 8px);
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--primary);
+}
 .sheet-overlay {
   position: fixed;
   inset: 0;
