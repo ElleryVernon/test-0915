@@ -131,7 +131,8 @@ type appData struct {
 	Notifications []notificationView `json:"notifications"`
 	Stats         statsView          `json:"stats"`
 	AIAvailable   bool               `json:"aiAvailable"`
-	// JudgeAvailable: the quick keyword verdict (POST /api/essay/judge) may be requested.
+	// JudgeAvailable: the quick keyword verdict (POST /api/essay/judge) may be requested. It is a
+	// display-only preview, so shadow mode serves it too; only AI_JUDGE=on changes the grading path.
 	JudgeAvailable bool `json:"judgeAvailable"`
 	Demo           bool `json:"demo"`
 }
@@ -279,7 +280,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request, user store.Us
 		out := appData{
 			Profile: profileOf(user), Subjects: []subjectView{}, Materials: []materialView{}, Questions: []questionRow{}, Essays: []essayRow{},
 			Cards: []cardView{}, Attempts: []attemptView{}, Schedules: []scheduleView{}, Posts: posts, Cheers: []cheerView{}, Notifications: []notificationView{},
-			AIAvailable: s.ai.Available(), JudgeAvailable: s.ai.Jev().Active(), Demo: user.ID == demo.Student || user.ID == demo.Parent || user.ID == demo.Admin,
+			AIAvailable: s.ai.Available(), JudgeAvailable: s.ai.Jev().Available(), Demo: user.ID == demo.Student || user.ID == demo.Parent || user.ID == demo.Admin,
 		}
 		pendingOnboarding, err := s.auth.NeedsOnboarding(ctx, user.ID)
 		if err != nil {

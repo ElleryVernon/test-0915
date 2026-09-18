@@ -83,11 +83,18 @@ func TestEssayJudgeEndpointIsOffWithoutTheJudge(t *testing.T) {
 	if rec := h.do(http.MethodPost, "/api/essay/judge", map[string]any{"essayId": "x", "answer": "답안입니다."}); rec.Code != 503 {
 		t.Fatalf("expected 503 without a judge, got %d %s", rec.Code, rec.Body.String())
 	}
-	shadow, _ := fakeTypeSafe(t)
+	// Shadow mode changes no grading path but still serves the display-only preview.
+	shadow, calls := fakeTypeSafe(t)
 	h2 := newAIHarness(t, func(c *config.Config) {
 		c.TypeSafeAPIKey, c.TypeSafeBaseURL, c.TypeSafeModel, c.AIJudge = "typesafe-test", shadow.URL, "jev-latest", "shadow"
 	})
-	if rec := h2.do(http.MethodPost, "/api/essay/judge", map[string]any{"essayId": "x", "answer": "답안입니다."}); rec.Code != 503 {
-		t.Fatalf("shadow mode must not serve verdicts to the screen, got %d", rec.Code)
+	if boot := h2.do(http.MethodGet, "/api/bootstrap", nil); boot.Code != 200 || !strings.Contains(boot.Body.String(), `"judgeAvailable":true`) {
+		t.Fatalf("shadow must advertise the preview: %d", boot.Code)
+	}
+	if _, err := h2.pool.Exec(context.Background(), `INSERT INTO "Essay"("id","userId","subjectId","materialId","prompt","keywords","modelAnswer","citation") VALUES('shadow-essay',$1,(SELECT "id" FROM "Subject" WHERE "userId"=$1 LIMIT 1),$2,'탈분극 과정을 설명하세요.',ARRAY['자극'],'자극.','원문')`, h2.student, h2.material); err != nil {
+		t.Fatal(err)
+	}
+	if rec := h2.do(http.MethodPost, "/api/essay/judge", map[string]any{"essayId": "shadow-essay", "answer": "역치 이상의 자극으로 시작합니다."}); rec.Code != 200 || calls.Load() != 1 {
+		t.Fatalf("shadow serves the preview: %d %s calls=%d", rec.Code, rec.Body.String(), calls.Load())
 	}
 }

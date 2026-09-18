@@ -271,11 +271,12 @@ type ruleGrade struct {
 
 // judgeEssay returns the judge's quick verdict on an answer (keyword marks and a provisional score)
 // in well under a second, so the screen can show marks while the graded coaching is written. It is
-// never the grade: the grade request that follows decides the score and the feedback. No run record
-// is kept; the call is one bounded judgment with the essay the student owns.
+// never the grade: the grade request that follows decides the score and the feedback, and this
+// preview is served in shadow mode too. No run record is kept; the call is one bounded judgment
+// with the essay the student owns.
 func (s *Server) judgeEssay(w http.ResponseWriter, r *http.Request, user store.User) error {
 	jev := s.ai.Jev()
-	if !jev.Active() {
+	if !jev.Available() {
 		return errJudgeUnavailable
 	}
 	var in struct {

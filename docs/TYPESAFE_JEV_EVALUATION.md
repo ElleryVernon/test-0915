@@ -69,7 +69,7 @@
 - `server/internal/ai/jev.go`: TypeSafe 클라이언트. 6초 시한, 429/529 한 번 재시도, 사용량 기록(`provider=typesafe`, 입력 토큰·비용·시간). 실패는 언제나 "판정 없음"이며 기존 경로가 그대로 실행된다.
 - 서술형 채점(`GradeWithAI`): 판정 요청을 생성기 채점과 병렬로 보내고, 검증된 채점과 키워드 explained 여부·답안 유형이 일치하며 confidence 0.6 이상이고 지시 삽입 판정과 모순이 없으면 `on`에서 별도 검수 호출을 생략한다. `shadow`는 일치 여부만 `AiRun` retries의 `judge` 항목으로 기록한다.
 - 생성 검수(`reviewItems`): 객관식 정답 유일성(choice+noul)과 서술형 키워드/방해어 근거(claims)를 한 요청으로 먼저 판정한다. `on`에서 거절 항목은 모델 검수 없이 바로 생성기로 돌려보내고, 모두 0.8 이상으로 통과하면 모델의 독립 풀이 호출을 생략한다. 의미 검수는 유지한다.
-- 빠른 판정 화면: `POST /api/essay/judge`와 부트스트랩 `judgeAvailable`. 서술형 화면은 채점 요청과 동시에 판정을 받아 코칭이 오기 전까지 "먼저 확인한 핵심 개념"을 보여 준다(`src/components/study/essay-judgment.tsx`). 학생별 AI 예산을 소모하고 최종 점수는 채점이 결정한다.
+- 빠른 판정 화면: `POST /api/essay/judge`와 부트스트랩 `judgeAvailable`. 서술형 화면은 채점 요청과 동시에 판정을 받아 코칭이 오기 전까지 "먼저 확인한 핵심 개념"을 보여 준다(`src/components/study/essay-judgment.tsx`). 표시 전용이라 `shadow`에서도 제공된다. 학생별 AI 예산을 소모하고 최종 점수는 채점이 결정한다.
 - 설정: `TYPESAFE_API_KEY`, `TYPESAFE_MODEL=jev-latest`, `TYPESAFE_BASE_URL`(테스트용), `AI_JUDGE=off|shadow|on`. 배포 순서는 shadow로 일치율을 기록한 뒤 on으로 올린다.
 - 검증: `server/internal/ai/jev_test.go`·`grade_jev_test.go`·`review_jev_test.go`·`tasks_jev_test.go`(on에서 검수 생략, shadow·불일치·저신뢰·판정 실패에서는 검수 유지; 생성 선별 필터), `server/internal/api/essay_judge_test.go`(엔드포인트·부트스트랩 플래그·off/shadow 503), `tests/essay-judgment.test.ts`.
 

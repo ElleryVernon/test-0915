@@ -10,6 +10,7 @@
 //   alerts         uptime check, e-mail channel, six alert policies (uptime, 5xx, p95, pool, Cloud SQL CPU, disk)
 //   verify-alerts  assert they exist
 //   verify-oauth   assert the OAuth secrets exist with an accessor binding (values never read)
+//   verify-judge   assert the TypeSafe judge secret exists with an accessor binding and the spec ships AI_JUDGE
 // Usage: node scripts/deploy.mjs <subcommand> [--tag <tag>]
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -107,10 +108,15 @@ const runtimeEnv = (appURL) => [
   'BLOB_STORE=gcs', `GCS_BUCKET=${BUCKET}`, `VALKEY_ADDR=${VALKEY_ADDR}`, 'VALKEY_IAM_AUTH=true',
   'OTEL_EXPORTER=gcp', 'OTEL_SAMPLE_RATIO=1', 'TRUST_PROXY=true', 'DEMO_MODE=true', 'PDF_WORKERS=2', 'AI_RATE_PER_MINUTE=10', 'AI_RATE_PER_DAY=200',
   'OPENROUTER_MODEL=openai/gpt-5.6-luna', 'OPENROUTER_REASONING_EFFORT=high',
+  // The Jev judge runs in shadow first: verdicts are recorded beside every grade and generation
+  // review, no path changes, the display-only quick verdict is served. Flip to on after the
+  // agreement rate has been read (docs/TYPESAFE_JEV_EVALUATION.md).
+  'TYPESAFE_MODEL=jev-latest', `AI_JUDGE=${JUDGE_MODE}`,
   ...(appURL ? [`APP_URL=${appURL}`] : []),
   ...(isCustom(appURL) ? [`TRUSTED_PROXIES=${lbAddress()}`] : []),
 ].join(',');
-const secretEnv = 'AUTH_SECRET=AUTH_SECRET:latest,OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,VALKEY_CA_PEM=VALKEY_CA_PEM:latest';
+const JUDGE_MODE = 'shadow';
+const secretEnv = 'AUTH_SECRET=AUTH_SECRET:latest,OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,VALKEY_CA_PEM=VALKEY_CA_PEM:latest,TYPESAFE_API_KEY=TYPESAFE_API_KEY:latest';
 const oauthSecretNames = ['GOOGLE', 'NAVER', 'KAKAO'].flatMap(provider => [`${provider}_CLIENT_ID`, `${provider}_CLIENT_SECRET`]);
 const oauthSecretEnv = oauthSecretNames.map(name => `${name}=${name}:latest`).join(',');
 const requireOAuthSecrets = () => {
@@ -243,7 +249,8 @@ const commands = {
     expect(a['run.googleapis.com/cloudsql-instances'] === SQL_INSTANCE, 'cloud sql instance');
     expect(!!c.startupProbe?.httpGet && c.startupProbe.httpGet.path === '/api/health', 'startup probe');
     expect(!!c.livenessProbe?.httpGet && c.livenessProbe.httpGet.path === '/api/live', `liveness probe on /api/live (${c.livenessProbe?.httpGet?.path})`);
-    for (const name of ['AUTH_SECRET', 'OPENROUTER_API_KEY', 'VALKEY_CA_PEM', ...['GOOGLE', 'NAVER', 'KAKAO'].flatMap((provider) => [`${provider}_CLIENT_ID`, `${provider}_CLIENT_SECRET`])]) expect(envs[name] === `secret:${name}`, `secret env ${name}`);
+    for (const name of ['AUTH_SECRET', 'OPENROUTER_API_KEY', 'VALKEY_CA_PEM', 'TYPESAFE_API_KEY', ...['GOOGLE', 'NAVER', 'KAKAO'].flatMap((provider) => [`${provider}_CLIENT_ID`, `${provider}_CLIENT_SECRET`])]) expect(envs[name] === `secret:${name}`, `secret env ${name}`);
+    expect(envs.AI_JUDGE === JUDGE_MODE && envs.TYPESAFE_MODEL === 'jev-latest', `judge ${envs.AI_JUDGE} ${envs.TYPESAFE_MODEL}`);
     expect(envs.ENV === 'production' && envs.OTEL_EXPORTER === 'gcp' && envs.DB_IAM_AUTH === 'true' && envs.BLOB_STORE === 'gcs' && envs.VALKEY_IAM_AUTH === 'true', 'runtime env');
     // The public origin is either the run.app URL (ingress all) or, after the cutover, the custom domain
     // behind the load balancer (ingress internal-and-cloud-load-balancing).
@@ -362,6 +369,15 @@ const commands = {
       if (!enabled || !allowed) fail(`OAUTH_SECRETS_NOT_OK ${name} enabled=${enabled} accessor=${allowed}`);
     }
     console.log(`OAUTH_SECRETS_OK providers=3 secrets=${oauthSecretNames.length} accessor=true`);
+  },
+  'verify-judge'() {
+    const name = 'TYPESAFE_API_KEY';
+    const enabled = (tryGcloud('secrets', 'versions', 'list', name, '--filter=state=ENABLED', '--format=value(name)') ?? '').split('\n').filter(Boolean).length;
+    const pol = tryGcloud('secrets', 'get-iam-policy', name, '--format=json');
+    const accessor = !!pol && (JSON.parse(pol).bindings ?? []).some((b) => b.role === 'roles/secretmanager.secretAccessor' && b.members.includes(`serviceAccount:${SA}`));
+    const wired = secretEnv.includes(`${name}=${name}:latest`) && runtimeEnv('').includes(`AI_JUDGE=${JUDGE_MODE}`);
+    if (!enabled || !accessor || !wired) fail(`JUDGE_SECRET_NOT_OK enabled=${enabled} accessor=${accessor} wired=${wired}`);
+    console.log(`JUDGE_SECRET_OK secret=${name} versions=${enabled} accessor=true mode=${JUDGE_MODE}`);
   },
 };
 if (!commands[command]) {
