@@ -13,6 +13,9 @@ const config = (phase: string): NextConfig => ({
           const api = process.env.GO_API_URL ?? 'http://127.0.0.1:8080';
           return [{ source: '/api/:path*', destination: `${api}/api/:path*` }];
         },
+        // NEXT_DIST_DIR lets an isolated dev instance (scripts/dev-proxy-check.mjs) use its own
+        // distDir — and therefore its own dev-server lock — beside a server already on :3000.
+        ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
       }
     : {
         output: 'export',

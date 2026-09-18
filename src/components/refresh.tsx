@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { ArrowDown, Check, LoaderCircle } from './icons';
 import { PULL_THRESHOLD, pullDistance, RefreshLoop } from '@/lib/live-refresh';
+import { isTextField } from '@/lib/keyboard-inset';
 import styles from './refresh.module.css';
 
 type Read = (signal?: AbortSignal) => Promise<unknown>;
@@ -162,10 +163,16 @@ export function RefreshBoundary({
     if (!enabled) return;
     let start: { x: number; y: number } | null = null;
     let pulled = 0;
+    const typing = () =>
+      document.documentElement.dataset.keyboard === 'open' ||
+      isTextField(document.activeElement) ||
+      (window.visualViewport?.offsetTop ?? 0) > 1 ||
+      Math.abs((window.visualViewport?.scale ?? 1) - 1) > 0.01;
     const begin = (x: number, y: number, target: EventTarget | null) => {
       start = null;
       if (
         pending.current ||
+        typing() ||
         window.scrollY > 1 ||
         !(target instanceof Element) ||
         !root.current?.contains(target) ||
@@ -189,6 +196,12 @@ export function RefreshBoundary({
     };
     const move = (x: number, y: number, event: Event) => {
       if (!start) return;
+      if (typing()) {
+        start = null;
+        pulled = 0;
+        setDistance(0);
+        return;
+      }
       const value = pullDistance(x - start.x, y - start.y);
       if (value < 0 || window.scrollY > 1) {
         start = null;

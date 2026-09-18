@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { IconButton } from '@/components/ui';
 import { X } from '@/components/icons';
@@ -24,26 +24,12 @@ export function CommunityEditorPage({
   children: ReactNode;
 }) {
   const close = useJourneyLayer(true, () => !busy && onClose());
-  const [viewport, setViewport] = useState<CSSProperties>();
-  useLayoutEffect(() => {
-    const visual = window.visualViewport;
-    if (!visual) return;
-    const resize = () => setViewport({ height: visual.height, top: visual.offsetTop });
-    resize();
-    visual.addEventListener('resize', resize);
-    visual.addEventListener('scroll', resize);
-    return () => {
-      visual.removeEventListener('resize', resize);
-      visual.removeEventListener('scroll', resize);
-    };
-  }, []);
   return (
     <Dialog.Root open onOpenChange={(open) => !open && close()}>
       <Dialog.Portal>
         <Dialog.Overlay className={styles.backdrop} />
         <Dialog.Content
           className={styles.page}
-          style={viewport}
           data-community-editor
           aria-describedby={undefined}
           onInteractOutside={(event) => event.preventDefault()}

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui';
 import { OptionList, Segmented, Switch } from '@/components/ui-choice';
 import { UserRound } from '@/components/icons';
 import { AttachmentSheet } from './attachment-sheet';
+import { schoolDisplayName } from './helpers';
 import styles from './community-editor.module.css';
 
 export type EditorSetting = 'board' | 'author' | 'subject';
@@ -84,7 +85,7 @@ export function CommunityEditorSettings({
             />
             <p>
               {scope === 'school'
-                ? `${data.profile.school} ${parent ? '학부모' : '학생'}들에게 보여요.`
+                ? `${schoolDisplayName(data.profile.school)} ${parent ? '학부모' : '학생'}들에게 보여요.`
                 : `모든 학교의 ${parent ? '학부모' : '학생'}들이 볼 수 있어요.`}
               {!data.profile.school.trim() && ' 학교를 등록하면 학교 커뮤니티도 선택할 수 있어요.'}
             </p>

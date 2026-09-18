@@ -8,6 +8,7 @@
   --vv-height: 100dvh;
   --vv-top: 0px;
   --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
   --space-1: var(--space-unit);
   --space-2: calc(var(--space-unit) * 2);
   --space-3: calc(var(--space-unit) * 3);
@@ -74,7 +75,7 @@
   transform: translateX(-50%);
   width: 100%;
   max-width: var(--app-width);
-  padding: var(--space-3) var(--page-gutter) max(var(--space-3), env(safe-area-inset-bottom));
+  padding: var(--space-3) var(--page-gutter) max(var(--space-3), var(--safe-bottom));
   background: var(--surface-raised);
 }
 .page-action-dock > .btn {

@@ -270,6 +270,15 @@ export function relativeTime(value: string, now = Date.now()): string {
     new Date(value),
   );
 }
+/**
+ * The stored school string is `이름 · 주소` (server `School.Identity`) so same-name schools keep
+ * distinct community scopes. Everywhere it is shown to people only the name belongs on screen;
+ * the address stays in search results, where it disambiguates identical names.
+ */
+export function schoolDisplayName(school: string): string {
+  const separator = school.lastIndexOf(' · ');
+  return separator > 0 ? school.slice(0, separator) : school;
+}
 export function subjectAccuracy(data: AppData) {
   const privacy = data.profile.role === 'PARENT' ? data.child?.privacy : data.profile.privacy;
   if (!privacy?.accuracy) return [];

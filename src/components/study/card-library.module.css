@@ -85,7 +85,7 @@
   background: transparent;
   border: 0;
   outline: 0;
-  font-size: 14px;
+  font-size: 16px;
 }
 .search:focus-within {
   outline: var(--focus-ring);

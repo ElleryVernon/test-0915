@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { RefreshLoop, refreshPolicy, pullDistance, PULL_THRESHOLD } from '../src/lib/live-refresh';
 
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -168,6 +170,32 @@ test('permission failure stops automatic retries without hiding a user-requested
   assert.equal(calls, 2);
   f.loop.stop();
 });
+test('pull-to-refresh never starts or continues while the keyboard or a text field owns the gesture', () => {
+  const src = readFileSync(join(import.meta.dirname, '..', 'src/components/refresh.tsx'), 'utf8');
+  assert.match(src, /import \{ isTextField \} from '@\/lib\/keyboard-inset';/);
+  assert.match(
+    src,
+    /document\.documentElement\.dataset\.keyboard === 'open'/,
+    'an open keyboard owns the gesture',
+  );
+  assert.match(src, /isTextField\(document\.activeElement\)/, 'a focused field owns the gesture');
+  assert.match(
+    src,
+    /visualViewport\?\.offsetTop \?\? 0\) > 1/,
+    'a panned visual viewport is not a pull',
+  );
+  assert.match(
+    src,
+    /visualViewport\?\.scale \?\? 1\) - 1\) > 0\.01/,
+    'a pinched viewport is not a pull',
+  );
+  const move = src.slice(src.indexOf('const move'));
+  assert.match(move, /start = null;/, 'a gesture that becomes typing cancels the pull');
+  const cancel = move.indexOf('start = null;');
+  const prevent = move.indexOf('preventDefault');
+  assert.ok(cancel > -1 && prevent > -1 && cancel < prevent, 'cancel before preventDefault');
+});
+
 test('leaving a resource aborts its read and cannot schedule a late response', async () => {
   let signal!: AbortSignal, release!: () => void;
   const f = fixture((s) => {

@@ -62,37 +62,82 @@ test('the footer is a fixed-size flex child, and its hint yields to the keyboard
   );
 });
 
-test('the component pins the focused field to the top of the content when the keyboard opens', () => {
+test('the school query lives in a modal picker pinned to the visible viewport, so the field can never slide under the keyboard', () => {
   const tsx = readFileSync(
     join(import.meta.dirname, '..', 'src/components/onboarding.tsx'),
     'utf8',
   );
-  assert.match(tsx, /viewport\.addEventListener\('resize', pinFocusedField\)/);
+  assert.doesNotMatch(
+    tsx,
+    /visualViewport|pinFocusedField|KEYBOARD_THRESHOLD|contentRef/,
+    'no manual pinning or viewport measurement: the fixed structure keeps the field visible',
+  );
+  assert.match(tsx, /Dialog\.Root\s+open=\{schoolPickerOpen\}/);
+  assert.match(tsx, /data-school-picker/);
+  assert.match(tsx, /className=\{styles\.schoolSearchHeader\}/);
+  assert.match(tsx, /className=\{styles\.schoolPickerResults\}/);
+  assert.match(tsx, /aria-haspopup="dialog"/);
+  assert.match(tsx, /ref=\{schoolTriggerRef\}/);
+  assert.match(tsx, /ref=\{schoolInputRef\}/);
   assert.match(
     tsx,
-    /document\.documentElement\.clientHeight - viewport\.height < KEYBOARD_THRESHOLD/,
-    'measures against the layout viewport, not window.innerHeight',
+    /flushSync\(\(\) => setSchoolPickerOpen\(true\)\)/,
+    'the picker mounts inside the tap so the keyboard focus keeps user activation',
   );
-  assert.match(tsx, /\}, \[schoolStatus, schools\.length\]\);/, 're-pins when results arrive');
-  assert.match(tsx, /content\.scrollTo\(\{ top: content\.scrollTop \+ offset - inset \}\)/);
-  assert.match(tsx, /ref=\{contentRef\} className=\{styles\.content\}/);
-  assert.match(tsx, /KEYBOARD_THRESHOLD/, 'shares the keyboard threshold with the app model');
-  assert.match(tsx, /data-searching=\{draft\.step === 2 && schoolSearch\.trim\(\)\.length > 0/);
+  assert.match(tsx, /data-searching=\{schoolPickerOpen \? 'true' : undefined\}/);
+  assert.match(
+    tsx,
+    /if \(!schoolPickerOpen \|\| schoolSearch\.trim\(\)\.length < 2 \|\| draft\.step !== 2\)/,
+    'queries only run while the picker is open',
+  );
+  assert.match(
+    tsx,
+    /school: next\.schoolId \? next\.school : '', schoolId: next\.schoolId/,
+    'an unconfirmed query never saves as the school',
+  );
+});
+
+test('the picker keeps its search header fixed and lets only the results scroll', () => {
+  const picker = block('.schoolPicker');
+  assert.equal(prop(picker, 'position'), 'fixed');
+  assert.equal(prop(picker, 'top'), 'var(--vv-top)');
+  assert.equal(prop(picker, 'height'), 'var(--vv-height)');
+  assert.equal(prop(picker, 'display'), 'flex');
+  assert.equal(prop(picker, 'flex-direction'), 'column');
+  assert.equal(prop(picker, 'overflow'), 'hidden');
+  assert.equal(prop(picker, 'padding-top'), 'var(--safe-top)');
+  const header = block('.schoolSearchHeader');
+  assert.equal(prop(header, 'flex'), '0 0 auto', 'the search region never scrolls away');
+  const results = block('.schoolPickerResults');
+  assert.equal(prop(results, 'flex'), '1');
+  assert.equal(prop(results, 'min-height'), '0');
+  assert.equal(prop(results, 'overflow-y'), 'auto');
+  assert.equal(prop(results, 'overscroll-behavior'), 'contain');
+  const list = block('.schoolResults');
+  assert.equal(prop(list, 'list-style'), 'none');
+  const row = block('.schoolResults button');
+  assert.equal(prop(row, 'min-height'), '76px');
+  assert.equal(prop(row, 'background'), null, 'flat rows, not nested cards');
+  const name = block('.schoolResults strong');
+  assert.equal(prop(name, 'overflow-wrap'), 'anywhere', 'long school names wrap inside the row');
+  const footer = block('.footer');
+  assert.match(prop(footer, 'padding') ?? '', /var\(--safe-bottom\)/);
 });
 
 test('the grade row and its fieldset can shrink to the column instead of overflowing on WebKit', () => {
   const grades = block('.grades');
   assert.equal(prop(grades, 'grid-template-columns'), 'repeat(4, minmax(0, 1fr))');
-  for (const selector of ['.fields', '.schoolResults']) {
+  for (const selector of ['.fields', '.schoolField']) {
     assert.equal(
       prop(block(selector), 'grid-template-columns'),
       'minmax(0, 1fr)',
       `${selector} cannot be pushed wider by an item`,
     );
   }
-  const name = block('.schoolResults button span');
+  const name = block('.schoolResults button > span');
   assert.equal(prop(name, 'min-width'), '0');
-  assert.equal(prop(name, 'overflow-wrap'), 'anywhere', 'long school names wrap inside the row');
+  const address = block('.schoolResults small');
+  assert.equal(prop(address, 'overflow-wrap'), 'anywhere', 'long addresses wrap inside the row');
   const globals = readFileSync(join(import.meta.dirname, '..', 'src/app/globals.css'), 'utf8');
   assert.match(
     globals,

@@ -30,7 +30,7 @@ import {
 } from '@/components/icons';
 import { openDB } from 'idb';
 import { api, retryTransient } from '@/lib/api';
-import { installKeyboardInset } from '@/lib/keyboard-inset';
+import { installKeyboardInset, isTextField } from '@/lib/keyboard-inset';
 import { loginBusyRetryAt } from '@/lib/retry-countdown';
 import {
   sessionBoundary,
@@ -650,13 +650,18 @@ export default function App() {
     const main = document.getElementById('main-content');
     if (!main) return;
     const target = restoreScroll.current;
-    const restore = () => window.scrollTo({ top: target, behavior: 'instant' });
+    let cancelled = false;
+    const restore = () => {
+      if (cancelled || isTextField(document.activeElement)) return;
+      window.scrollTo({ top: target, behavior: 'instant' });
+    };
     const observer = new MutationObserver(restore);
     observer.observe(main, { childList: true, subtree: true });
     const frame = requestAnimationFrame(() => {
       restore();
       // Respect a screen's autofocus and an open dialog; never steal the text cursor.
       if (
+        !cancelled &&
         !main.querySelector('[autofocus]') &&
         !document.querySelector('[role="dialog"]') &&
         !(document.activeElement instanceof HTMLInputElement) &&
@@ -666,10 +671,19 @@ export default function App() {
       }
     });
     const stop = window.setTimeout(() => observer.disconnect(), 500);
-    return () => {
+    const cancel = () => {
+      if (cancelled) return;
+      cancelled = true;
       cancelAnimationFrame(frame);
       clearTimeout(stop);
       observer.disconnect();
+    };
+    for (const type of ['touchmove', 'wheel', 'pointerdown', 'keydown'] as const)
+      window.addEventListener(type, cancel, { passive: true });
+    return () => {
+      cancel();
+      for (const type of ['touchmove', 'wheel', 'pointerdown', 'keydown'] as const)
+        window.removeEventListener(type, cancel);
     };
   }, [screen, loading]);
   const refreshSequence = useRef(0);

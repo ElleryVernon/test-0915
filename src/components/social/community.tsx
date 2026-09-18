@@ -27,7 +27,7 @@ import {
 } from '@/lib/community-nudges';
 import { Button, EmptyState, IconButton, ScreenHeader, Sheet } from '@/components/ui';
 import { OptionField } from '@/components/ui-choice';
-import { relativeTime } from './helpers';
+import { relativeTime, schoolDisplayName } from './helpers';
 import { useJourneyState } from '../journey';
 import { useLiveRefresh, useScreenRefresh } from '../refresh';
 import { CommunityHeader, communityBase } from './community-navigation';
@@ -438,7 +438,7 @@ export default function Community(props: ScreenProps) {
                 aria-haspopup="dialog"
                 onClick={() => setSchoolInfo(true)}
               >
-                <span>{data.profile.school}</span>
+                <span>{schoolDisplayName(data.profile.school)}</span>
                 <ChevronDown size={14} />
               </button>
             ) : (
@@ -613,7 +613,9 @@ export default function Community(props: ScreenProps) {
       )}
       <Sheet open={schoolInfo} onClose={() => setSchoolInfo(false)} title="학교 커뮤니티 안내">
         <div className="layout-section">
-          <h3 className="text-lg font-bold break-words">{data.profile.school}</h3>
+          <h3 className="text-lg font-bold break-words">
+            {schoolDisplayName(data.profile.school)}
+          </h3>
           <p className="text-sm text-muted">
             프로필에 같은 학교를 등록한 {parent ? '학부모' : '학생'}들과 이야기하는 공간이에요.
           </p>

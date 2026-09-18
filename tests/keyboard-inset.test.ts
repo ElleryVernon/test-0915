@@ -83,6 +83,15 @@ test('installing measures the layout viewport from the root, subscribes to visua
       listeners[type] = listeners[type].filter((l) => l !== fn);
     },
   };
+  const input = {
+    tagName: 'INPUT',
+    parentElement: null,
+    scrollHeight: 0,
+    clientHeight: 0,
+    scrollTop: 0,
+    getAttribute: () => null,
+    getBoundingClientRect: () => ({ top: 0, bottom: 0 }),
+  };
   const win = {
     // window.innerHeight follows the pan on iOS; the root's clientHeight is the layout height.
     innerHeight: 423,
@@ -93,6 +102,7 @@ test('installing measures the layout viewport from the root, subscribes to visua
         style: { setProperty: (name: string, value: string) => void (props[name] = value) },
         dataset: {} as DOMStringMap,
       },
+      activeElement: input,
     },
   };
   const stop = installKeyboardInset(win);
@@ -256,4 +266,428 @@ test('a keyboard-sized resize reveals the focused field after the layout settles
   viewport.offsetTop = 0;
   listeners.resize.forEach((fn) => fn());
   assert.equal(frames.length, 0);
+});
+
+function harness({ layout = 812, vvHeight = 812, focused = true } = {}) {
+  const props: Record<string, string> = {};
+  const vvListeners: Record<string, (() => void)[]> = { resize: [], scroll: [] };
+  const docListeners: Record<string, (() => void)[]> = {};
+  const winListeners: Record<string, (() => void)[]> = {};
+  const frames = new Map<number, () => void>();
+  let nextFrame = 0;
+  const viewport = {
+    height: vvHeight,
+    offsetTop: 0,
+    scale: 1,
+    addEventListener: (type: 'resize' | 'scroll', fn: () => void) => vvListeners[type].push(fn),
+    removeEventListener: (type: 'resize' | 'scroll', fn: () => void) => {
+      vvListeners[type] = vvListeners[type].filter((l) => l !== fn);
+    },
+  };
+  const body = { tagName: 'BODY', parentElement: null } as never;
+  const node = (
+    tagName: string,
+    parent: unknown,
+    rect: { top: number; bottom: number },
+    extra = {},
+  ) => ({
+    tagName,
+    parentElement: parent as never,
+    scrollHeight: 0,
+    clientHeight: 0,
+    scrollTop: 0,
+    getAttribute: () => null,
+    getBoundingClientRect: () => rect,
+    ...extra,
+  });
+  const scroll = node(
+    'DIV',
+    body,
+    { top: 100, bottom: 300 },
+    { scrollHeight: 1200, clientHeight: 200 },
+  );
+  const input = node('INPUT', scroll, { top: 320, bottom: 360 });
+  const root = {
+    clientHeight: layout,
+    style: {
+      setProperty: (name: string, value: string) => void (props[name] = value),
+      getPropertyValue: (name: string) => props[name] ?? '',
+    },
+    dataset: {} as DOMStringMap,
+  };
+  const win = {
+    innerHeight: layout,
+    innerWidth: 390,
+    visualViewport: viewport,
+    document: {
+      documentElement: root,
+      body,
+      activeElement: (focused ? input : null) as never,
+      addEventListener: (type: string, fn: () => void) => (docListeners[type] ??= []).push(fn),
+      removeEventListener: (type: string, fn: () => void) => {
+        docListeners[type] = (docListeners[type] ?? []).filter((l) => l !== fn);
+      },
+    },
+    getComputedStyle: (el: unknown) => ({ overflowY: el === scroll ? 'auto' : 'visible' }),
+    requestAnimationFrame: (fn: () => void) => {
+      const id = ++nextFrame;
+      frames.set(id, fn);
+      return id;
+    },
+    cancelAnimationFrame: (id: number) => {
+      frames.delete(id);
+    },
+    addEventListener: (type: string, fn: () => void) => (winListeners[type] ??= []).push(fn),
+    removeEventListener: (type: string, fn: () => void) => {
+      winListeners[type] = (winListeners[type] ?? []).filter((l) => l !== fn);
+    },
+  };
+  const flush = () => {
+    for (const [id, fn] of [...frames]) {
+      frames.delete(id);
+      fn();
+    }
+  };
+  return {
+    props,
+    vvListeners,
+    docListeners,
+    winListeners,
+    frames,
+    viewport,
+    scroll,
+    input,
+    root,
+    win,
+    node,
+    body,
+    flush,
+  };
+}
+
+test('a field taller than the reveal band is not fought: covering stays, otherwise the nearest edge aligns', () => {
+  const container = { top: 100, bottom: 400 };
+  assert.equal(revealDelta(container, { top: 80, bottom: 420 }), 0);
+  assert.equal(revealDelta(container, { top: 300, bottom: 600 }), 176);
+  assert.equal(revealDelta(container, { top: -100, bottom: 200 }), -176);
+  const field = { top: 500, bottom: 760 };
+  const delta = revealDelta(container, field);
+  assert.equal(delta, 376);
+  assert.equal(revealDelta(container, { top: field.top - delta, bottom: field.bottom - delta }), 0);
+});
+
+test('the reveal band is clipped to the visible viewport, not the off-screen bottom of the container', () => {
+  const body = { tagName: 'BODY', parentElement: null } as never;
+  const scroll = {
+    tagName: 'DIV',
+    parentElement: body,
+    scrollHeight: 1600,
+    clientHeight: 812,
+    scrollTop: 0,
+    getAttribute: () => null,
+    getBoundingClientRect: () => ({ top: 0, bottom: 812 }),
+  };
+  const input = {
+    ...scroll,
+    tagName: 'INPUT',
+    parentElement: scroll,
+    scrollHeight: 0,
+    clientHeight: 0,
+    getBoundingClientRect: () => ({ top: 700, bottom: 740 }),
+  };
+  const win = {
+    innerHeight: 812,
+    visualViewport: {
+      height: 476,
+      offsetTop: 0,
+      scale: 1,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+    document: { documentElement: {} as never, body, activeElement: input },
+    getComputedStyle: (el: unknown) => ({ overflowY: el === scroll ? 'auto' : 'visible' }),
+  };
+  assert.equal(revealFocusedField(win), 288);
+  assert.equal(scroll.scrollTop, 288);
+});
+
+test('read-only, disabled and inputmode=none fields never own the keyboard', () => {
+  const field = (attrs: Record<string, string>) => ({
+    tagName: 'INPUT',
+    parentElement: null,
+    scrollHeight: 0,
+    clientHeight: 0,
+    scrollTop: 0,
+    getAttribute: (name: string) => attrs[name] ?? null,
+    getBoundingClientRect: () => ({ top: 0, bottom: 0 }),
+  });
+  assert.equal(isTextField(field({ readonly: '' })), false);
+  assert.equal(isTextField(field({ readonly: 'readonly', type: 'text' })), false);
+  assert.equal(isTextField(field({ disabled: '' })), false);
+  assert.equal(isTextField(field({ inputmode: 'none' })), false);
+  assert.equal(isTextField(field({ type: 'date' })), false);
+  assert.equal(isTextField(field({ type: 'search' })), true);
+});
+
+test('a user gesture suppresses automatic reveal for the focus session; a repeated same-size resize never scrolls', () => {
+  const h = harness();
+  installKeyboardInset(h.win);
+  h.viewport.height = 476;
+  h.vvListeners.resize.forEach((fn) => fn());
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 84);
+  h.scroll.scrollTop = 40;
+  h.docListeners.touchmove.forEach((fn) => fn());
+  h.vvListeners.resize.forEach((fn) => fn());
+  h.viewport.height = 400;
+  h.vvListeners.resize.forEach((fn) => fn());
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 40, 'no automatic scroll while the user drives');
+});
+
+test('closing and reopening the keyboard re-arms the reveal after a user scroll', () => {
+  const h = harness();
+  installKeyboardInset(h.win);
+  h.viewport.height = 476;
+  h.vvListeners.resize.forEach((fn) => fn());
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 84);
+  h.docListeners.wheel.forEach((fn) => fn());
+  h.scroll.scrollTop = 0;
+  h.viewport.height = 400;
+  h.vvListeners.resize.forEach((fn) => fn());
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 0, 'inhibited while the user drives');
+  h.viewport.height = 812;
+  h.vvListeners.resize.forEach((fn) => fn());
+  h.viewport.height = 476;
+  h.vvListeners.resize.forEach((fn) => fn());
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 84, 'a reopened keyboard reveals again');
+});
+
+test('focusing another field while the keyboard stays open reveals that field', () => {
+  const h = harness();
+  const second = h.node('INPUT', h.scroll, { top: 640, bottom: 680 });
+  installKeyboardInset(h.win);
+  h.viewport.height = 476;
+  h.vvListeners.resize.forEach((fn) => fn());
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 84);
+  h.win.document.activeElement = second as never;
+  h.scroll.scrollTop = 0;
+  h.docListeners.focusin.forEach((fn) => fn());
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 404, 'the newly focused field is the reveal target');
+});
+
+test('uninstall cancels a pending reveal and removes every listener; a stale frame cannot scroll', () => {
+  const h = harness();
+  const stop = installKeyboardInset(h.win);
+  h.viewport.height = 476;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.frames.size, 1, 'the reveal waits for the next frame');
+  const [stale] = [...h.frames.values()];
+  stop();
+  assert.equal(h.frames.size, 0, 'the queued frame was cancelled');
+  stale();
+  assert.equal(h.scroll.scrollTop, 0, 'a stale frame must not scroll after uninstall');
+  assert.equal(h.vvListeners.resize.length, 0);
+  assert.equal(h.vvListeners.scroll.length, 0);
+  assert.equal(h.winListeners.resize?.length ?? 0, 0);
+  assert.equal(h.docListeners.focusin?.length ?? 0, 0);
+  assert.equal(h.docListeners.touchmove?.length ?? 0, 0);
+  assert.equal(h.docListeners.wheel?.length ?? 0, 0);
+  assert.equal(h.props['--keyboard-inset'], '0px');
+  assert.equal('keyboard' in h.root.dataset, false);
+});
+
+test('a pinch zoom is not a keyboard: surfaces keep the layout size and nothing reveals', () => {
+  const h = harness();
+  installKeyboardInset(h.win);
+  h.viewport.scale = 2;
+  h.viewport.height = 406;
+  h.viewport.offsetTop = 100;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.props['--keyboard-inset'], '0px');
+  assert.equal(
+    h.props['--vv-height'],
+    '812px',
+    'fixed surfaces keep the layout size while pinching',
+  );
+  assert.equal(h.props['--vv-top'], '0px');
+  assert.equal('keyboard' in h.root.dataset, false);
+  assert.equal(h.frames.size, 0);
+});
+
+test('Android resize-content shrinks the layout itself: open is read against the baseline with no inset', () => {
+  const h = harness();
+  installKeyboardInset(h.win);
+  h.root.clientHeight = 476;
+  h.viewport.height = 476;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.root.dataset.keyboard, 'open');
+  assert.equal(
+    h.props['--keyboard-inset'],
+    '0px',
+    'the layout already resized; nothing hides behind the keyboard',
+  );
+  assert.equal(h.props['--vv-height'], '476px');
+});
+
+test('without a focused text field a shrunken visual viewport is not the keyboard', () => {
+  const h = harness({ focused: false });
+  installKeyboardInset(h.win);
+  h.viewport.height = 500;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.props['--keyboard-inset'], '0px');
+  assert.equal('keyboard' in h.root.dataset, false);
+  assert.equal(h.frames.size, 0);
+});
+
+test('a focused field with only browser-chrome shrinkage is not a keyboard and reveals nothing', () => {
+  const h = harness();
+  installKeyboardInset(h.win);
+  h.viewport.height = 760;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.props['--keyboard-inset'], '0px');
+  assert.equal('keyboard' in h.root.dataset, false);
+  assert.equal(h.frames.size, 0);
+});
+
+test('blurring while the keyboard is still up keeps the flag until the geometry restores', () => {
+  const h = harness();
+  installKeyboardInset(h.win);
+  h.viewport.height = 476;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.root.dataset.keyboard, 'open');
+  h.win.document.activeElement = null as never;
+  h.viewport.offsetTop = 40;
+  h.vvListeners.scroll.forEach((fn) => fn());
+  assert.equal(
+    h.root.dataset.keyboard,
+    'open',
+    'the still-shrunken viewport is still the keyboard',
+  );
+  h.viewport.height = 812;
+  h.viewport.offsetTop = 0;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal('keyboard' in h.root.dataset, false);
+});
+
+test('installing while the keyboard is already open reveals the autofocused field', () => {
+  const h = harness({ vvHeight: 476 });
+  installKeyboardInset(h.win);
+  assert.equal(h.frames.size, 1);
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 84);
+});
+
+test('a viewport scroll that opens the keyboard before the resize still reveals exactly once', () => {
+  const h = harness();
+  installKeyboardInset(h.win);
+  h.viewport.height = 476;
+  h.vvListeners.scroll.forEach((fn) => fn());
+  assert.equal(h.frames.size, 0, 'a pan never queues a reveal');
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.frames.size, 1);
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 84);
+  h.vvListeners.scroll.forEach((fn) => fn());
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.frames.size, 0);
+});
+
+test('blur then refocus of the same field re-arms the reveal', () => {
+  const h = harness();
+  installKeyboardInset(h.win);
+  h.viewport.height = 476;
+  h.vvListeners.resize.forEach((fn) => fn());
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 84);
+  h.scroll.scrollTop = 0;
+  h.docListeners.touchmove.forEach((fn) => fn());
+  h.win.document.activeElement = null as never;
+  h.docListeners.focusout.forEach((fn) => fn());
+  h.win.document.activeElement = h.input as never;
+  h.docListeners.focusin.forEach((fn) => fn());
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 84);
+});
+
+test('closing the keyboard cancels a pending reveal; the stale frame cannot scroll', () => {
+  const h = harness();
+  installKeyboardInset(h.win);
+  h.viewport.height = 476;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.frames.size, 1);
+  const [stale] = [...h.frames.values()];
+  h.viewport.height = 812;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.frames.size, 0);
+  stale();
+  assert.equal(h.scroll.scrollTop, 0);
+});
+
+test('a pinch with a changed layout never rebases the baseline', () => {
+  const h = harness();
+  installKeyboardInset(h.win);
+  h.viewport.scale = 2;
+  h.viewport.height = 350;
+  h.win.innerWidth = 600;
+  h.root.clientHeight = 700;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal('keyboard' in h.root.dataset, false);
+  h.viewport.scale = 1;
+  h.viewport.height = 476;
+  h.win.innerWidth = 390;
+  h.root.clientHeight = 476;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.root.dataset.keyboard, 'open', 'the pre-pinch baseline survives');
+  assert.equal(h.props['--keyboard-inset'], '0px');
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 84);
+});
+
+test('a new focus while a reveal is pending retargets the reveal to that field', () => {
+  const h = harness();
+  const second = h.node('INPUT', h.scroll, { top: 640, bottom: 680 });
+  installKeyboardInset(h.win);
+  h.viewport.height = 476;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(h.frames.size, 1);
+  h.win.document.activeElement = second as never;
+  h.docListeners.focusin.forEach((fn) => fn());
+  h.flush();
+  assert.equal(h.scroll.scrollTop, 404);
+});
+
+test('without the viewport API a focused layout shrink reports the keyboard with no inset', () => {
+  const h = harness();
+  h.win.visualViewport = null as never;
+  installKeyboardInset(h.win);
+  h.root.clientHeight = 750;
+  h.winListeners.resize.forEach((fn) => fn());
+  assert.equal('keyboard' in h.root.dataset, false, '62px off the baseline is not a keyboard');
+  h.root.clientHeight = 712;
+  h.winListeners.resize.forEach((fn) => fn());
+  assert.equal(h.root.dataset.keyboard, 'open');
+  assert.equal(h.props['--keyboard-inset'], '0px');
+});
+
+test('a genuine rotation rebases the layout height', () => {
+  const h = harness();
+  installKeyboardInset(h.win);
+  h.win.innerWidth = 844;
+  h.root.clientHeight = 390;
+  h.viewport.height = 390;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal('keyboard' in h.root.dataset, false);
+  h.viewport.height = 340;
+  h.vvListeners.resize.forEach((fn) => fn());
+  assert.equal(
+    'keyboard' in h.root.dataset,
+    false,
+    '50px off the rotated baseline is not a keyboard',
+  );
 });

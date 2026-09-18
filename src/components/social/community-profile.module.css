@@ -269,4 +269,5 @@
   padding-inline: var(--space-4);
   border-radius: var(--radius-control);
   background: var(--surface);
+  font-size: 16px;
 }

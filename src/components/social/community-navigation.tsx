@@ -3,6 +3,7 @@ import { Bookmark, FileText, MessageCircle, Search, UserRound } from '@/componen
 import { IconButton, ListRow, ScreenHeader } from '@/components/ui';
 import type { ScreenProps } from '@/lib/contracts';
 import { CommunityMessages } from './community-messages';
+import { schoolDisplayName } from './helpers';
 
 export const communityBase = (props: ScreenProps) =>
   props.data.profile.role === 'PARENT' ? '/parent-boards' : '/community';
@@ -60,7 +61,7 @@ export function CommunityProfile(props: ScreenProps) {
           </span>
           <div>
             <h2>{props.data.profile.nickname}</h2>
-            <p>{props.data.profile.school || '등록한 학교가 없어요'}</p>
+            <p>{schoolDisplayName(props.data.profile.school) || '등록한 학교가 없어요'}</p>
           </div>
         </div>
         <section aria-label="내 활동">

@@ -469,7 +469,6 @@ export function DirectConversation({
   );
   const [actionBusy, setActionBusy] = useState(false);
   const [highlight, setHighlight] = useState('');
-  const [viewport, setViewport] = useState<CSSProperties>({});
   const [composerHeight, setComposerHeight] = useState(76);
   const composer = useRef<HTMLFormElement>(null);
   const alive = useRef(true);
@@ -616,25 +615,6 @@ export function DirectConversation({
       return next;
     });
   }, [legacyDrafts, peer.id, setLegacyDrafts, storageKey]);
-  useEffect(() => {
-    const visual = window.visualViewport;
-    if (!visual) return;
-    const resize = () => {
-      setViewport({ height: `${visual.height}px`, top: `${visual.offsetTop}px` });
-      if (nearBottom.current)
-        requestAnimationFrame(() => {
-          const node = scroll.current;
-          if (node) node.scrollTop = node.scrollHeight;
-        });
-    };
-    resize();
-    visual.addEventListener('resize', resize);
-    visual.addEventListener('scroll', resize);
-    return () => {
-      visual.removeEventListener('resize', resize);
-      visual.removeEventListener('scroll', resize);
-    };
-  }, []);
   useLayoutEffect(() => {
     const node = composer.current;
     if (!node) return;
@@ -691,12 +671,12 @@ export function DirectConversation({
     scrollIntent.current = null;
   }, [messages, draft.pending, loading]);
   useEffect(() => {
-    if (!list.current) return;
     const observer = new ResizeObserver(() => {
       if (nearBottom.current && scroll.current)
         scroll.current.scrollTop = scroll.current.scrollHeight;
     });
-    observer.observe(list.current);
+    if (list.current) observer.observe(list.current);
+    if (scroll.current) observer.observe(scroll.current);
     return () => observer.disconnect();
   }, []);
   readVisible.current = async () => {
@@ -887,7 +867,7 @@ export function DirectConversation({
   return (
     <section
       className={styles.thread}
-      style={{ ...viewport, '--dm-composer-height': `${composerHeight}px` } as CSSProperties}
+      style={{ '--dm-composer-height': `${composerHeight}px` } as CSSProperties}
       aria-label={`${peer.nickname}님과의 쪽지 대화`}
       data-dm-thread
     >

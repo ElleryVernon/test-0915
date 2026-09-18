@@ -7,3 +7,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Verification commands
+
+Keyboard/scroll browser check (all APIs mocked via CDP interception; simulated visual viewport — not native iOS/Android keyboard proof):
+
+```sh
+npx tsx scripts/keyboard-browser-check.ts                       # dev server on :3000
+KB_EXPORT=.data/keyboard-web-check npx tsx scripts/keyboard-browser-check.ts  # isolated export via a built-in Node static server (no DB)
+```

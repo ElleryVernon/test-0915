@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ArrowLeft, X } from '@/components/icons';
 import { IconButton } from '@/components/ui';
@@ -34,39 +34,11 @@ export function AttachmentSheet({
   history?: boolean;
 }) {
   const close = useJourneyLayer(open && history, onClose);
-  const [viewport, setViewport] = useState<{ height: number; bottom: number }>();
   const heading = useRef<HTMLHeadingElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (!open) return;
-    const visual = window.visualViewport;
-    const measure = () =>
-      setViewport({
-        height: visual?.height ?? window.innerHeight,
-        bottom: Math.max(
-          0,
-          window.innerHeight - (visual?.height ?? window.innerHeight) - (visual?.offsetTop ?? 0),
-        ),
-      });
-    measure();
-    visual?.addEventListener('resize', measure);
-    visual?.addEventListener('scroll', measure);
-    window.addEventListener('resize', measure);
-    return () => {
-      visual?.removeEventListener('resize', measure);
-      visual?.removeEventListener('scroll', measure);
-      window.removeEventListener('resize', measure);
-    };
-  }, [open]);
-  useEffect(() => {
     if (open) heading.current?.focus({ preventScroll: true });
   }, [open, title]);
-  const style = viewport
-    ? ({
-        '--attachment-height': `${viewport.height * 0.9}px`,
-        bottom: viewport.bottom,
-      } as CSSProperties)
-    : undefined;
   return (
     <Dialog.Root
       open={open}
@@ -78,7 +50,6 @@ export function AttachmentSheet({
         <Dialog.Overlay className={styles.overlay} />
         <Dialog.Content
           className={styles.sheet}
-          style={style}
           {...(description ? {} : { 'aria-describedby': undefined })}
           onOpenAutoFocus={(event) => {
             returnFocus.current =

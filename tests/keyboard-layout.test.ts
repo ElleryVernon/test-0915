@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Static guard for the on-screen keyboard model (src/lib/keyboard-inset.ts): every bar glued to
@@ -45,6 +45,10 @@ test('the root declares the keyboard and visual-viewport custom properties with 
   assert.equal(value(rootBlock, '--vv-height'), '100dvh');
   assert.equal(value(rootBlock, '--vv-top'), '0px');
   assert.equal(value(rootBlock, '--safe-top'), 'env(safe-area-inset-top, 0px)');
+  assert.equal(value(rootBlock, '--safe-bottom'), 'env(safe-area-inset-bottom, 0px)');
+  const openRoot = gb.find((b) => b.selector === "html[data-keyboard='open']");
+  assert.ok(openRoot, 'keyboard-open root override in globals.css');
+  assert.equal(value(openRoot, '--safe-bottom'), '0px');
 });
 
 test('every bar fixed or stuck to the bottom of the viewport follows the keyboard inset', () => {
@@ -54,6 +58,7 @@ test('every bar fixed or stuck to the bottom of the viewport follows the keyboar
     '.recall-library-actions',
     '.curriculum-savebar',
     '.exercise-actions',
+    '.page-action-dock',
     '.sheet-content',
   ]) {
     assert.equal(finalValue(gb, selector, 'bottom'), 'var(--keyboard-inset)', selector);
@@ -130,6 +135,65 @@ test('module footers stuck to the bottom follow the keyboard inset too', () => {
 
 test('the app root installs the keyboard model once', () => {
   const app = read('src/components/app.tsx');
-  assert.match(app, /import \{ installKeyboardInset \} from '@\/lib\/keyboard-inset';/);
+  assert.match(app, /import \{[^}]*installKeyboardInset[^}]*\} from '@\/lib\/keyboard-inset';/);
   assert.match(app, /useEffect\(\(\) => installKeyboardInset\(window\), \[\]\);/);
+});
+
+test('module surfaces size from the shared viewport properties instead of measuring their own', () => {
+  const sheet = blocks(read('src/components/social/attachment-sheet.module.css'));
+  assert.equal(finalValue(sheet, '.sheet', 'bottom'), 'var(--keyboard-inset)');
+  assert.match(finalValue(sheet, '.sheet', 'max-height') ?? '', /var\(--vv-height\)/);
+  const editor = blocks(read('src/components/social/community-editor.module.css'));
+  assert.equal(finalValue(editor, '.page', 'top'), 'var(--vv-top)');
+  assert.equal(finalValue(editor, '.page', 'height'), 'var(--vv-height)');
+  const messages = blocks(read('src/components/social/community-messages.module.css'));
+  assert.equal(finalValue(messages, '.thread', 'top'), 'var(--vv-top)');
+  assert.equal(finalValue(messages, '.thread', 'height'), 'var(--vv-height)');
+  const comments = blocks(read('src/components/social/community-comments.module.css'));
+  assert.equal(
+    finalValue(comments, ":global(html[data-keyboard='open']) .composer:not(.embedded)", 'bottom'),
+    'var(--keyboard-inset)',
+  );
+});
+
+test('surface components no longer measure the visual viewport themselves', () => {
+  for (const path of [
+    'src/components/social/attachment-sheet.tsx',
+    'src/components/social/community-editor-page.tsx',
+    'src/components/social/community-comments.tsx',
+  ]) {
+    assert.doesNotMatch(read(path), /visualViewport/, `${path} uses the shared CSS variables`);
+  }
+  const messages = read('src/components/social/community-messages.tsx');
+  const thread = messages.slice(messages.lastIndexOf('data-dm-thread'));
+  assert.doesNotMatch(thread, /visualViewport/, 'the DM thread follows the shared variables');
+});
+
+test('editable text stays at least 16px so iOS does not zoom on focus', () => {
+  const files = [
+    'src/app/globals.css',
+    'src/app/layout-system.css',
+    ...readdirSync(join(root, 'src/components'), { recursive: true })
+      .filter((f): f is string => typeof f === 'string' && f.endsWith('.module.css'))
+      .map((f) => join('src/components', f)),
+  ];
+  const small: string[] = [];
+  for (const file of files) {
+    for (const b of blocks(read(file))) {
+      if (!/(^|[\s>+~,.])(input|textarea)(?=[\s>+~,.:\[]|$)/.test(b.selector)) continue;
+      const size = value(b, 'font-size');
+      const px = size?.match(/^([0-9.]+)px$/);
+      if (px && parseFloat(px[1]) < 16) small.push(`${file}: ${b.selector} (${size})`);
+    }
+  }
+  assert.deepEqual(small, [], `text fields under 16px: ${small.join(', ')}`);
+});
+
+test('focused fields keep their scroll margin and adaptive sheets do not animate against the keyboard', () => {
+  assert.equal(finalValue(gb, 'input', 'scroll-margin-block'), 'var(--space-6)');
+  assert.equal(finalValue(gb, 'textarea', 'scroll-margin-block'), 'var(--space-6)');
+  assert.equal(
+    finalValue(gb, "html[data-keyboard='open'] .sheet-content-adaptive", 'transition'),
+    'none',
+  );
 });

@@ -18,6 +18,7 @@ import {
   Wallet,
 } from '@/components/icons';
 import { api } from '@/lib/api';
+import { schoolDisplayName } from './helpers';
 import { wrongQuestions, wrongEssays } from '@/components/study/logic';
 import type { Profile, ScreenProps } from '@/lib/contracts';
 import { Button, IconButton, ListRow, ScreenHeader, SectionTitle, Sheet } from '@/components/ui';
@@ -244,7 +245,9 @@ export default function Account(props: ScreenProps) {
             <p className="mt-1 text-[13px] text-muted">
               {parent
                 ? '학부모'
-                : [data.profile.school, data.profile.grade].filter(Boolean).join(' · ') ||
+                : [schoolDisplayName(data.profile.school), data.profile.grade]
+                    .filter(Boolean)
+                    .join(' · ') ||
                   '나만의 공부를 시작해요'}
             </p>
           </div>
@@ -315,7 +318,7 @@ export default function Account(props: ScreenProps) {
                 <span className="flex-1">
                   <span className="font-bold text-[16px]">{data.child.name}</span>
                   <span className="block text-[12px] text-muted mt-1">
-                    {data.child.school} · {data.child.grade}
+                    {schoolDisplayName(data.child.school)} · {data.child.grade}
                   </span>
                 </span>
                 <ChevronRight size={20} />
@@ -441,9 +444,12 @@ function ProfileEditor({
   const [form, setForm] = useState({
     name: data.profile.name,
     nickname: data.profile.nickname,
-    school: data.profile.school,
+    school: schoolDisplayName(data.profile.school),
     grade: data.profile.grade,
   });
+  // The input shows the school name only; `schoolSaved` carries the `이름 · 주소` scoping
+  // identity (or free text when typed) that PATCH /profile stores verbatim.
+  const [schoolSaved, setSchoolSaved] = useState(data.profile.school);
   const [schools, setSchools] = useState<{ id: string; name: string; address: string }[]>([]);
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -485,7 +491,7 @@ function ProfileEditor({
     setBusy(true);
     setError('');
     try {
-      await api('/profile', form, 'PATCH');
+      await api('/profile', { ...form, school: schoolSaved }, 'PATCH');
       await refresh();
       onClose();
       toast('프로필을 바꿨어요');
@@ -538,6 +544,7 @@ function ProfileEditor({
                 placeholder="학교 이름을 검색해 주세요"
                 onChange={(e) => {
                   setForm({ ...form, school: e.target.value });
+                  setSchoolSaved(e.target.value);
                   setSearching(true);
                 }}
                 className="field mt-2"
@@ -549,7 +556,8 @@ function ProfileEditor({
                       type="button"
                       key={s.id}
                       onClick={() => {
-                        setForm({ ...form, school: `${s.name} · ${s.address}` });
+                        setForm({ ...form, school: s.name });
+                        setSchoolSaved(`${s.name} · ${s.address}`);
                         setSearching(false);
                       }}
                       className="px-4 py-3 text-left text-sm font-medium"

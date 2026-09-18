@@ -15,7 +15,14 @@ import {
 import { api } from '@/lib/api';
 import type { Profile, ScreenProps } from '@/lib/contracts';
 import { Button, EmptyState, IconButton, ScreenHeader, SectionTitle, Sheet } from '@/components/ui';
-import { dateKey, relativeTime, shiftDate, subjectAccuracy, weekDates } from './helpers';
+import {
+  dateKey,
+  relativeTime,
+  schoolDisplayName,
+  shiftDate,
+  subjectAccuracy,
+  weekDates,
+} from './helpers';
 import { Stepper } from '@/components/ui-choice';
 
 export default function Parent(props: ScreenProps) {
@@ -435,7 +442,7 @@ export function ChildLinks({
             <span className="flex-1">
               <span className="font-semibold text-[15px]">{child.name}</span>
               <span className="block text-[12px] text-subtle mt-1">
-                {child.grade} · {child.school}
+                {child.grade} · {schoolDisplayName(child.school)}
               </span>
             </span>
             {child.id === data.child?.id && <Check size={19} />}

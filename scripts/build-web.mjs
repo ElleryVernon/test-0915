@@ -14,7 +14,6 @@ const run = (args, env = process.env) => {
 };
 try {
   run(['node_modules/next/dist/bin/next', 'build'], { ...process.env, NEXT_EXPORT_DIR: release });
-  run(['scripts/precompress.mjs', stage]);
   // Older open tabs may still request their immutable chunks after the new document is served.
   if (existsSync(join(out, '_next/static'))) {
     cpSync(join(out, '_next/static'), join(stage, '_next/static'), {
@@ -22,6 +21,7 @@ try {
       force: false,
     });
   }
+  run(['scripts/precompress.mjs', stage]);
   if (existsSync(out)) renameSync(out, previous);
   try {
     renameSync(stage, out);

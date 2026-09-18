@@ -31,9 +31,10 @@ check(/output: 'export'/.test(config) && /PHASE_DEVELOPMENT_SERVER/.test(config)
 const grep = run('grep', ['-rln', '--exclude=web-build-check.ts', '--exclude=db.ts', "src/lib/server\\|from '@/lib/server\\|better-auth\\|@prisma/client", 'src', 'scripts', 'tests']);
 check(grep.status === 1, `no remaining imports of the server code: ${grep.out.trim()}`);
 
-// 2. next build → out/
-const build = run('node_modules/.bin/next', ['build'], { NEXT_TELEMETRY_DISABLED: '1' });
-check(build.status === 0, `next build failed:\n${build.out.slice(-3000)}`);
+// 2. The real publish pipeline: next build → merge kept chunks → precompress → out/. A bare
+// `next build` here would overwrite out/ without the .br/.gz siblings web-static-check audits.
+const build = run(process.execPath, ['scripts/build-web.mjs'], { NEXT_TELEMETRY_DISABLED: '1' });
+check(build.status === 0, `web build failed:\n${build.out.slice(-3000)}`);
 const routes = ['study', 'subjects', 'quiz', 'essay', 'flashcards', 'wrong-notes', 'create-card', 'completed-subjects', 'community', 'boards', 'planner', 'parent', 'parent-boards', 'cheer', 'admin', 'search', 'notifications', 'profile'];
 check(existsSync('out/index.html') && existsSync('out/404.html'), 'out/index.html and out/404.html exist');
 // Next writes out/<screen>.html (trailingSlash off); the Go server maps /<screen> to it.
@@ -47,7 +48,7 @@ check(staticDir.some((f) => f.endsWith('.js')), 'hashed JS chunks present');
 // 3. Type check and unit tests.
 const tsc = run('node_modules/.bin/tsc', ['--noEmit']);
 check(tsc.status === 0, `tsc failed:\n${tsc.out.slice(-3000)}`);
-const tests = run('node_modules/.bin/tsx', ['--test', ...readdirSync('tests').filter((f) => f.endsWith('.test.ts')).map((f) => join('tests', f))]);
+const tests = run('node_modules/.bin/tsx', ['--import', './tests/register-css.mjs', '--test', ...readdirSync('tests').filter((f) => f.endsWith('.test.ts')).map((f) => join('tests', f))]);
 check(tests.status === 0 && /^(#|ℹ) fail 0$/m.test(tests.out), `unit tests:\n${tests.out.slice(-2000)}`);
 
 // 4. Golden generators produce byte-identical goldens from the frozen references.

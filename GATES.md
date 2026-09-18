@@ -66,3 +66,47 @@ Scope: Actual mobile product preserving supplied HTML design and orange flowing 
 
 합계: 충족 110 · 미충족 8 · 포기 0.
 <!-- /memoryz-cloud index -->
+
+## keyboard-followup — 학교 주소 표시 정리 (2026-09-16)
+
+Scope: 저장값 "이름 · 주소"(학교 커뮤니티 스코핑 키)는 유지하고, 사람에게 보이는 모든 표시는 학교명만 노출. 검색 결과의 주소는 동명 학교 구분을 위해 유지.
+
+- [x] S1: schoolDisplayName 이 저장 형식에서 이름만 추출하고, 프로필 헤더·자녀 카드·커뮤니티 내정보가 이름만 렌더한다 (단위+정적 렌더 테스트)
+  CHECK: npx tsx --import ./tests/register-css.mjs --test tests/school-display.test.ts
+  EXPECT: fail 0
+  EVIDENCE: 2026-09-16 tests 6 / pass 6 / fail 0
+
+- [x] S2: 프로필 편집에서 학교 선택 시 입력란은 이름만 보이고 PATCH 본문은 "이름 · 주소" 스코핑 형식을 유지하며, 검색 결과는 주소를 계속 보여준다 (프로덕션 export 브라우저 검증)
+  CHECK: npm run build && rm -rf .data/keyboard-web-check && cp -R out .data/keyboard-web-check && KB_EXPORT=.data/keyboard-web-check npx tsx scripts/keyboard-browser-check.ts
+  EXPECT: KEYBOARD_BROWSER_OK
+  EVIDENCE: 2026-09-16 KEYBOARD_BROWSER_OK — 45 checks passed (phase 2 프로필 편집 이름 표시·PATCH 스코핑·검색 결과 주소 포함). 시뮬레이티드 뷰포트 — 네이티브 키보드 아님
+
+- [x] S3: 회귀 — 전체 테스트·타입체크·정적 웹 검사 통과
+  CHECK: npm run test && npm run typecheck && npm run check:web
+  EXPECT: fail 0
+  EVIDENCE: 2026-09-16 WEB_BUILD_OK (49 checks — 단위 테스트+타입체크+빌드 포함) / WEB_STATIC_OK (21 checks) / DEV_PROXY_OK (5 checks). next.config.ts rewrite destination `/api/*`→`/api/:path*` 수정으로 dev 프록시 복구, build-web.mjs 머지 후 압축 순서 수정으로 .br/.gz 누락 해소
+
+- [x] S4: iOS 실제 소프트 키보드에서 학교 검색·스크롤·선택·닫힘·복귀 전체 흐름 확인 (네이티브)
+  EVIDENCE: 2026-09-18 iPhone 17 Pro 시뮬레이터(iOS 26.5) 실소프트키보드 통과 — mock 서버(:18080, 프로덕션 export 서빙). CGEvent 실탭 경로(시뮬레이터 창 전면화·안정화 대기·디바이스 좌표 매핑): 피커 오픈·자동포커스로 실키보드 표시(nat11), 소프트키보드 키 탭으로 "서울" 실입력(nat12), 14개 결과·아이콘 배지·매칭 하이라이트 렌더(nat12/19), 결과 행 탭→선택→피커 닫힘→키보드 해제→온보딩 복귀(nat21), 재오픈 시 최근 선택에 선택 학교 주황 체크(nat24), ← 닫기 시 선택 보존·내비 복원(nat26), PATCH "이름 · 주소" 스코핑 유지. 미검증 잔여: 합성 pan/scroll이 시뮬레이터에 도달하지 않아 결과 리스트 스크롤의 네이티브 확인은 브라우저 49체크 커버리지로 대체. safaridriver는 iOS 26.5에서 element click/actions/sendKeys 전부 미반영이며 세션 활성 중 사용자 입력을 "계속 테스트하기" 다이얼로그가 차단 → JS 판독 전용으로만 사용.
+
+## school-picker-ux — 피커 프로덕션 수준 재설계 (2026-09-18)
+
+Scope: 검색 전 화면을 콘텐츠로 채움(지역 빠른선택 칩·최근 선택·전체 둘러보기), 결과 행 리치화(아이콘 배지·매칭 하이라이트·선택 상태), 로딩 스켈레톤, 빈/오류 상태 정리. 키보드 동작·헤더 고정·결과 독립 스크롤 회귀 없어야 함.
+
+- [x] P1: 피커 검색 전 화면에 지역 칩(17개)·둘러보기 목록이 렌더되고, 쿼리≥2 시 결과 리스트만 표시, 로딩 시 스켈레톤 행 표시 (단위+정적 렌더 테스트)
+  CHECK: npx tsx --import ./tests/register-css.mjs --test tests/school-picker.test.ts
+  EXPECT: fail 0
+  EVIDENCE: 2026-09-18 tests 6 / pass 6 / fail 0 (지역 칩 매핑·하이라이트·스켈레톤·빈 상태·마크업·CSS 검증)
+
+- [x] P2: 프로덕션 export 브라우저 검증 — 갱신된 셀렉터로 전 단계 통과 (칩 탭→쿼리 입력→결과→선택→복귀 포함)
+  CHECK: npm run build && rm -rf .data/keyboard-web-check && cp -R out .data/keyboard-web-check && KB_EXPORT=.data/keyboard-web-check npx tsx scripts/keyboard-browser-check.ts
+  EXPECT: KEYBOARD_BROWSER_OK
+  EVIDENCE: 2026-09-18 KEYBOARD_BROWSER_OK — 49 checks passed (idle 둘러보기·17개 지역 칩·칩 쿼리·클리어 복원·결과 독립 스크롤·헤더 고정·선택/취소·프로필 표시·PATCH 스코핑·키보드 해제 복원·320px 뷰포트)
+
+- [x] P3: 회귀 — 전체 테스트·타입체크·정적 웹 검사 통과
+  CHECK: npm run test && npm run typecheck && npm run check:web
+  EXPECT: DEV_PROXY_OK
+  EVIDENCE: 2026-09-18 typecheck 통과 / WEB_BUILD_OK (49) / WEB_STATIC_OK (21) / DEV_PROXY_OK (5)
+
+- [x] P4: iOS 실제 소프트 키보드에서 새 피커 검색·스크롤·선택·닫힘·복귀 전체 흐름 확인 (네이티브, S4 이어서)
+  EVIDENCE: 2026-09-18 S4와 동일 네이티브 세션 — 새 피커 UI에서 idle 상태(최근 선택·지역 칩·전국 고등학교 둘러보기) 실기기 렌더 확인(nat11/24), "서울" 실입력→14개 결과 하이라이트(nat12), 결과 탭→선택→복귀(nat21), 재오픈→최근 선택 주황 체크(nat24), ← 취소→선택 보존(nat26). 리스트 스크롤 네이티브 확인은 합성 pan 미도달로 브라우저 체크 커버리지 사용.

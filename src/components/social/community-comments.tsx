@@ -94,7 +94,6 @@ export const CommunityComments = forwardRef<
   const section = useRef<HTMLElement>(null);
   const readingAnchor = useRef<{ id: string; top: number } | null>(null);
   const [composerHeight, setComposerHeight] = useState(112);
-  const [keyboardBottom, setKeyboardBottom] = useState<number>();
   const ownPost = post.isMine || post.authorId === data.profile.id;
   const authorLabel = ownPost && post.anonymous ? '익명 · 글쓴이' : data.profile.nickname;
   const changeId = () => {
@@ -167,19 +166,7 @@ export const CommunityComments = forwardRef<
       setComposerHeight(composer.current?.offsetHeight || 112),
     );
     observer.observe(composer.current);
-    const viewport = window.visualViewport;
-    const resize = () => {
-      const offset = viewport ? window.innerHeight - viewport.height - viewport.offsetTop : 0;
-      setKeyboardBottom(offset > 100 ? offset : undefined);
-    };
-    resize();
-    viewport?.addEventListener('resize', resize);
-    viewport?.addEventListener('scroll', resize);
-    return () => {
-      observer.disconnect();
-      viewport?.removeEventListener('resize', resize);
-      viewport?.removeEventListener('scroll', resize);
-    };
+    return () => observer.disconnect();
   }, []);
   useImperativeHandle(
     ref,
@@ -458,7 +445,6 @@ export const CommunityComments = forwardRef<
         ref={composer}
         onSubmit={submit}
         className={`${styles.composer} ${embedded ? styles.embedded : ''}`}
-        style={keyboardBottom === undefined || embedded ? undefined : { bottom: keyboardBottom }}
         aria-label="댓글 작성"
         aria-busy={busy}
       >
