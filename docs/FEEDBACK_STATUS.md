@@ -17,6 +17,12 @@
 | 9. 고정 일정은 두고 변동 후보를 넣어 가능한 안 추천        | 반영 (이전 세션)                              | `이번 주 계획 세우기`: 할 일(총 시간·회당 시간·요일)과 `시간표 후보 비교`(학원 후보 묶음). 고정·기존 일정을 장애물로 두고 규칙 기반으로 최대 9안을 계산하며 사용자가 고른 안만 등록한다. AI 라고 부르지 않는다                                                                                                                                                                 |
 | 10. 마켓                                                   | 제외                                          | 사용자가 MVP·필수가 아니라고 했으므로 만들지 않았다                                                                                                                                                                                                                                                                                                                            |
 
+### 판정 모델 통합 배포 (2026-09-18, 2차)
+
+- 검증: `node scripts/delivery-check.mjs` → MEMORYZ_DELIVERY_OK, 회귀 검사 REGRESSION_OK(17개 스위트), Go 전체 테스트 0 실패, 프런트 389개 통과. 커밋 `f635111` 기준.
+- 배포: 시크릿 `TYPESAFE_API_KEY`(버전 1, 실행 서비스 계정 접근 권한) 생성 → 이미지 `server:f635111f8ed4`(linux/amd64, 37 MB) → 마이그레이션 잡 pending 0·시드 성공 → Cloud Run 리비전 `memoryz-00022-mb2`(`AI_JUDGE=shadow`, `TYPESAFE_MODEL=jev-latest`) → `node scripts/cloud-smoke.mjs` CLOUD_SMOKE_OK(14개 검사) → 공개 주소에서 데모 세션으로 `POST /api/essay/judge` 200(0.24~0.68초, 개념 4/4·임시 100점) → 알림 정책 6개·업타임 확인.
+- shadow 모드: 판정을 기록하고 표시 전용 빠른 판정만 제공하며 채점·검수 경로는 바꾸지 않는다. `on` 전환은 `scripts/deploy.mjs`의 `JUDGE_MODE`를 바꾸고 `service`·`verify-service`를 다시 실행하는 한 단계이며, 그 전에 `AiRun` retries의 `judge` 기록으로 운영 일치율을 읽는다.
+
 ### 통합 검증과 배포 (2026-09-18)
 
 - 통합 검증: `node server/scripts/regression.mjs` → REGRESSION_OK (17개 스위트, 실패 0; 계약 검사 188·267·119, 자료 37, 캐시 29, 텔레메트리 17, 지터 17), `node scripts/delivery-check.mjs` → MEMORYZ_DELIVERY_OK. 커밋 `9b46112` 기준.
