@@ -87,7 +87,11 @@ test('the root declares the focus ring tokens', () => {
   assert.ok(roots.length > 0, ':root block in globals.css');
   const token = (prop: string) => roots.flatMap((b) => values(b, prop));
   assert.deepEqual(token('--focus-ring'), ['2px solid var(--text-primary)']);
-  assert.deepEqual(token('--focus-ring-offset'), ['3px']);
+  assert.deepEqual(
+    token('--focus-ring-offset'),
+    ['-2px'],
+    'the ring sits inside the control so it is never clipped',
+  );
 });
 
 test('every text-field focus rule draws the token ring and nothing brand-coloured', () => {

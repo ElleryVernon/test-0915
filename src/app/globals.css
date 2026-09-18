@@ -63,8 +63,10 @@
   --brand: #ff6f0f;
   --on-primary: #fff;
   --brand-strong: #c94d09;
+  /* Text-field focus ring, drawn inside the control (negative offset) so no page gutter, sheet edge
+     or overflow clip can cut it; every field, search wrapper and option field uses these two tokens. */
   --focus-ring: 2px solid var(--text-primary);
-  --focus-ring-offset: 3px;
+  --focus-ring-offset: -2px;
   --brand-pressed: #ee6500;
   --source-highlight: color-mix(in srgb, var(--brand) 32%, transparent);
   --danger: #c73d32;
