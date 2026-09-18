@@ -46,8 +46,8 @@
   outline: 0;
 }
 .input:focus-within {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 3px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .presets {
   display: grid;

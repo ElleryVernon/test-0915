@@ -88,8 +88,8 @@
   font-size: 14px;
 }
 .search:focus-within {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .search button {
   min-width: var(--control-size);

@@ -172,8 +172,8 @@
 }
 .fields :global(.field):focus-visible,
 .fields :global(.search-field):has(input:focus-visible) {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 3px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .help {
   font-size: 12px;

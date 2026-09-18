@@ -37,8 +37,8 @@
   color: var(--text-primary);
 }
 .search:focus-within {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 2px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .listHint {
   font-size: 12px;
@@ -462,8 +462,8 @@
   padding: 0 var(--space-1) 0 var(--space-4);
 }
 .inputShell:focus-within {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 2px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .inputShell textarea {
   resize: none;

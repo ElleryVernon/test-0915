@@ -216,8 +216,8 @@
   outline: none;
 }
 .inputRow:focus-within {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 2px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .send {
   flex-shrink: 0;

@@ -480,7 +480,7 @@
   color: var(--notice-text);
   font-size: 13px;
 }
-.scroll :is(button, input):focus-visible {
+.scroll button:focus-visible {
   outline: 2px solid var(--brand-strong);
   outline-offset: 3px;
 }

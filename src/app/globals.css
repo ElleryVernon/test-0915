@@ -63,6 +63,8 @@
   --brand: #ff6f0f;
   --on-primary: #fff;
   --brand-strong: #c94d09;
+  --focus-ring: 2px solid var(--text-primary);
+  --focus-ring-offset: 3px;
   --brand-pressed: #ee6500;
   --source-highlight: color-mix(in srgb, var(--brand) 32%, transparent);
   --danger: #c73d32;
@@ -136,8 +138,8 @@ a:focus-visible {
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 1px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 a {
   text-decoration: none;
@@ -310,8 +312,8 @@ svg {
 }
 .field:focus {
   background: #fff;
-  border-color: var(--brand);
-  outline: none;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .field::placeholder {
   color: var(--text-subtle);
@@ -2422,10 +2424,8 @@ button.recall-card:active {
 }
 .compose-title:focus-visible,
 .compose-body:focus-visible {
-  outline: none;
-}
-.compose-title:focus-visible {
-  border-color: var(--brand);
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .compose-body:focus-visible {
   box-shadow: inset 2px 0 var(--line);
@@ -2751,7 +2751,8 @@ button.recall-card:active {
   color: var(--text-muted);
 }
 .curriculum-search:focus-within {
-  outline: 1.5px solid var(--brand);
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .curriculum-search input {
   width: 0;
@@ -3452,7 +3453,8 @@ body:has(.planner-cta) .toast {
   cursor: pointer;
 }
 .time-box:focus-within {
-  box-shadow: inset 0 0 0 1.5px var(--brand);
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
   background: #fff;
 }
 .time-box-label {
@@ -3940,8 +3942,8 @@ body:has(.planner-cta) .toast {
 }
 .choice-field:focus-visible {
   background: #fff;
-  border-color: var(--brand);
-  outline: none;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .choice-field-value {
   min-width: 0;
@@ -4457,10 +4459,6 @@ body:has(.planner-cta) .toast {
   color: var(--text-primary);
   background: var(--surface);
 }
-.school-time-input input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
 .school-day-hours {
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-subtle);
@@ -4682,8 +4680,8 @@ body:has(.planner-cta) .toast {
 .school-registration .choice-field:focus,
 .school-time-input input:focus {
   border-color: var(--border-strong);
-  outline: 2px solid var(--text-primary);
-  outline-offset: 1px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
   box-shadow: none;
 }
 .date-picker-day:disabled,
@@ -4955,8 +4953,8 @@ a.pill {
   font-size: 15px;
 }
 .community-search:focus-within {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 2px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .community-conversations {
   margin-top: var(--gap-block);
