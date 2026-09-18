@@ -165,7 +165,7 @@
 }
 .footer {
   position: sticky;
-  bottom: 0;
+  bottom: var(--keyboard-inset);
   z-index: 10;
   display: grid;
   gap: var(--gap-inline);

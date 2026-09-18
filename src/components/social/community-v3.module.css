@@ -577,3 +577,8 @@
   font-weight: 600;
   box-shadow: 0 2px 8px #0002;
 }
+
+/* The write button has no place above a keyboard. */
+:global(html[data-keyboard='open']) .fab {
+  display: none;
+}

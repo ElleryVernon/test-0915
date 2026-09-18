@@ -1,7 +1,19 @@
+/* The column covers exactly the visible area and follows it: iOS pans the visual viewport when
+   the keyboard opens, so the screen is fixed at the viewport's offset with its height, the header
+   stays under the status bar, the step content scrolls inside, and the footer keeps its place above
+   the keyboard instead of the document scrolling. */
 .screen {
-  min-height: 100dvh;
+  position: fixed;
+  top: var(--vv-top, 0px);
+  left: 0;
+  right: 0;
+  max-width: var(--app-width);
+  margin-inline: auto;
+  height: var(--vv-height, 100dvh);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  padding-top: var(--safe-top);
   background: var(--surface-raised);
 }
 .header {
@@ -56,6 +68,9 @@
 }
 .content {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--space-3) var(--page-gutter) var(--space-7);
   animation: arrive 0.18s ease-out;
 }
@@ -137,8 +152,11 @@
 .role[data-selected='true'] .choiceMark {
   background: white;
 }
+/* Explicit minmax(0, 1fr) columns: a long unbreakable school name (word-break: keep-all) must wrap
+   inside the column, not push the whole block past the gutter as WebKit otherwise does. */
 .fields {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
 }
 .fields label,
@@ -179,7 +197,7 @@
 }
 .grades {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2);
   margin-block: var(--space-3) var(--space-5);
 }
@@ -202,6 +220,7 @@
 }
 .schoolResults {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
 }
 .schoolResults p {
@@ -220,6 +239,8 @@
 }
 .schoolResults button span {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 14px;
 }
 .parentGuide h2 {
@@ -256,8 +277,7 @@
   font-weight: 650;
 }
 .footer {
-  position: sticky;
-  bottom: 0;
+  flex: 0 0 auto;
   padding: var(--space-4) var(--page-gutter) max(var(--space-4), env(safe-area-inset-bottom));
   background: var(--surface-raised);
   display: grid;
@@ -286,4 +306,16 @@
   .role {
     transition: none;
   }
+}
+
+:global(html[data-keyboard='open']) .footer > p {
+  display: none;
+}
+/* Typing needs the visible height more than orientation: the step rail folds away, and while a
+   school query is active the results take the footer's room (its action is disabled then anyway). */
+:global(html[data-keyboard='open']) .steps {
+  display: none;
+}
+:global(html[data-keyboard='open']) .screen[data-searching='true'] .footer {
+  display: none;
 }

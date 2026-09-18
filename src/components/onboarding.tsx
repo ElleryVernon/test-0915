@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { KEYBOARD_THRESHOLD } from '@/lib/keyboard-inset';
 import {
   ArrowLeft,
   ArrowRight,
@@ -23,7 +24,14 @@ type Draft = {
   school: string;
   schoolId?: string;
 };
-const empty: Draft = { step: 0, role: '', nickname: '', grade: '', school: '', schoolId: undefined };
+const empty: Draft = {
+  step: 0,
+  role: '',
+  nickname: '',
+  grade: '',
+  school: '',
+  schoolId: undefined,
+};
 const steps = ['이용 목적', '프로필', '시작 준비'];
 export default function Onboarding({
   refresh,
@@ -40,6 +48,8 @@ export default function Onboarding({
   const [schoolStatus, setSchoolStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [schoolSearch, setSchoolSearch] = useState('');
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const contentRef = useRef<HTMLElement>(null);
+  const schoolInputRef = useRef<HTMLInputElement>(null);
   const parent = draft.role === 'PARENT';
   async function load() {
     setError('');
@@ -62,6 +72,36 @@ export default function Onboarding({
   useEffect(() => {
     if (loaded) titleRef.current?.focus({ preventScroll: true });
   }, [draft.step, loaded]);
+  // When the on-screen keyboard opens for a field, pin that field's label to the top of the
+  // scrolling content so the field and what follows it (search results) stay visible above the
+  // keyboard. The screen itself follows the visual viewport (onboarding.module.css .screen).
+  function pinFocusedField() {
+    const viewport = window.visualViewport;
+    const content = contentRef.current;
+    const active = document.activeElement;
+    if (!viewport || !content || !(active instanceof HTMLInputElement)) return;
+    if (!content.contains(active)) return;
+    if (document.documentElement.clientHeight - viewport.height < KEYBOARD_THRESHOLD) return;
+    requestAnimationFrame(() => {
+      const label = active.id
+        ? content.querySelector<HTMLElement>(`label[for="${active.id}"]`)
+        : null;
+      const target = label ?? active;
+      const offset = target.getBoundingClientRect().top - content.getBoundingClientRect().top;
+      const inset = parseFloat(getComputedStyle(content).paddingTop) || 0;
+      content.scrollTo({ top: content.scrollTop + offset - inset });
+    });
+  }
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    viewport.addEventListener('resize', pinFocusedField);
+    return () => viewport.removeEventListener('resize', pinFocusedField);
+  }, []);
+  // Results push the field's surroundings around; keep the field pinned as they arrive.
+  useEffect(() => {
+    pinFocusedField();
+  }, [schoolStatus, schools.length]);
   useEffect(() => {
     if (schoolSearch.trim().length < 2 || draft.step !== 2) {
       setSchools([]);
@@ -130,7 +170,12 @@ export default function Onboarding({
     }
   }
   return (
-    <main className={styles.screen} aria-busy={busy}>
+    <main
+      className={styles.screen}
+      aria-busy={busy}
+      // While a school query is being typed, the results outrank the footer (see the module CSS).
+      data-searching={draft.step === 2 && schoolSearch.trim().length > 0 ? 'true' : undefined}
+    >
       <header className={styles.header}>
         {draft.step > 0 ? (
           <IconButton label="이전 단계로 돌아가기" onClick={previous} disabled={busy || saved}>
@@ -174,7 +219,7 @@ export default function Onboarding({
         </section>
       ) : (
         <>
-          <section key={draft.step} className={styles.content}>
+          <section key={draft.step} ref={contentRef} className={styles.content}>
             <h1 ref={titleRef} tabIndex={-1}>
               {draft.step === 0 ? (
                 <>
@@ -323,6 +368,7 @@ export default function Onboarding({
                     <Search size={19} />
                     <input
                       id="onboarding-school"
+                      ref={schoolInputRef}
                       value={draft.school}
                       placeholder="학교명 또는 지역으로 검색"
                       maxLength={100}
@@ -335,9 +381,12 @@ export default function Onboarding({
                     {draft.school && (
                       <IconButton
                         label="학교 입력 지우기"
+                        // Clearing keeps the field focused so the keyboard stays for the next query.
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
                           setDraft((d) => ({ ...d, school: '', schoolId: undefined }));
                           setSchoolSearch('');
+                          schoolInputRef.current?.focus();
                         }}
                       >
                         <X size={16} />
@@ -362,7 +411,10 @@ export default function Onboarding({
                           }}
                         >
                           <GraduationCap size={20} />
-                          <span>{s.name}<small style={{ display: 'block', fontWeight: 400 }}>{s.address}</small></span>
+                          <span>
+                            {s.name}
+                            <small style={{ display: 'block', fontWeight: 400 }}>{s.address}</small>
+                          </span>
                           <ArrowRight size={16} />
                         </button>
                       ))
@@ -370,9 +422,7 @@ export default function Onboarding({
                   </div>
                   {draft.schoolId && <p className={styles.help}>학교 선택 완료 · {draft.school}</p>}
                   {!draft.school && (
-                    <p className={styles.help}>
-                      학교는 나중에 학교 커뮤니티에서 등록해도 돼요.
-                    </p>
+                    <p className={styles.help}>학교는 나중에 학교 커뮤니티에서 등록해도 돼요.</p>
                   )}
                 </div>
               ))}

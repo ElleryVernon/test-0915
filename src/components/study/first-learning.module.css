@@ -414,7 +414,7 @@
 }
 .lessonFooter {
   position: sticky;
-  bottom: 0;
+  bottom: var(--keyboard-inset);
   z-index: 3;
   display: grid;
   gap: var(--space-3);

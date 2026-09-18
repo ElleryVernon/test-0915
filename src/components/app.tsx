@@ -30,6 +30,7 @@ import {
 } from '@/components/icons';
 import { openDB } from 'idb';
 import { api, retryTransient } from '@/lib/api';
+import { installKeyboardInset } from '@/lib/keyboard-inset';
 import { loginBusyRetryAt } from '@/lib/retry-countdown';
 import {
   sessionBoundary,
@@ -578,6 +579,8 @@ export default function App() {
   // navigation that only tidies the address.
   const [screen, setScreen] = useState('/');
   const [message, setMessage] = useState<{ text: string; action?: ToastAction } | null>(null);
+  // Publish the visual viewport (keyboard strip, visible height) as CSS variables for every screen.
+  useEffect(() => installKeyboardInset(window), []);
   const [offline, setOffline] = useState(false);
   const [roleSheet, setRoleSheet] = useState(false);
   const [error, setError] = useState('');
