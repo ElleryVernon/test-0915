@@ -2603,6 +2603,12 @@ button.recall-card:active {
   padding: calc(var(--space-unit) * 3.75) 0;
   font-size: 16px;
 }
+/* The wrapper carries the ring for every search field, so screens that only use the shared class
+   (찾고 싶은 공부, 학교 검색) focus the same way as the module wrappers. */
+.search-field:has(input:focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
 .badge-bubble {
   height: 20px;
   min-width: 20px;
